@@ -1,0 +1,148 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns="http://www.w3.org/2005/Atom">
+  <id>https://arxiv.org/api/AmP52hjugHUkFnXxljKh3VmH0bs</id>
+  <title>arXiv Query: search_query=all:transformer AND cat:cs.LG&amp;id_list=&amp;start=0&amp;max_results=5</title>
+  <updated>2026-06-14T02:30:47Z</updated>
+  <link href="https://arxiv.org/api/query?search_query=all:transformer+AND+cat:cs.LG&amp;start=0&amp;max_results=5&amp;id_list=" type="application/atom+xml"/>
+  <opensearch:itemsPerPage>5</opensearch:itemsPerPage>
+  <opensearch:totalResults>28946</opensearch:totalResults>
+  <opensearch:startIndex>0</opensearch:startIndex>
+  <entry>
+    <id>http://arxiv.org/abs/2606.13677v1</id>
+    <title>Mana: Dexterous Manipulation of Articulated Tools</title>
+    <updated>2026-06-11T17:59:49Z</updated>
+    <link href="https://arxiv.org/abs/2606.13677v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2606.13677v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Articulated tool manipulation remains a major challenge in dexterous robotics due to the need to coordinate internal degrees of freedom and contact-rich interactions. While prior work has largely focused on rigid objects, articulated tool use remains underexplored because of its physical complexity and the difficulty of learning functional grasping and manipulation policies. We present Mana (Manipulation Animator), a general sim-to-real framework that reinterprets dexterous manipulation as an animation problem. Inspired by computer animation, Mana employs a coarse-to-fine pipeline that transforms procedurally-generated grasp keyframes into manipulation trajectories through motion planning and reinforcement learning. The data generation process is largely automatic, requiring only a few mouse clicks to specify functional affordances (&lt;1 minute per tool). Across four articulated tools spanning different scales and joint types, Mana achieves zero-shot sim-to-real transfer for both grasping and in-hand manipulation, demonstrating a scalable approach to dexterous articulated tool use.</summary>
+    <category term="cs.RO" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CV" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-06-11T17:59:49Z</published>
+    <arxiv:comment>Project Page: https://zhaohengyin.github.io/mana</arxiv:comment>
+    <arxiv:primary_category term="cs.RO"/>
+    <author>
+      <name>Zhao-Heng Yin</name>
+    </author>
+    <author>
+      <name>Guanya Shi</name>
+    </author>
+    <author>
+      <name>Pieter Abbeel</name>
+    </author>
+    <author>
+      <name>C. Karen Liu</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2606.13591v1</id>
+    <title>Multiagent Protocols with Aggregated Confidence Signals</title>
+    <updated>2026-06-11T17:12:11Z</updated>
+    <link href="https://arxiv.org/abs/2606.13591v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2606.13591v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Confidence is used for reliability, oversight, and a range of downstream decision tasks in Natural Language Processing (NLP), yet no existing method produces or evaluates a confidence for the output of a multiagent system. Prior work uses confidence within multiagent debate (MAD) to weight messages, trigger debate, or calibrate individual agents, but it never aggregates these into a single confidence for the system itself. We introduce three protocols that produce a final answer along with a single aggregated confidence by first transforming raw confidence signals to make them comparable across models, then combining them via soft voting or a probability fusion we call Bayesian fusion. This aggregated confidence is substantially more discriminative (AUARC) than that of the best single agent or the standard debate baselines, while correctness (F1-score) stays stable and recovers the losses MAD incurs on more ambiguous tasks. Analyzing two estimators, sequence probability and self-report, alongside parametric and non-parametric calibrators, we find that calibration improves F1 for both estimators while AUARC is less reliant on it. We evaluate six homogeneous and heterogeneous debating pairs per benchmark, across five benchmarks and four task types, spanning a range of model capabilities and sizes.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.MA" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-06-11T17:12:11Z</published>
+    <arxiv:comment>22 pages and 5 figures, 9 pages and 2 figures before the appendix</arxiv:comment>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Ali Elahi</name>
+    </author>
+    <author>
+      <name>Barbara Di Eugenio</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2606.13568v1</id>
+    <title>Adjusted Cup-Product Neural Layer</title>
+    <updated>2026-06-11T16:56:47Z</updated>
+    <link href="https://arxiv.org/abs/2606.13568v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2606.13568v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Many important observables in physics and geometry are cup products of cochains. The adjusted cup product neural layer has been introduced in this paper. It is a neural primitive that hard wires the cup product with an adjustment term from higher gauge theory. This creates a readout that is gauge invariant by design. Their main theoretical result shows that on a closed cycle the output relies entirely on the adjustment coefficient. Setting this coefficient to zero removes the output completely regardless of other parameters. Thus the adjustment is the only source of gauge invariant signal. They prove this observable is a nonzero quadratic form and is exactly invariant under one and two gauge transformations.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="math-ph" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-06-11T16:56:47Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Snigdha Chandan Khilar</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2606.13515v1</id>
+    <title>MaskWAM: Unifying Mask Prompting and Prediction for World-Action Models</title>
+    <updated>2026-06-11T16:02:42Z</updated>
+    <link href="https://arxiv.org/abs/2606.13515v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2606.13515v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>World Action Models (WAMs) present a promising paradigm for robotic control via video prediction. However, current WAMs suffer from fundamental spatial bottlenecks: standard text inputs introduce referential ambiguity in cluttered scenes, while unstructured RGB predictions lack semantic grounding and remain biased by task-irrelevant backgrounds. To overcome these limitations, we introduce MaskWAM, an object-centric world-action model. By jointly integrating masks as both explicit inputs and predictions via a unified Mixture of Transformers (MoT), MaskWAM unlocks robust policy generalization. This design provides two key benefits: (1) predicting future masks yields object-centric semantic supervision that suppresses visual noise, significantly enhancing even standard text-conditioned WAMs; and (2) coupling this predictive supervision with first-frame visual prompts, such as target object masks, establishes a precise spatial anchor that substantially reduces language ambiguity. Crucially, as WAMs are inherently vision-driven architectures, direct mask conditioning yields substantially stronger guidance than text alone, establishing a precise and robust paradigm for manipulating unseen objects. Evaluations on LIBERO, RoboTwin, and real-world tasks demonstrate that MaskWAM significantly outperforms baselines in both language-clear and language-ambiguous tasks.</summary>
+    <category term="cs.CV" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.RO" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-06-11T16:02:42Z</published>
+    <arxiv:primary_category term="cs.CV"/>
+    <author>
+      <name>Hanyang Yu</name>
+    </author>
+    <author>
+      <name>Haitao Lin</name>
+    </author>
+    <author>
+      <name>Jingbo Zhang</name>
+    </author>
+    <author>
+      <name>Wenyao Zhang</name>
+    </author>
+    <author>
+      <name>Chenghao Gu</name>
+    </author>
+    <author>
+      <name>Heng Li</name>
+    </author>
+    <author>
+      <name>Ping Tan</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2606.13501v1</id>
+    <title>GF-DiT: Scheduling Parallelism for Diffusion Transformer Serving</title>
+    <updated>2026-06-11T15:51:10Z</updated>
+    <link href="https://arxiv.org/abs/2606.13501v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2606.13501v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Diffusion Transformers (DiTs) have become the dominant architecture for image and video generation, creating growing demand for efficient DiT serving. Existing systems assign each request a fixed parallel configuration throughout its lifetime. However, DiT workloads exhibit substantial heterogeneity across requests, execution stages, and system conditions, making static parallelism inefficient and often leading to poor GPU utilization and degraded service quality.
+  This paper argues that DiT serving should treat GPU parallelism as a first-class schedulable resource. We present GF-DiT, a policy-programmable runtime for elastic DiT serving that dynamically adapts the parallelism of running requests according to workload demands and service objectives. GF-DiT introduces an asynchronous execution abstraction that decomposes requests into independently schedulable trajectory tasks and enables online GPU reallocation. To make elastic parallelism practical, GF-DiT further proposes group-free collectives, a lightweight communication abstraction that supports low-overhead online formation and reconfiguration of arbitrary execution groups.
+  We implement GF-DiT in vLLM-Omni and evaluate it on representative image and video diffusion workloads. Compared with fixed-pipeline execution with static parallelism, GF-DiT improves throughput by up to 6.01$\times$, reduces mean latency by up to 95%, lowers SLO violation rates by up to 90%, and reduces communication-group setup overhead from 778 ms to approximately 60 $μ$s.</summary>
+    <category term="cs.DC" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.PF" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-06-11T15:51:10Z</published>
+    <arxiv:primary_category term="cs.DC"/>
+    <author>
+      <name>Xinwei Qiang</name>
+    </author>
+    <author>
+      <name>Yifan Hu</name>
+    </author>
+    <author>
+      <name>Shixuan Sun</name>
+    </author>
+    <author>
+      <name>Jing Yang</name>
+    </author>
+    <author>
+      <name>Han Zhao</name>
+    </author>
+    <author>
+      <name>Chen Chen</name>
+    </author>
+    <author>
+      <name>Yu Feng</name>
+    </author>
+    <author>
+      <name>Jingwen Leng</name>
+    </author>
+    <author>
+      <name>Minyi Guo</name>
+    </author>
+  </entry>
+</feed>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+  <title>Lab Blog</title>
+  <item>
+    <title>A new transformer model</title>
+    <link>https://lab.example/post1</link>
+    <description>We present a transformer improving accuracy by 3.1 points.</description>
+    <pubDate>Mon, 01 Jun 2026 10:00:00 GMT</pubDate>
+    <author>alice@lab.example (Alice)</author>
+  </item>
+  <item>
+    <title>Unrelated cooking post</title>
+    <link>https://lab.example/post2</link>
+    <description>How to bake bread.</description>
+    <pubDate>Tue, 02 Jun 2026 10:00:00 GMT</pubDate>
+  </item>
+</channel></rss>

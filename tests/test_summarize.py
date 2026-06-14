@@ -17,3 +17,20 @@ def test_is_list_numer():
     toks = ["(", "2", ")", "we"]
     assert is_list_numer(toks, 1, 2) is True
     assert is_list_numer(["x", "9", ")"], 1, 9) is False
+
+from sotawhat.summarize import has_number, contains_sota, extract_line
+
+def test_has_number_ignores_citation_years():
+    assert has_number("Proposed by Vaswani (2017)") is False
+    assert has_number("We improve BLEU by 2.3 points") is True
+
+def test_contains_sota():
+    assert contains_sota("achieves state-of-the-art results") is True
+    assert contains_sota("a normal sentence") is False
+
+def test_extract_line_prefers_numeric_sentences():
+    abstract = ("We study transformers. Our transformer improves BLEU by 2.3. "
+                "It is nice.")
+    text, has_num = extract_line(abstract, "transformer", 280)
+    assert has_num is True
+    assert "2.3" in text

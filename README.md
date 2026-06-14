@@ -1,68 +1,104 @@
-# sotawhat
+# sotawhat 2.0
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Read more about SOTAWHAT [here](https://huyenchip.com/2018/10/04/sotawhat.html).
+A multi-source AI/ML research aggregator. Search the latest papers on demand,
+or run an unattended daily **digest** that writes curated Markdown notes into a
+local [Obsidian](https://obsidian.md) vault.
 
-You can use sotawhat through a web interface [here](https://sotawhat.herokuapp.com/#/). Thanks hmchuong!
+Original SOTAWHAT background: [blog post](https://huyenchip.com/2018/10/04/sotawhat.html).
 
-This script runs using Python 3. It requires ``nltk``, ``six``, and ``pyspellchecker``. To install it as a Python package, follow the following steps:
+## What's new in 2.0
 
+- **Multiple sources** behind a single interface: arXiv (official API),
+  Semantic Scholar, Hugging Face Daily Papers, PubMed, and generic RSS/Atom feeds.
+- **Daily digest → Obsidian** with cross-run dedup, one note per item, YAML
+  frontmatter and tags.
+- **No more `nltk`/`six`/`pyspellchecker`/`win-unicode-console`** — the
+  summarizer is now pure Python. The only runtime deps are `httpx` and
+  `feedparser`. No `punkt` download, no SSL/encoding workarounds.
 
-Step 1: clone this repo, and go inside that repo:
-```bash
-$ git clone [HTTPS or SSH linnk to this repo]
-$ cd sotawhat
-```
-Step 2: install using pip
+## Install
 
-```bash
-$ pip3 install .
-```
-
-On Windows, due to encoding errors, the script may cause issues when run on the command line. It is
-recommended to use `pip install win-unicode-console --upgrade` prior to launching the script. If you get
-UnicodeEncodingError, you *must* install the above.
-
-In MacOS, you can get the SSL error
-
-```
-[nltk_data] Error loading punkt: <urlopen error [SSL:
-[nltk_data]     CERTIFICATE_VERIFY_FAILED] certificate verify failed:
-[nltk_data]     unable to get local issuer certificate (_ssl.c:1045)>
-```
-
-this will be fixed by reinstalling certificates
-```shell
-$ /Applications/Python\ 3.x/Install\ Certificates.command
-```
-
-# Usage
-This project adds the `sotawhat` script for you to run globally on Terminal or commandline.
-
-To query for a certain keyword, run:
+Requires Python 3.9+.
 
 ```bash
-$ sotawhat [keyword] [number of results]
+git clone [HTTPS or SSH link to this repo]
+cd sotawhat
+python -m venv .venv
+.\.venv\Scripts\python -m pip install -e ".[dev]"   # Windows
+# source .venv/bin/activate && pip install -e ".[dev]"   # macOS/Linux
 ```
 
-For example:
+This installs the `sotawhat` console command.
+
+## Usage
+
+### Search (interactive)
+
+Classic form — keyword(s) followed by an optional result count (default 5):
 
 ```bash
-$ sotawhat perplexity 10
+sotawhat perplexity 10
+sotawhat language model 10
 ```
 
-or 
+Equivalent explicit subcommand:
 
 ```bash
-$ sotawhat language model 10
+sotawhat search "language model" 10
 ```
 
-If you don't specify the number of results, by default, the script returns 5 results. Each result contains the title of the paper with author and published date, a summary of the abstract, and link to the paper.
+Results are grouped by source. Each entry shows the title (author + date), a
+summarized extract of the abstract (preferring sentences with metrics or
+state-of-the-art claims), and a link.
 
-We've found that this script works well with keywords that are:
-+ a model (e.g. transformer, wavenet, ...)
-+ a dataset (e.g. wikitext, imagenet, ...)
-+ a task (e.g. language model, machine translation, fuzzing, ...)
-+ a metric (e.g. BLEU, perplexity, ...)
-+ random stuff
+Works best with keywords that are a model, dataset, task, or metric
+(e.g. `transformer`, `imagenet`, `machine translation`, `BLEU`).
+
+### Digest → Obsidian vault
+
+Run a predefined profile and write notes into a vault:
+
+```bash
+sotawhat digest --profile geral  --vault "D:\path\to\ObsidianVault" --limit 10
+sotawhat digest --profile medico --vault "D:\path\to\ObsidianVault" --limit 10
+```
+
+- `geral` — general ML/AI (arXiv, Semantic Scholar, HF Daily Papers, lab/blog RSS).
+- `medico` — medical AI (PubMed, arXiv q-bio/CV/LG, medical-journal RSS).
+
+Notes are written to `<vault>/<profile>/<source>/<date>-<title>.md`. A
+`.sotawhat_seen.json` index in the vault root prevents the same item from being
+written twice across runs. A single source failing (rate limit, network) is
+isolated — the run continues with the other sources.
+
+## Scheduled daily digest (Windows)
+
+`scripts/schedule_digest.ps1` runs both profiles into one vault:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\schedule_digest.ps1 -Vault "D:\path\to\ObsidianVault" -Limit 10
+```
+
+Register it to run daily at 08:00 with Task Scheduler:
+
+```bat
+schtasks /Create /SC DAILY /ST 08:00 /TN "sotawhat-digest" ^
+  /TR "powershell -ExecutionPolicy Bypass -File \"D:\Lucas\code_projects\sotawhat\scripts\schedule_digest.ps1\""
+```
+
+Remove it with:
+
+```bat
+schtasks /Delete /TN "sotawhat-digest" /F
+```
+
+## Development
+
+```bash
+.\.venv\Scripts\python -m pytest -q
+```
+
+Source adapters are tested against recorded fixtures in `tests/fixtures/`, so
+the suite runs without network access.

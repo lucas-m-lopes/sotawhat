@@ -3,14 +3,20 @@ import sys
 from datetime import date
 
 def collect(sources, keywords, limit, on_error=None):
-    seen = set()
+    by_id = {}
     out = []
     for source in sources:
         for kw in keywords:
             for r in source.safe_search(kw, limit, on_error=on_error):
-                if r.id in seen:
+                if r.id in by_id:
+                    concepts = by_id[r.id].extra.setdefault("concepts", [])
+                    if kw not in concepts:
+                        concepts.append(kw)
                     continue
-                seen.add(r.id)
+                r.extra.setdefault("concepts", [])
+                if kw not in r.extra["concepts"]:
+                    r.extra["concepts"].append(kw)
+                by_id[r.id] = r
                 out.append(r)
     return out
 

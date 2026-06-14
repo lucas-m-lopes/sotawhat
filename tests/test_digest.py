@@ -18,3 +18,10 @@ def test_collect_dedupes_by_id_across_keywords():
     out = collect([src], keywords=["k1", "k2"], limit=10)
     ids = sorted(r.id for r in out)
     assert ids == ["1", "2"]
+
+def test_collect_records_concepts_per_id():
+    src = FakeSource("arxiv", [_r("1", "arxiv"), _r("2", "arxiv")])
+    out = collect([src], keywords=["k1", "k2"], limit=10)
+    by_id = {r.id: r for r in out}
+    assert by_id["1"].extra["concepts"] == ["k1", "k2"]
+    assert by_id["2"].extra["concepts"] == ["k1", "k2"]

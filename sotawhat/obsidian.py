@@ -15,6 +15,12 @@ def sanitize_title(title):
 def _yaml_list(values):
     return "[" + ", ".join(json.dumps(v) for v in values) + "]"
 
+def _concept_line(concepts):
+    if not concepts:
+        return ""
+    links = " · ".join(f"[[{c}]]" for c in concepts)
+    return f"**Conceitos:** {links}\n\n"
+
 def render_note(result, tags, keywords, added):
     all_tags = list(tags) + [f"source/{result.source}"]
     extract, _ = extract_line(result.abstract, (keywords[0] if keywords else "").lower(), 280)
@@ -31,7 +37,9 @@ def render_note(result, tags, keywords, added):
         f"added: {json.dumps(added)}\n"
         "---\n\n"
     )
-    return f"{front}# {result.title}\n\n{body}\n\n[Source]({result.url})\n"
+    concepts = result.extra.get("concepts", [])
+    return (f"{front}# {result.title}\n\n{body}\n\n"
+            f"{_concept_line(concepts)}[Source]({result.url})\n")
 
 def _load_seen(vault_path):
     f = vault_path / ".sotawhat_seen.json"

@@ -35,3 +35,17 @@ def test_write_notes_dedupes_across_runs(tmp_path):
     assert len(md) == 1
     seen = (tmp_path / ".sotawhat_seen.json")
     assert seen.exists()
+
+def test_render_note_includes_concepts_when_present():
+    r = Result(id="1", title="T", authors=[], date="2026-06-01", url="u",
+               abstract="We improve BLEU by 2.3 points.", source="arxiv",
+               extra={"concepts": ["large language model", "agent"]})
+    note = render_note(r, tags=["ml-ai"], keywords=["model"], added="2026-06-13")
+    assert "**Conceitos:** [[large language model]] · [[agent]]" in note
+    assert note.index("Conceitos") < note.index("[Source]")
+
+def test_render_note_omits_concepts_when_absent():
+    r = Result(id="1", title="T", authors=[], date="2026-06-01", url="u",
+               abstract="abc", source="arxiv")
+    note = render_note(r, tags=["ml-ai"], keywords=["model"], added="2026-06-13")
+    assert "Conceitos" not in note

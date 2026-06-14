@@ -15,8 +15,9 @@ def _insert_concepts(content, concepts):
     lines = content.splitlines()
     for i in range(len(lines) - 1, -1, -1):
         if lines[i].startswith("[Source]"):
-            lines.insert(i, "")
-            lines.insert(i + 1, line)
+            # mirror the digest format: one blank line above and below
+            lines.insert(i, line)
+            lines.insert(i + 1, "")
             return "\n".join(lines) + "\n"
     return content.rstrip("\n") + f"\n\n{line}\n"
 

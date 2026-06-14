@@ -1,14 +1,13 @@
 # sotawhat/backfill.py
-import re
 from pathlib import Path
 
 from sotawhat.obsidian import ensure_concept_notes
+from sotawhat.textmatch import contains_term
 
 _CONCEPT_MARKER = "**Conceitos:**"
 
 def _matches(text, keyword):
-    pattern = r"\b" + re.escape(keyword.lower()) + r"\b"
-    return re.search(pattern, text.lower()) is not None
+    return contains_term(text, keyword)
 
 def _insert_concepts(content, concepts):
     line = f"{_CONCEPT_MARKER} " + " · ".join(f"[[{c}]]" for c in concepts)

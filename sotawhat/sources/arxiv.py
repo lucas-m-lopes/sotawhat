@@ -5,7 +5,7 @@ from sotawhat.models import Result
 from sotawhat.sources.base import Source
 
 _NS = {"atom": "http://www.w3.org/2005/Atom"}
-_API = "http://export.arxiv.org/api/query"
+_API = "https://export.arxiv.org/api/query"
 
 def _arxiv_id(entry_id):
     # entry id looks like http://arxiv.org/abs/2401.00001v1
@@ -47,7 +47,7 @@ class ArxivSource(Source):
         params = {"search_query": self._query(keyword), "start": 0,
                   "max_results": limit, "sortBy": "submittedDate",
                   "sortOrder": "descending"}
-        resp = httpx.get(_API, params=params, timeout=30,
+        resp = httpx.get(_API, params=params, timeout=30, follow_redirects=True,
                          headers={"User-Agent": "sotawhat/2.0"})
         resp.raise_for_status()
         return parse_atom(resp.text, source=self.name)

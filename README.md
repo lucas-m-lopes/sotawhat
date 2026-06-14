@@ -73,6 +73,22 @@ Notes are written to `<vault>/<profile>/<source>/<date>-<title>.md`. A
 written twice across runs. A single source failing (rate limit, network) is
 isolated — the run continues with the other sources.
 
+### Concept links (graph edges)
+
+Each note links to **concept notes** (one per profile keyword) via a
+`**Conceitos:** [[...]]` line, so the Obsidian graph clusters papers by topic.
+Concept stubs are created under `<vault>/concepts/`.
+
+To retro-link notes written before this feature:
+
+```bash
+sotawhat backfill-links --vault "D:\path\to\ObsidianVault"            # all profiles
+sotawhat backfill-links --vault "D:\path\to\ObsidianVault" --profile medico
+```
+
+Backfill scans existing notes for profile keywords (word-boundary match) and
+inserts the concept line. It is idempotent — notes already linked are skipped.
+
 ## Scheduled daily digest (Windows)
 
 `scripts/schedule_digest.ps1` runs both profiles into one vault:

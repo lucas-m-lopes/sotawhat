@@ -23,3 +23,13 @@ def test_parse_digest():
     assert ns.command == "digest"
     assert ns.profile == "medico"
     assert ns.vault == "V"
+
+def test_parse_backfill_links():
+    ns = parse_args(["backfill-links", "--vault", "V"])
+    assert ns.command == "backfill-links"
+    assert ns.vault == "V"
+    assert ns.profile == "all"
+
+def test_parse_backfill_links_with_profile():
+    ns = parse_args(["backfill-links", "--vault", "V", "--profile", "medico"])
+    assert ns.profile == "medico"

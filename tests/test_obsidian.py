@@ -35,3 +35,37 @@ def test_write_notes_dedupes_across_runs(tmp_path):
     assert len(md) == 1
     seen = (tmp_path / ".sotawhat_seen.json")
     assert seen.exists()
+
+def test_render_note_includes_concepts_when_present():
+    r = Result(id="1", title="T", authors=[], date="2026-06-01", url="u",
+               abstract="We improve BLEU by 2.3 points.", source="arxiv",
+               extra={"concepts": ["large language model", "agent"]})
+    note = render_note(r, tags=["ml-ai"], keywords=["model"], added="2026-06-13")
+    assert "**Conceitos:** [[large language model]] · [[agent]]" in note
+    assert note.index("Conceitos") < note.index("[Source]")
+
+def test_render_note_omits_concepts_when_absent():
+    r = Result(id="1", title="T", authors=[], date="2026-06-01", url="u",
+               abstract="abc", source="arxiv")
+    note = render_note(r, tags=["ml-ai"], keywords=["model"], added="2026-06-13")
+    assert "Conceitos" not in note
+
+def test_write_notes_creates_concept_stubs(tmp_path):
+    r = Result(id="c1", title="M", authors=[], date="2026-06-01", url="u",
+               abstract="a", source="arxiv", extra={"concepts": ["agent"]})
+    write_notes([r], vault=str(tmp_path), profile_name="geral",
+                tags=["ml-ai"], keywords=["agent"], added="2026-06-13")
+    stub = tmp_path / "concepts" / "agent.md"
+    assert stub.exists()
+    text = stub.read_text(encoding="utf-8")
+    assert "type: concept" in text
+    assert "# agent" in text
+
+def test_ensure_concept_notes_idempotent(tmp_path):
+    from sotawhat.obsidian import ensure_concept_notes
+    n1 = ensure_concept_notes(tmp_path, ["agent"])
+    (tmp_path / "concepts" / "agent.md").write_text("custom", encoding="utf-8")
+    n2 = ensure_concept_notes(tmp_path, ["agent"])
+    assert n1 == 1
+    assert n2 == 0
+    assert (tmp_path / "concepts" / "agent.md").read_text(encoding="utf-8") == "custom"

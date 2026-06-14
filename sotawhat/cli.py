@@ -2,7 +2,7 @@
 import argparse
 import sys
 
-_SUBCOMMANDS = {"search", "digest"}
+_SUBCOMMANDS = {"search", "digest", "backfill-links"}
 
 def parse_args(argv):
     # Backward compat: `sotawhat <keyword...> [N]` with no subcommand -> search.
@@ -21,6 +21,10 @@ def parse_args(argv):
     p_digest.add_argument("--profile", required=True)
     p_digest.add_argument("--vault", required=True)
     p_digest.add_argument("--limit", type=int, default=10)
+
+    p_backfill = sub.add_parser("backfill-links")
+    p_backfill.add_argument("--vault", required=True)
+    p_backfill.add_argument("--profile", default="all")
 
     ns = parser.parse_args(argv)
     if ns.command == "search":
@@ -55,6 +59,9 @@ def main(argv=None):
     elif ns.command == "digest":
         from sotawhat.digest import run_digest  # added in Phase 3
         run_digest(ns)
+    elif ns.command == "backfill-links":
+        from sotawhat.backfill import run_backfill
+        run_backfill(ns)
 
 if __name__ == "__main__":
     main()

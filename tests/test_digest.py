@@ -25,3 +25,12 @@ def test_collect_records_concepts_per_id():
     by_id = {r.id: r for r in out}
     assert by_id["1"].extra["concepts"] == ["k1", "k2"]
     assert by_id["2"].extra["concepts"] == ["k1", "k2"]
+
+def test_filter_relevant_keeps_ai_drops_others():
+    from sotawhat.digest import filter_relevant
+    keep = Result(id="1", title="Deep learning for sepsis", authors=[],
+                  date="", url="", abstract="x", source="pubmed")
+    drop = Result(id="2", title="Aspirin trial", authors=[],
+                  date="", url="", abstract="no method here", source="pubmed")
+    out = filter_relevant([keep, drop], ["deep learning", "machine learning"])
+    assert [r.id for r in out] == ["1"]

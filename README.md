@@ -66,7 +66,11 @@ sotawhat digest --profile medico --vault "D:\path\to\ObsidianVault" --limit 10
 ```
 
 - `geral` — general ML/AI (arXiv, Semantic Scholar, HF Daily Papers, lab/blog RSS).
-- `medico` — medical AI (PubMed, arXiv q-bio/CV/LG, medical-journal RSS).
+- `medico` — AI∩medicine only. PubMed queries are AND-ed with an AI clause
+  (MeSH "Artificial Intelligence" + recent ML/LLM phrases), and every result
+  (PubMed, arXiv q-bio/CV/LG, medical-journal RSS) must mention an AI/ML term to
+  be kept. Feeds: Nature Machine Intelligence, npj Digital Medicine, JMIR AI,
+  JMIR Medical Informatics.
 
 Notes are written to `<vault>/<profile>/<source>/<date>-<title>.md`. A
 `.sotawhat_seen.json` index in the vault root prevents the same item from being

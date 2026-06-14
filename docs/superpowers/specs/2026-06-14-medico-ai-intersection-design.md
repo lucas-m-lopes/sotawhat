@@ -131,8 +131,9 @@ Medical keywords are unchanged: `["clinical LLM", "medical imaging", "diagnosis"
 
 ## Testing (TDD)
 
-- `textmatch.contains_term`: word-boundary (`agent` not in `reagent`); `"ML"` not
-  in `"5 mL"`; multi-word terms match.
+- `textmatch.contains_term`: word-boundary (`agent` not in `reagent`); matching is
+  case-insensitive (so `"ML"` *does* match `"mL"` — the medico design avoids this
+  by excluding `"ML"` from `AI_TERMS`, not by the matcher); multi-word terms match.
 - `backfill._matches` still passes after delegating to `contains_term` (existing
   tests stay green).
 - `PubMedSource` with `and_clause` builds the term `({keyword}) AND ({clause})`

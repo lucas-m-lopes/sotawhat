@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sotawhat"
+version = "2.0.0"
+description = "Multi-source AI/ML research aggregator with Obsidian digest"
+requires-python = ">=3.9"
+dependencies = [
+    "httpx>=0.27",
+    "feedparser>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+sotawhat = "sotawhat.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sotawhat*"]

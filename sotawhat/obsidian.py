@@ -6,11 +6,24 @@ from pathlib import Path
 from sotawhat.summarize import extract_line
 
 _INVALID = re.compile(r'[:/\\?*"<>|]+')
+_CONCEPT_FRONT = "---\ntype: concept\ntags: [concept]\n---\n"
 
 def sanitize_title(title):
     cleaned = _INVALID.sub("-", title).strip()
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" -")
     return cleaned[:100]
+
+def ensure_concept_notes(vault_path, concepts):
+    folder = Path(vault_path) / "concepts"
+    created = 0
+    for c in concepts:
+        path = folder / f"{sanitize_title(c)}.md"
+        if path.exists():
+            continue
+        folder.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{_CONCEPT_FRONT}# {c}\n", encoding="utf-8")
+        created += 1
+    return created
 
 def _yaml_list(values):
     return "[" + ", ".join(json.dumps(v) for v in values) + "]"
@@ -56,6 +69,7 @@ def write_notes(results, vault, profile_name, tags, keywords, added="unknown"):
     vault_path.mkdir(parents=True, exist_ok=True)
     seen = _load_seen(vault_path)
     written = 0
+    used_concepts = []
     for r in results:
         if r.id in seen:
             continue
@@ -64,7 +78,11 @@ def write_notes(results, vault, profile_name, tags, keywords, added="unknown"):
         fname = f"{(r.date or added)[:10]}-{sanitize_title(r.title) or r.id}.md"
         path = folder / fname
         path.write_text(render_note(r, tags, keywords, added), encoding="utf-8")
+        for c in r.extra.get("concepts", []):
+            if c not in used_concepts:
+                used_concepts.append(c)
         seen[r.id] = str(path.relative_to(vault_path))
         written += 1
+    ensure_concept_notes(vault_path, used_concepts)
     _save_seen(vault_path, seen)
     return written

@@ -36,9 +36,17 @@ def parse_efetch(xml_text):
 class PubMedSource(Source):
     name = "pubmed"
 
+    def __init__(self, and_clause=None):
+        self.and_clause = and_clause
+
+    def _term(self, keyword):
+        if self.and_clause:
+            return f"({keyword}) AND ({self.and_clause})"
+        return keyword
+
     def search(self, keyword, limit):
         s = httpx.get(_ESEARCH, params={
-            "db": "pubmed", "term": keyword, "retmax": limit,
+            "db": "pubmed", "term": self._term(keyword), "retmax": limit,
             "retmode": "json", "sort": "date", "tool": _TOOL, "email": _EMAIL},
             timeout=30, follow_redirects=True)
         s.raise_for_status()

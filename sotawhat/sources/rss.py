@@ -1,7 +1,15 @@
 # sotawhat/sources/rss.py
 import feedparser
+import httpx
 from sotawhat.models import Result
 from sotawhat.sources.base import Source
+
+_UA = {"User-Agent": "Mozilla/5.0 (sotawhat/2.0)"}
+
+def fetch_feed(url):
+    r = httpx.get(url, headers=_UA, timeout=30, follow_redirects=True)
+    r.raise_for_status()
+    return r.content
 
 def parse_feed(url_or_path, source):
     feed = feedparser.parse(url_or_path)
@@ -34,5 +42,9 @@ class RSSSource(Source):
     def search(self, keyword, limit):
         collected = []
         for label, url in self.feeds:
-            collected.extend(parse_feed(url, source=f"rss:{label}"))
+            try:
+                content = fetch_feed(url)
+            except Exception:  # noqa: BLE001 - a failing feed must not abort the others
+                continue
+            collected.extend(parse_feed(content, source=f"rss:{label}"))
         return self._filter(collected, keyword, limit)

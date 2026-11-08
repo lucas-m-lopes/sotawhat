@@ -213,3 +213,21 @@ class SameEntity(BaseModel):
     """Entity-resolution judge (task `resolve`)."""
     same: bool
     reason: str = Field(description="one short sentence in English")
+
+
+# --- Instagram (P5) -----------------------------------------------------------------------
+class PostVision(_Portuguese):
+    """What the images of an Instagram post show (task `vision`, SDD §7.2)."""
+    descricao: str = Field(description="1 a 3 frases, pt-BR: o que as imagens mostram e acrescentam à legenda")
+    texto_na_imagem: str = Field(description="texto principal escrito nas imagens, resumido em até 500 caracteres; vazio se não houver")
+
+
+class AccountVerdict(BaseModel):
+    usuario: str = Field(description="o @ da conta, como veio na lista")
+    categoria: Literal["ia", "saude", "fora"]
+    motivo: str = Field(description="até 12 palavras, pt-BR")
+
+
+class AccountBatch(BaseModel):
+    """Classification of followed Instagram accounts (task `accounts`, P5)."""
+    contas: list[AccountVerdict] = Field(description="uma por conta da lista, na mesma ordem")

@@ -2,7 +2,7 @@
 import argparse
 import sys
 
-_SUBCOMMANDS = {"search", "run", "doctor", "feedback", "eval"}
+_SUBCOMMANDS = {"search", "run", "doctor", "feedback", "eval", "serve"}
 
 def parse_args(argv):
     # Backward compat: `sotawhat <keyword...> [N]` with no subcommand -> search.
@@ -25,6 +25,10 @@ def parse_args(argv):
 
     p_doctor = sub.add_parser("doctor")
     p_doctor.add_argument("--llm", action="store_true", help="smoke-test each primary model (cents)")
+
+    p_serve = sub.add_parser("serve", help="graph interface on http://127.0.0.1:8765")
+    p_serve.add_argument("--port", type=int, default=None, help="default: SOTAWHAT_WEB_PORT (8765)")
+    p_serve.add_argument("--no-browser", action="store_true", help="do not open the browser")
 
     p_feedback = sub.add_parser("feedback")
     p_feedback.add_argument("action", choices=["pull", "listen"])
@@ -92,6 +96,9 @@ def main(argv=None):
     elif ns.command == "eval":
         from sotawhat.evals.commands import main_eval
         raise SystemExit(main_eval(ns))
+    elif ns.command == "serve":
+        from sotawhat.web.app import main_serve
+        raise SystemExit(main_serve(ns))
 
 if __name__ == "__main__":
     main()

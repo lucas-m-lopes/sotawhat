@@ -42,6 +42,8 @@ class Settings(BaseSettings):
 
     crossref_mailto: str = ""
 
+    sotawhat_web_port: int = 8765     # `sotawhat serve` (P3), always on 127.0.0.1
+
     # e-mail copy of the digest: with Gmail only DIGEST_EMAIL_TO is new; it reuses the Gmail address and
     # app password that P2 uses to read the newsletters (IMAP). SMTP_* only for another provider.
     gmail_address: str = ""

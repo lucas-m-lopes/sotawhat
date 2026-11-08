@@ -17,6 +17,8 @@ dependencies = [
     "numpy>=2.0",
     "scikit-learn>=1.5",
     "fastembed>=0.9",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
 ]
 
 [project.optional-dependencies]
@@ -30,3 +32,4 @@ include = ["sotawhat*"]
 
 [tool.setuptools.package-data]
 "sotawhat.llm.prompts" = ["*.md"]
+"sotawhat.web" = ["static/*", "static/vendor/*"]

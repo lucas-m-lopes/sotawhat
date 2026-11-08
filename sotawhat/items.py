@@ -85,7 +85,10 @@ def canonical_id(result) -> tuple[str, dict]:
     return f"hash:{digest}", {}
 
 
-def kind_for(source: str) -> str:
+def kind_for(source: str, extra=None) -> str:
+    """repo | model | dataset | mcp_server | newsletter_item | regulation come from the source (P2)."""
+    if (extra or {}).get("kind"):
+        return extra["kind"]
     if source.startswith("rss:"):
         return "article"
     return "paper"
@@ -94,7 +97,7 @@ def kind_for(source: str) -> str:
 def to_item(result, profile: str | None = None) -> Item:
     iid, ids = canonical_id(result)
     return Item(
-        id=iid, kind=kind_for(result.source), source=result.source, source_id=result.id or "",
+        id=iid, kind=kind_for(result.source, result.extra), source=result.source, source_id=result.id or "",
         title=result.title, url=result.url, authors=list(result.authors or []),
         published_at=result.date or "", text=result.abstract or "",
         doi=ids.get("doi"), arxiv_id=ids.get("arxiv_id"), pmid=ids.get("pmid"),

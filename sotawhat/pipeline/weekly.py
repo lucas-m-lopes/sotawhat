@@ -495,10 +495,17 @@ def _main(ns, kind) -> int:
                 mirror.close()
         log.info("%s run %s: %.0f s, US$ %.4f", kind, report.run_id, time.monotonic() - started, report.cost_usd)
         done = deliver_report(settings, store, report, notify=not getattr(ns, "no_notify", False))
+    if kind == "weekly":                      # P6: one copy of the store per week, the newest 8 kept
+        from sotawhat.store.backup import BackupError, backup
+
+        try:
+            done["backup"] = backup(settings.db_path, settings.sotawhat_data_dir / "backups")
+        except (BackupError, OSError) as exc:
+            done["backup"] = f"erro: {exc}"
     print(render_markdown(report.payload))
     print(f"\n[relatório] {done['files'][0]}")
-    for channel in ("telegram", "email"):
-        if done[channel] is not None:
+    for channel in ("telegram", "email", "backup"):
+        if done.get(channel) is not None:
             print(f"[{channel}] {done[channel]}")
     return 0 if report.ok else 1
 

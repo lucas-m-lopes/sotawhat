@@ -437,6 +437,19 @@ def check_last_weekly(store, now=None, max_age_days=8) -> Check:
     return Check("último run semanal", "warn" if ideation.get("stopped") else "ok", detail)
 
 
+def check_backup(backups_dir, now=None, max_age_days=8) -> Check:
+    from sotawhat.store.backup import last_backup
+
+    found = last_backup(backups_dir)
+    if found is None:
+        return Check("backup", "warn", "nenhum ainda: rode `sotawhat backup` (o run semanal faz um por semana)")
+    path, when = found
+    age = ((now or datetime.now(timezone.utc)) - when).total_seconds() / 86400
+    detail = f"{path.name}, há {age:.0f} d ({path.stat().st_size / 1024 / 1024:.1f} MB)"
+    return Check("backup", "warn" if age > max_age_days else "ok", detail + ("; o run semanal está rodando?"
+                                                                             if age > max_age_days else ""))
+
+
 def check_month_cost(store, budget_month, now=None) -> Check:
     now = now or datetime.now(timezone.utc)
     start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
@@ -492,6 +505,7 @@ def main_doctor(ns) -> int:
     with Store(settings.db_path) as store:
         checks.append(check_last_run(store))
         checks.append(check_last_weekly(store))
+        checks.append(check_backup(settings.sotawhat_data_dir / "backups"))
         checks.append(check_month_cost(store, settings.sotawhat_llm_budget_usd_month))
         min_ratings = config.rubric.classifier_min_ratings if config else 100
         checks += check_classifiers(store, settings.embeddings_model, min_ratings, list(PROFILES))

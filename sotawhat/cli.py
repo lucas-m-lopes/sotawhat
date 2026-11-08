@@ -2,7 +2,8 @@
 import argparse
 import sys
 
-_SUBCOMMANDS = {"search", "run", "ideate", "doctor", "feedback", "eval", "serve", "serve-mcp", "graph", "instagram"}
+_SUBCOMMANDS = {"search", "run", "ideate", "doctor", "feedback", "eval", "serve", "serve-mcp", "graph", "instagram",
+                "backup", "calibrate"}
 
 def parse_args(argv):
     # Backward compat: `sotawhat <keyword...> [N]` with no subcommand -> search.
@@ -51,6 +52,11 @@ def parse_args(argv):
     p_instagram.add_argument("--max", type=int, default=50, help="accounts enabled for the daily scan (default 50)")
     p_instagram.add_argument("--limit", type=int, default=None, help="classify at most N new accounts")
     p_instagram.add_argument("--yes", action="store_true", help="fetch the profiles on Apify (paid) and classify")
+
+    p_backup = sub.add_parser("backup", help="copy data/insight.db to data/backups (P6)")
+    p_backup.add_argument("--keep", type=int, default=8, help="copies to keep (default 8)")
+    p_backup.add_argument("--restore", default=None, help="restore this copy over data/insight.db")
+    p_backup.add_argument("--yes", action="store_true", help="confirm the restore")
 
     p_feedback = sub.add_parser("feedback")
     p_feedback.add_argument("action", choices=["pull", "listen"])
@@ -133,6 +139,9 @@ def main(argv=None):
     elif ns.command == "graph":
         from sotawhat.graph.commands import main_graph
         raise SystemExit(main_graph(ns))
+    elif ns.command == "backup":
+        from sotawhat.store.backup import main_backup
+        raise SystemExit(main_backup(ns))
     elif ns.command == "instagram":
         from sotawhat.pipeline.accounts import main_instagram
         raise SystemExit(main_instagram(ns))

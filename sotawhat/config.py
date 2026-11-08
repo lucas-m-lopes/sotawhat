@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     embeddings_model: str = "google/embeddinggemma-300m"
 
     crossref_mailto: str = ""
+    github_token: str = ""            # P2: GitHub search (30 req/min with a token, 10 without)
+    hf_token: str = ""                # P2: Hugging Face Hub (higher rate limit)
 
     sotawhat_web_port: int = 8765     # `sotawhat serve` (P3), always on 127.0.0.1
 
@@ -56,6 +58,7 @@ class Settings(BaseSettings):
     # app password that P2 uses to read the newsletters (IMAP). SMTP_* only for another provider.
     gmail_address: str = ""
     gmail_app_password: str = ""
+    gmail_query: str = "label:newsletters-ai newer_than:2d"   # P2: Gmail search syntax (X-GM-RAW)
     digest_email_to: str = ""
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587

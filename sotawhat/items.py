@@ -50,8 +50,12 @@ def _clean_doi(doi: str) -> str:
 
 
 def canonical_id(result) -> tuple[str, dict]:
-    """Return (id, extra ids). Priority: DOI > arXiv > PMID > URL > content hash."""
+    """Return (id, extra ids). Priority: a source-given canonical id > DOI > arXiv > PMID > URL > content hash.
+    A source gives one when the URL alone is not unique (The Batch: every story of an issue shares the page URL,
+    and normalization drops the #fragment)."""
     extra = result.extra or {}
+    if extra.get("canonical_id"):
+        return extra["canonical_id"], {}
     rid = (result.id or "").strip()
     url = (result.url or "").strip()
 
@@ -85,7 +89,10 @@ def canonical_id(result) -> tuple[str, dict]:
     return f"hash:{digest}", {}
 
 
-def kind_for(source: str) -> str:
+def kind_for(source: str, extra=None) -> str:
+    """repo | model | dataset | mcp_server | newsletter_item | regulation come from the source (P2)."""
+    if (extra or {}).get("kind"):
+        return extra["kind"]
     if source.startswith("rss:"):
         return "article"
     return "paper"
@@ -94,7 +101,7 @@ def kind_for(source: str) -> str:
 def to_item(result, profile: str | None = None) -> Item:
     iid, ids = canonical_id(result)
     return Item(
-        id=iid, kind=kind_for(result.source), source=result.source, source_id=result.id or "",
+        id=iid, kind=kind_for(result.source, result.extra), source=result.source, source_id=result.id or "",
         title=result.title, url=result.url, authors=list(result.authors or []),
         published_at=result.date or "", text=result.abstract or "",
         doi=ids.get("doi"), arxiv_id=ids.get("arxiv_id"), pmid=ids.get("pmid"),

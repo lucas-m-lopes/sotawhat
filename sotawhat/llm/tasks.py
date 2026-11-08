@@ -20,7 +20,8 @@ class TaskSpec:
 
 DEFAULT_TASKS = {
     "triage": TaskSpec((DEEPSEEK_FLASH, MIMO_FLASH, GLM_FLASH), "low", 1500),
-    "segment": TaskSpec((MIMO_FLASH, DEEPSEEK_FLASH), "low", 4000),
+    # DeepSeek and GLM had the best strict-JSON rates in the 2026-11-08 bake-off (MiMo: 77% valid at first try)
+    "segment": TaskSpec((DEEPSEEK_FLASH, GLM_FLASH), "low", 6000),
     "vision": TaskSpec((MIMO_FLASH, GLM_FLASH, MINIMAX_FLASH), "low", 1500),
     "extract": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO, GLM), "high", 12000),
     "resolve": TaskSpec((DEEPSEEK_FLASH, GLM_FLASH), "low", 600),     # entity-resolution judge (P3)

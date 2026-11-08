@@ -53,3 +53,16 @@ def test_search_records_errors_per_journal(monkeypatch):
     src = CrossrefJournalSource([("down", "0000-0000"), ("npj", "2398-6352")])
     assert len(src.search("sepsis", 10)) == 1
     assert list(src.feed_errors) == ["down"]
+
+
+def test_crossref_channel_mode_takes_recent_works_of_every_journal(monkeypatch):
+    import json as _json
+
+    from sotawhat.sources.crossref import CrossrefJournalSource
+
+    payload = _json.loads(open("tests/fixtures/crossref_works.json", encoding="utf-8").read())
+    src = CrossrefJournalSource([("nejm-ai", "2836-9386"), ("jamia", "1527-974X")])
+    monkeypatch.setattr(src, "_fetch_once", lambda issn: payload)
+    assert src.keywordless and src.max_items >= 10
+    results = src.fetch(1)
+    assert [r.source for r in results] == ["crossref:nejm-ai", "crossref:jamia"]       # capped per journal

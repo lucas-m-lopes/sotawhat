@@ -2,11 +2,12 @@
 
 **Tipo:** Software Design Document (SDD) — serve também como *spec* para desenvolvimento orientado a especificação (spec-driven).
 **Data:** 2026-11-07
-**Status:** v1.4 (2026-11-08):
+**Status:** v1.5 (2026-11-08):
 - respostas do usuário de 2026-11-07 incorporadas: Instagram pessoal, Neo4j no Docker Desktop, LLMs chineses via OpenRouter;
 - medições da P1 incorporadas: modelo de embeddings e deduplicação por título (§6.3, §6.7, D3);
 - decisões de 2026-11-08 incorporadas: digest em duas seções, "IA ∩ Saúde" e "Fronteira de IA" (escolha feita a partir do golden set), e cópia do digest por e-mail (§6.7, §6.11, §16.1);
 - v1.4: o Obsidian sai do projeto, e nada lê nem escreve no vault (§9, D12). A interface própria com o grafo vem para a P3, que passa a ser executada antes da P2. O grafo de entidades fica no SQLite, e o Neo4j vira espelho (§6.3, §11, D16);
+- v1.5: P2 executada (fontes novas como canais com teto diário, triagem v2 com os tipos de item, Gmail por label; §11). A pedido do usuário ("continue a implantação segundo o plano SDD direto até o final"), as fases seguem sem pausa: P4, P5 e P6;
 - perguntas restantes em §16.2.
 **Documentos relacionados:**
 - Specs anteriores: `docs/superpowers/specs/2026-06-13-sotawhat-multisource-digest-design.md`, `2026-06-14-medico-ai-intersection-design.md`, `2026-06-14-obsidian-concept-links-design.md`
@@ -15,6 +16,7 @@
 - Plano da fase P0: `docs/superpowers/plans/2026-11-07-insight-engine-p0-foundation.md` (executado na branch `feature/insight-engine-p0`)
 - Plano da fase P1: `docs/superpowers/plans/2026-11-08-insight-engine-p1-triage-digest.md`
 - Plano da fase P3: `docs/superpowers/plans/2026-11-08-insight-engine-p3-graph-interface.md`
+- Plano da fase P2: `docs/superpowers/plans/2026-11-08-insight-engine-p2-new-sources.md`
 
 ---
 
@@ -807,7 +809,7 @@ Mínimo por fase:
 |---|---|---|---|
 | **P0 · Fundação** (semana 1) | `config.py`, SQLite + schema, `Item` + ids canônicos, **gateway LLM OpenRouter** (JSON estrito, ZDR, fallbacks, custo real em `llm_calls`, tetos de orçamento), adapters atuais ligados ao novo `collect`, **correção dos feeds da Nature** (detecção de HTML + fonte Crossref por ISSN) e remoção dos feeds mortos (§5.1), `run daily` mínimo (coleta + normalização + dedup exato) agendado, `doctor` (com teste de fumaça dos modelos), Telegram de alerta. Plano: `docs/superpowers/plans/2026-11-07-insight-engine-p0-foundation.md` | run diário completa e manda resumo no Telegram; testes antigos continuam verdes; nenhum feed devolve HTML em silêncio; `doctor --llm` valida JSON estrito nos modelos padrão | 3–4 dias |
 | **P1 · Triagem + digest** (semana 2) | *mute filters*, rubrica, prompt v1, saída estruturada, dedup semântico (embeddings locais), classificador por perfil (treina quando houver ≥ 100 avaliações), digest MD/HTML/Telegram com botões de feedback, golden set inicial (50 itens), **bake-off de modelos** (`sotawhat eval models`) e `config/llm.yaml`. Plano: `docs/superpowers/plans/2026-11-08-insight-engine-p1-triage-digest.md` | digest diário com ≤ 15 itens; feedback persistido; modelo de triagem escolhido por dados | 3–4 dias |
-| **P2 · Novas fontes I** (executada depois da P3) | Tier 1 do §5 (Crossref/PubMed `[jour]`, ScienceDirect, JAMA AI, medRxiv API, FDA CSV, Google News), AlphaSignal RSS, The Batch via sitemap, Gmail (newsletters → itens), GitHub (busca + estrelas + releases), HF Hub, MCP registry, skills | cada fonte com fixture + teste; itens aparecem no digest com proveniência | 4–5 dias |
+| **P2 · Novas fontes I** (executada depois da P3; plano `docs/superpowers/plans/2026-11-08-insight-engine-p2-new-sources.md`) | Tier 1 do §5 (Crossref/PubMed `[jour]`, ScienceDirect, JAMA AI, medRxiv API, FDA CSV, Google News), AlphaSignal RSS, The Batch via sitemap, Gmail (newsletters → itens), GitHub (busca + estrelas + releases), HF Hub, MCP registry, skills | cada fonte com fixture + teste; itens aparecem no digest com proveniência | 4–5 dias |
 | **P3 · Grafo + interface** (executada antes da P2, decisão de 2026-11-08) | remoção do Obsidian; extração v1 (entidades, relações e números) dos itens aprovados; resolução de entidades com aliases e juiz LLM; categorias da taxonomia como nós; **interface web própria** (FastAPI + sigma.js, lendo do SQLite); espelho no Neo4j (`compose.yaml`, `sotawhat graph up` e `sync`); MCP server; export JSON/CSV; extração e espelho no run diário. Plano: `docs/superpowers/plans/2026-11-08-insight-engine-p3-graph-interface.md` | grafo navegável em `localhost:8765` com os itens já aprovados; consultas pelo MCP no Claude Code; Neo4j espelhado; nada do Obsidian no código | 4–6 dias |
 | **P4 · Inteligência + ideação** (semanas 6–7) | comunidades/tendências/lacunas, mapa semanal, pipeline de ideação (§8), ledger, novidade, relatório semanal, feedback de ideias | 1º relatório semanal com 5–10 idea cards e verificação de novidade | 6–8 dias |
 | **P5 · Instagram** (semana 8) | adapter conforme §7.2 (varredura de contas públicas via Apify/HikerAPI + captura manual pelo Telegram + curadoria da lista de seguidos), extração multimodal | posts das contas configuradas no digest; custo dentro do teto | 3–5 dias |
@@ -946,7 +948,7 @@ As respostas mudam a implementação; onde não houver resposta, a suposição i
 
 **Fontes**
 1. **"Runway AI"** — qual newsletter exatamente? Não há página de assinatura da RunwayML; há "Runway Magazine" (moda), "The Runway Ventures" (beehiiv), "Rethink the Runway" (Substack). Envie o endereço do remetente (header `From`) ou um e-mail de exemplo. *Suposição:* fica fora até confirmação.
-2. Além de AlphaSignal/The Batch/Runway, quais outras newsletters já chegam na sua caixa que devem entrar (ex.: TLDR AI, The Rundown, Import AI, Latent Space, STAT Health Tech, HTN Daily Brief)? *Suposição:* tudo o que receber a label `newsletters/ai`.
+2. *(P2, 2026-11-08: a label `newsletters/ai` ainda não existe; a busca por remetente achou 37 e-mails do AlphaSignal/DeepLearning.AI em 30 dias, que já entram por RSS/sitemap. O `doctor` avisa até o filtro ser criado.)* Além de AlphaSignal/The Batch/Runway, quais outras newsletters já chegam na sua caixa que devem entrar (ex.: TLDR AI, The Rundown, Import AI, Latent Space, STAT Health Tech, HTN Daily Brief)? *Suposição:* tudo o que receber a label `newsletters/ai`.
 3. *(Respondida em 16.1: seção "Fronteira de IA".)*
 4. Quais domínios da taxonomia (A01–A23) e stakeholders importam mais para a startup e para o seu papel na Rede D'Or? Há áreas a excluir (ex.: descoberta de fármacos, wellness de consumo)? *Suposição:* pesos iguais; exclusões conforme §6.7.
 

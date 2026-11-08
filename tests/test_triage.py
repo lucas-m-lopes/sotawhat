@@ -127,7 +127,7 @@ def test_run_triage_end_to_end(tmp_path):
     assert rows["pmid:5"]["decision"] == "muted" and "webinar" in rows["pmid:5"]["reason"]
     assert rows["pmid:2"]["decision"] == "duplicate" and st.cluster_sources("pmid:1") == ["crossref", "pubmed"]
     main = rows["pmid:1"]
-    assert main["decision"] == "main" and main["prompt_version"] == "triage_v1" and main["model"].startswith("deepseek")
+    assert main["decision"] == "main" and main["prompt_version"] == "triage_v2" and main["model"].startswith("deepseek")
     assert main["why_it_matters_pt"] == "Importa para o hospital." and '"A03"' in main["tags_json"]
     assert rows["pmid:3"]["decision"] == "frontier" and '"S": 2' in rows["pmid:3"]["scores_json"]
     assert rows["pmid:4"]["why_it_matters_pt"] == ""            # excluded items carry no "why it matters"
@@ -176,3 +176,13 @@ def test_without_llm_everything_waits_and_gate_filters(tmp_path):
     gated = st.conn.execute("SELECT pre_score, classifier_version FROM triage WHERE decision='gated'").fetchall()
     assert len(gated) == 3 and all(r[1] == "medico-test" and r[0] < 0.9 for r in gated)
     st.close()
+
+
+def test_triage_v2_explains_the_new_item_kinds():
+    from sotawhat.items import Item
+
+    system = system_prompt()
+    assert "kind repo" in system and "mcp_server" in system and "{{" not in system
+    repo = Item(id="url:https://github.com/o/r", kind="repo", source="github:ai", source_id="r", title="o/r — MCP server",
+                url="https://github.com/o/r", text="GitHub repository · ★ 314")
+    assert "kind: repo" in item_message(repo)

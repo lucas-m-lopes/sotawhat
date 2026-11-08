@@ -25,7 +25,7 @@ from sotawhat.llm.schemas import TriageOutput
 from sotawhat.pipeline.dedup import find_duplicates
 from sotawhat.store.vectors import item_text, novelty_scores
 
-PROMPT_VERSION = "triage_v1"
+PROMPT_VERSION = "triage_v2"   # v2 (P2): explains the new item kinds; v1 stays for history
 HARD_REJECT = {"clinical_without_ai", "marketing_no_substance", "identifiable_patient_data"}
 DEFAULT_COST_PER_ITEM = 0.001   # US$, until the ledger has real triage calls (≈ 0.0005 expected)
 log = logging.getLogger("sotawhat.triage")
@@ -65,7 +65,7 @@ def system_prompt() -> str:
 def item_message(item, max_chars=8000) -> str:
     text = (item.text or "").strip() or "(sem texto: só o título)"
     authors = ", ".join(item.authors[:3]) + (" et al." if len(item.authors) > 3 else "")
-    return (f"Item to triage\ntitle: {item.title}\nsource: {item.source} (profile {item.profile or '?'})\n"
+    return (f"Item to triage\ntitle: {item.title}\nkind: {item.kind}\nsource: {item.source} (profile {item.profile or '?'})\n"
             f"published: {item.published_at or '?'}\nurl host: {urlsplit(item.url or '').netloc or '?'}\n"
             f"authors: {authors or '?'}\ntext:\n<<<\n{text[:max_chars]}\n>>>")
 

@@ -1,0 +1,127 @@
+{
+ "servers": [
+  {
+   "server": {
+    "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+    "name": "ai.aviado/health",
+    "description": "Cited supplement evidence, biomarker effects, interaction checks and brand quality",
+    "title": "Aviado AI",
+    "repository": {
+     "url": "https://github.com/kipmcc/aviado-mcp",
+     "source": "github"
+    },
+    "version": "0.3.0",
+    "websiteUrl": "https://aviado.ai/docs",
+    "remotes": [
+     {
+      "type": "streamable-http",
+      "url": "https://aviado.ai/api/mcp"
+     }
+    ]
+   },
+   "_meta": {
+    "io.modelcontextprotocol.registry/official": {
+     "status": "active",
+     "statusChangedAt": "2026-10-14T22:32:07.077801Z",
+     "publishedAt": "2026-10-14T22:32:07.077801Z",
+     "updatedAt": "2026-10-14T22:32:07.077801Z",
+     "isLatest": true
+    }
+   }
+  },
+  {
+   "server": {
+    "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+    "name": "ai.getvda/dynamic-health-monitor",
+    "description": "Give it one seed; it finds every service and checks HTTP, TCP, SSL and DNS.",
+    "version": "1.0.0",
+    "websiteUrl": "https://health.getvda.ai",
+    "remotes": [
+     {
+      "type": "streamable-http",
+      "url": "https://health.getvda.ai/mcp"
+     }
+    ]
+   },
+   "_meta": {
+    "io.modelcontextprotocol.registry/official": {
+     "status": "active",
+     "statusChangedAt": "2026-09-03T11:39:08.723173Z",
+     "publishedAt": "2026-09-03T11:39:08.723173Z",
+     "updatedAt": "2026-09-03T11:39:08.723173Z",
+     "isLatest": true
+    }
+   }
+  },
+  {
+   "server": {
+    "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+    "name": "ai.thetahealth/mirobody",
+    "description": "Lab results to LOINC codes and UCUM units, symptoms and diagnoses to ICPC-3. Offline, no API key.",
+    "title": "Mirobody",
+    "repository": {
+     "url": "https://github.com/thetahealth/mirobody",
+     "source": "github",
+     "id": "1106398326"
+    },
+    "version": "1.6.0",
+    "websiteUrl": "https://mirobody.ai",
+    "icons": [
+     {
+      "src": "https://raw.githubusercontent.com/thetahealth/mirobody/main/docs/images/mirobody-icon.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": [
+       "any"
+      ],
+      "theme": "light"
+     },
+     {
+      "src": "https://raw.githubusercontent.com/thetahealth/mirobody/main/docs/images/mirobody-icon-dark.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": [
+       "any"
+      ],
+      "theme": "dark"
+     }
+    ],
+    "packages": [
+     {
+      "registryType": "pypi",
+      "identifier": "mirobody",
+      "version": "1.6.0",
+      "runtimeHint": "uvx",
+      "transport": {
+       "type": "stdio"
+      },
+      "runtimeArguments": [
+       {
+        "type": "named",
+        "name": "--python",
+        "value": "3.12"
+       }
+      ],
+      "packageArguments": [
+       {
+        "type": "positional",
+        "value": "mcp"
+       }
+      ]
+     }
+    ]
+   },
+   "_meta": {
+    "io.modelcontextprotocol.registry/official": {
+     "status": "active",
+     "statusChangedAt": "2026-11-07T10:45:41.789476Z",
+     "publishedAt": "2026-11-07T10:45:41.789476Z",
+     "updatedAt": "2026-11-07T10:45:41.789476Z",
+     "isLatest": true
+    }
+   }
+  }
+ ],
+ "metadata": {
+  "nextCursor": "app.healthapi/healthapi:1.0.0",
+  "count": 3
+ }
+}

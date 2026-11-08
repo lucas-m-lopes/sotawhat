@@ -119,3 +119,17 @@ def test_triage_crash_fails_the_run_but_keeps_the_items(tmp_path):
     with Store(tmp_path / "insight.db") as st:
         report = run_daily(st, sources, today=DAY, triage=triage)
         assert not report.ok and "embedder exploded" in report.error and st.count_items() == 1
+
+
+def test_on_start_gets_the_run_id_before_collection(tmp_path):
+    seen = []
+
+    class Watching(FakeSource):
+        def safe_search(self, keyword, limit, on_error=None):
+            seen.append(("search", keyword))
+            return super().safe_search(keyword, limit, on_error)
+
+    with Store(tmp_path / "insight.db") as st:
+        report = run_daily(st, {"geral": [Watching("arxiv", [_r("2511.00001", "arxiv")])]}, today=DAY,
+                           on_start=lambda run_id: seen.append(("start", run_id)))
+    assert seen[0] == ("start", report.run_id) and seen[1][0] == "search"

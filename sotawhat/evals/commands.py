@@ -101,6 +101,25 @@ def main_eval(ns) -> int:
     return main_measures(ns)
 
 
+def write_goals(settings, store) -> tuple:
+    """-> (Markdown, path) of the goals report in data/reports/AAAA-MM-DD-metas.md."""
+    from sotawhat.evals import extract_eval, metrics
+
+    text = metrics.render_goals(metrics.goals(store, extract_summary=extract_eval.FOLDER / "extract_v1.json"))
+    out = settings.sotawhat_data_dir / "reports" / f"{date.today().isoformat()}-metas.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    return text, out
+
+
+def send_goals(notifier, text) -> None:
+    """The goals table on Telegram (TelegramError goes to the caller)."""
+    from sotawhat.notify.telegram import esc
+
+    table = [line for line in text.splitlines() if line.startswith("| G")]
+    notifier.send_message("📊 <b>metas do SDD</b>\n" + "\n".join(esc(line) for line in table), disable_notification=True)
+
+
 def main_measures(ns) -> int:
     """`eval triage`, `eval ideas`, `eval report [--send]` and `eval extract draft|import` (P6)."""
     from datetime import date
@@ -135,20 +154,15 @@ def main_measures(ns) -> int:
         if ns.eval_command == "ideas":
             print(json.dumps(metrics.ideas_metrics(store), ensure_ascii=False, indent=1))
             return 0
-        g = metrics.goals(store, extract_summary=extract_eval.FOLDER / "extract_v1.json")
-    text = metrics.render_goals(g)
-    out = settings.sotawhat_data_dir / "reports" / f"{date.today().isoformat()}-metas.md"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(text, encoding="utf-8")
+        text, out = write_goals(settings, store)
     print(text + f"\n[relatório] {out}")
     if getattr(ns, "send", False):
-        from sotawhat.notify.telegram import TelegramError, TelegramNotifier, esc
+        from sotawhat.notify.telegram import TelegramError, TelegramNotifier
 
         notifier = TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id)
         if notifier.configured:
-            table = [line for line in text.splitlines() if line.startswith("| G")]
             try:
-                notifier.send_message("📊 <b>metas do SDD</b>\n" + "\n".join(esc(line) for line in table))
+                send_goals(notifier, text)
             except TelegramError as exc:
                 print(f"[telegram] {exc}")
     return 0

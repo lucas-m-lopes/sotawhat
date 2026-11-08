@@ -190,3 +190,13 @@ def test_cli_parses_weekly_and_ideate():
     assert (ns.command, ns.kind, ns.modo, ns.no_notify) == ("run", "weekly", "completo", True)
     ns = parse_args(["ideate", "--tema", "UTI", "--n", "4"])
     assert (ns.command, ns.tema, ns.n, ns.modo, ns.no_notify) == ("ideate", "UTI", 4, "economico", False)
+
+
+def test_goals_step_writes_weekly_and_sends_monthly(g, tmp_path):  # noqa: F811
+    st, ids = g
+    settings = SimpleNamespace(sotawhat_data_dir=tmp_path, telegram_bot_token="", telegram_chat_id="")
+    bot = FakeBot()
+    bot.configured = True
+    assert weekly.goals_step(settings, st).endswith("-metas.md") and not bot.sent
+    assert weekly.goals_step(settings, st, send=True, notifier=bot).endswith("(enviado)")
+    assert bot.sent[0][0].startswith("📊 <b>metas do SDD</b>") and "G4 · ideias" in bot.sent[0][0]

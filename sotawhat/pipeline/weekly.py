@@ -188,7 +188,7 @@ def _notes(payload) -> list:
 def _rows(idea) -> list:
     """(label, text) lines of an idea card, shared by the Markdown and HTML renderers."""
     d = idea["draft"]
-    rows = [(f"Problema (dono: {d.get('stakeholder_dono', '?')})", d.get("problema_jtbd", "")),
+    rows = [("Problema", d.get("problema_jtbd", "")), ("Dono", d.get("stakeholder_dono", "")),
             ("Como funciona", d.get("mecanismo", "")),
             ("Dados e integração", f"{', '.join(d.get('dado_necessario', []))} · {d.get('integracao', '')}"),
             ("Modelo de negócio", d.get("modelo_negocio", "")), ("Por que agora", d.get("why_now", "")),

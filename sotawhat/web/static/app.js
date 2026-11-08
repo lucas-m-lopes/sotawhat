@@ -620,8 +620,7 @@
         meta(`lente ${LENSES[idea.lens] || idea.lens || "?"}`, idea.persona, `${d.setor || "?"} ${idea.sector_label || ""}`.trim(),
              FORMS[d.forma] || d.forma, `idea:${idea.id}`)),
       el("h2", {}, idea.title),
-      el("dl", {}, pairs([[`Problema${d.stakeholder_dono ? ` (dono: ${d.stakeholder_dono})` : ""}`, d.problema_jtbd],
-                          ["Como funciona", d.mecanismo], ["Por que agora", d.why_now], ["Hipótese nula", d.hipotese_nula],
+      el("dl", {}, pairs([["Problema", d.problema_jtbd], ["Dono", d.stakeholder_dono], ["Como funciona", d.mecanismo], ["Por que agora", d.why_now], ["Hipótese nula", d.hipotese_nula],
                           ["Descartada", idea.discard_reason]])),
       ideaDetails(idea));
     card.append(...ideaVotes(idea, badge));

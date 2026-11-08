@@ -7,8 +7,8 @@ Types:
 - dataset: a named dataset or benchmark ("MIMIC-IV", "MedQA", "CheXpert").
 - organization: a company, lab, university, hospital, health system, payer, regulator or government body ("Google DeepMind", "Mayo Clinic", "FDA", "ANVISA").
 - product: a named product, platform or deployed system that is more than a model ("Dragon Copilot", "Epic Cosmos", "Aidoc CARE").
-- problem: a clinical or operational problem the item addresses, as a short noun phrase ("sepsis early detection", "radiology report turnaround", "claim denials").
-- regulation: a law, regulation, guideline or technical standard ("EU AI Act", "FHIR", "CFM Resolution 2,454/2026", "HIPAA").
+- problem: a clinical or operational problem the item addresses, as a short noun phrase of at most six words, general enough to recur in other items ("sepsis early detection", "radiology report turnaround", "claim denials", "erectile dysfunction counseling"), never the study's own framing ("guideline-concordant counseling on regenerative therapies for erectile dysfunction").
+- regulation: a law, regulation, official guideline or technical standard ("EU AI Act", "FHIR", "CFM Resolution 2,454/2026", "HIPAA"). Questionnaires, scales and scores (System Usability Scale, NEWS2) are not regulations: skip them, or use technique when the item is about the method itself.
 
 Names:
 - English canonical names. Proper names exactly as written in the text, keeping version numbers and sizes ("Qwen3.5-VL 7B", never just "Qwen").

@@ -1,12 +1,10 @@
 # scripts/schedule_daily.ps1 - registers `sotawhat run daily` in Windows Task Scheduler (SDD 6.12).
 # Usage, from the repository root in PowerShell:
-#   .\scripts\schedule_daily.ps1                         # 07:00, no Obsidian export
-#   .\scripts\schedule_daily.ps1 -Vault "D:\Lucas\obsidian_vaults\ml_ai_med_vault"
+#   .\scripts\schedule_daily.ps1                         # 07:00
 #   .\scripts\schedule_daily.ps1 -Listener               # also: Telegram feedback listener at logon (P1)
 # Runs as the current user while logged on; a missed run starts as soon as possible (StartWhenAvailable).
 param(
     [string]$Time = "07:00",
-    [string]$Vault = "",
     [string]$TaskName = "sotawhat-daily",
     [switch]$Listener
 )
@@ -17,7 +15,6 @@ if (-not (Test-Path $exe)) { throw "Not found: $exe - install first: uv pip inst
 if (-not (Test-Path (Join-Path $repo ".env"))) { Write-Warning "No .env in $repo - copy .env.example to .env and fill it in." }
 
 $arguments = "run daily"
-if ($Vault) { $arguments += " --vault `"$Vault`"" }
 
 # WorkingDirectory = repo root, so the `.env` file, `config\` and `data\insight.db` are found.
 $action = New-ScheduledTaskAction -Execute $exe -Argument $arguments -WorkingDirectory $repo

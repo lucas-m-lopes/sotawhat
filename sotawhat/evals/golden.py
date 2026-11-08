@@ -1,54 +1,25 @@
 # sotawhat/evals/golden.py
-"""Triage golden set (SDD §6.7, §12). `draft` samples items to label (SQLite store and, optionally, the
-old Obsidian vault) into a Markdown file you edit by hand; `import` reads your labels back into the
-JSONL that `sotawhat eval models` uses. Labels: incluir (main) · radar · excluir (reject)."""
+"""Triage golden set (SDD §6.7, §12). `draft` samples items from the SQLite store into a Markdown file
+you edit by hand; `import` reads your labels back into the JSONL that `sotawhat eval models` uses.
+Labels: incluir (main) · radar · excluir (reject). The v1 set also holds notes sampled from the old
+sotawhat 2.0 notes (origin "vault"); they stay as evaluation data only (SDD §9)."""
 import json
 import random
 import re
 from pathlib import Path
 
-from sotawhat.items import Item, to_item
-from sotawhat.models import Result
+from sotawhat.items import Item
 
 LABELS = {"incluir": "main", "radar": "radar", "excluir": "reject"}
 FOLDER = Path("tests/evals/triage")
-_FRONT = re.compile(r"\A---\n(.*?)\n---\n", re.S)
 _ID = re.compile(r"^`id: (.+?)`\s*$", re.M)
 _LABEL = re.compile(r"^r[óo]tulo:[ \t]*(.*)$", re.M | re.I)
-_PMID_URL = re.compile(r"pubmed\.ncbi\.nlm\.nih\.gov/(\d+)")
-_HF_URL = re.compile(r"huggingface\.co/papers/(\d{4}\.\d{4,5})")
 
 
 def _entry(item, origin) -> dict:
     return {"id": item.id, "profile": item.profile or "", "source": item.source, "title": item.title,
             "url": item.url, "published_at": item.published_at, "authors": item.authors, "text": item.text,
             "origin": origin, "label": None, "note": ""}
-
-
-def read_vault(vault) -> list:
-    """Notes written by sotawhat 2.0: <vault>/<profile>/<source>/<note>.md, JSON-valued frontmatter."""
-    out = []
-    for path in sorted(Path(vault).glob("*/*/*.md")):
-        text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
-        match = _FRONT.match(text)
-        if not match:
-            continue
-        meta = {}
-        for line in match.group(1).splitlines():
-            key, _, value = line.partition(": ")
-            try:
-                meta[key] = json.loads(value)
-            except ValueError:
-                meta[key] = value.strip()
-        body = re.sub(r"^\s*# .*\n", "", text[match.end():], count=1)
-        body = re.sub(r"\*\*Conceitos:\*\*.*", "", body)
-        body = re.sub(r"\[Source\]\(.*\)\s*$", "", body.strip()).strip()
-        url, source = meta.get("url", ""), meta.get("source", "")
-        rid = (_PMID_URL.search(url) or _HF_URL.search(url))
-        result = Result(id=rid.group(1) if rid else "", title=meta.get("title", ""), authors=meta.get("authors", []),
-                        date=meta.get("date", ""), url=url, abstract=body, source=source)
-        out.append(_entry(to_item(result, profile=path.parts[-3]), "vault"))
-    return out
 
 
 def from_store(store) -> list:

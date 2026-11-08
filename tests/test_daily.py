@@ -92,14 +92,6 @@ def test_unexpected_error_closes_run_as_failed(tmp_path, monkeypatch):
         assert "❌" in render_summary(report)
 
 
-def test_vault_export_keeps_obsidian_notes_during_transition(tmp_path):
-    vault = tmp_path / "vault"
-    with Store(tmp_path / "insight.db") as st:
-        run_daily(st, {"geral": [FakeSource("arxiv", [_r("2511.00001", "arxiv")])]}, vault=vault, today=DAY)
-    notes = list((vault / "geral").rglob("*.md"))
-    assert len(notes) == 1
-
-
 def test_triage_stage_runs_after_collection_and_is_recorded(tmp_path):
     import json
 

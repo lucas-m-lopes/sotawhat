@@ -113,7 +113,7 @@ def check_golden(path) -> Check:
         return Check("golden set", "ok", f"{labeled} itens rotulados")
     if labeled:
         return Check("golden set", "warn", f"{labeled} itens rotulados (meta ≥ 50 para o bake-off)")
-    return Check("golden set", "warn", "nenhum item rotulado: `sotawhat eval golden draft --vault <vault>`")
+    return Check("golden set", "warn", "nenhum item rotulado: `sotawhat eval golden draft`")
 
 
 def check_settings(settings) -> list:

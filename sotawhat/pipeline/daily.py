@@ -8,9 +8,9 @@ import sys
 from dataclasses import dataclass, field
 from datetime import date
 
-from sotawhat.digest import collect, filter_relevant
 from sotawhat.items import to_item
 from sotawhat.notify.telegram import esc, esc_attr
+from sotawhat.pipeline.collect import collect, filter_relevant
 from sotawhat.profiles import PROFILES
 
 ALERT_AFTER = 3   # consecutive failures before a source is flagged as an alert
@@ -51,7 +51,7 @@ def _record_health(store, sources, errors, report):
                 store.record_source_ok(key)
 
 
-def run_daily(store, sources_by_profile, limit=10, vault=None, today=None, triage=None) -> DailyReport:
+def run_daily(store, sources_by_profile, limit=10, today=None, triage=None) -> DailyReport:
     """triage: optional callable (store, run_id) -> TriageStats, run after collection."""
     day = (today or date.today()).isoformat()
     report = DailyReport(run_id=store.start_run("daily"), day=day)
@@ -69,10 +69,6 @@ def run_daily(store, sources_by_profile, limit=10, vault=None, today=None, triag
             report.new_items += [it for it in items if it.id in new_ids]
             _record_health(store, sources, errors, report)
             log.info("%s: %d collected, %d new", name, len(items), len(new_ids))
-            if vault:
-                from sotawhat.obsidian import write_notes
-                write_notes(results, vault=vault, profile_name=name, tags=profile["tags"],
-                            keywords=profile["keywords"], added=day)
         if triage is not None:
             report.triage = triage(store, report.run_id)
     except Exception as exc:  # noqa: BLE001 - the run must always be closed and reported
@@ -177,7 +173,7 @@ def main_daily(ns) -> int:
                 gates = {}
             return run_triage(st, run_id, gateway, config.rubric, config.mutes, embedder, gates)
 
-        report = run_daily(store, sources, limit=ns.limit, vault=ns.vault, triage=triage)
+        report = run_daily(store, sources, limit=ns.limit, triage=triage)
         digest = build_digest(store, report, config.rubric)
         md_path, _ = write_files(digest, settings.sotawhat_data_dir / "digests")
         print(render_markdown(digest) if report.triage and report.triage.llm else to_plain(render_summary(report)))

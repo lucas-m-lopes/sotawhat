@@ -6,54 +6,14 @@ import yaml
 from sotawhat.configfiles import Rubric, load_llm_config
 from sotawhat.evals.bakeoff import (Outcome, apply_winner, evaluate_model, metrics, pick_winner, ranking,
                                     render_report)
-from sotawhat.evals.golden import as_item, import_labels, load_golden, read_vault, sample, write_draft
+from sotawhat.evals.golden import as_item, import_labels, load_golden, sample, write_draft
 from sotawhat.llm.gateway import LLMFailure, StructuredResult
 from sotawhat.llm.schemas import TriageOutput
-
-NOTE = """---
-title: {title}
-authors: ["Ana Lima", "Bo Chen"]
-date: "2026-06-03"
-source: {source}
-url: "{url}"
-keywords: ["radiology"]
-tags: ["medical-ai", "source/{source}"]
-added: "2026-06-14"
----
-
-# {raw_title}
-
-{body}
-
-**Conceitos:** [[radiology]]
-
-[Source]({raw_url})
-"""
-
-
-def _note(folder, name, title, source, url, body):
-    folder.mkdir(parents=True, exist_ok=True)
-    (folder / f"{name}.md").write_text(NOTE.format(title=json.dumps(title), raw_title=title, source=source,
-                                                   url=url, raw_url=url, body=body), encoding="utf-8")
 
 
 def _entry(n, profile, source, label=None, text="t" * 400):
     return {"id": f"{source}:{n}", "profile": profile, "source": source, "title": f"T{n}", "url": "",
             "published_at": "", "authors": [], "text": text, "origin": "store", "label": label, "note": ""}
-
-
-def test_read_vault_builds_canonical_items(tmp_path):
-    _note(tmp_path / "medico" / "arxiv", "a", "BreastGPT: a multimodal LLM", "arxiv",
-          "https://arxiv.org/abs/2606.04911v1", "Breast cancer abstract " * 20)
-    _note(tmp_path / "medico" / "pubmed", "b", "Sepsis model", "pubmed",
-          "https://pubmed.ncbi.nlm.nih.gov/41234567/", "Sepsis abstract " * 20)
-    _note(tmp_path / "geral" / "hf_papers", "c", "Agents paper", "hf_papers",
-          "https://huggingface.co/papers/2606.00001", "Agents abstract " * 20)
-    by_id = {e["id"]: e for e in read_vault(tmp_path)}
-    assert set(by_id) == {"arxiv:2606.04911", "pmid:41234567", "arxiv:2606.00001"}
-    e = by_id["arxiv:2606.04911"]
-    assert e["profile"] == "medico" and e["authors"] == ["Ana Lima", "Bo Chen"] and e["origin"] == "vault"
-    assert e["text"].startswith("Breast cancer abstract") and "Conceitos" not in e["text"] and "Source" not in e["text"]
 
 
 def test_sample_is_stratified_deduplicated_and_reproducible():

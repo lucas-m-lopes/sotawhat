@@ -2,7 +2,7 @@
 import argparse
 import sys
 
-_SUBCOMMANDS = {"search", "digest", "backfill-links", "run", "doctor", "feedback", "eval"}
+_SUBCOMMANDS = {"search", "run", "doctor", "feedback", "eval"}
 
 def parse_args(argv):
     # Backward compat: `sotawhat <keyword...> [N]` with no subcommand -> search.
@@ -17,19 +17,9 @@ def parse_args(argv):
     p_search = sub.add_parser("search")
     p_search.add_argument("words", nargs="+")
 
-    p_digest = sub.add_parser("digest")
-    p_digest.add_argument("--profile", required=True)
-    p_digest.add_argument("--vault", required=True)
-    p_digest.add_argument("--limit", type=int, default=10)
-
-    p_backfill = sub.add_parser("backfill-links")
-    p_backfill.add_argument("--vault", required=True)
-    p_backfill.add_argument("--profile", default="all")
-
     p_run = sub.add_parser("run")
     p_run.add_argument("kind", choices=["daily"])
     p_run.add_argument("--limit", type=int, default=10)
-    p_run.add_argument("--vault", default=None, help="also write Obsidian notes (transition, SDD §9)")
     p_run.add_argument("--no-notify", action="store_true")
     p_run.add_argument("--no-llm", action="store_true", help="collect and run stage A only (no LLM calls)")
 
@@ -44,7 +34,6 @@ def parse_args(argv):
     p_golden = eval_sub.add_parser("golden")
     p_golden.add_argument("action", choices=["draft", "import"])
     p_golden.add_argument("--n", type=int, default=60)
-    p_golden.add_argument("--vault", default=None, help="also sample notes from the old Obsidian vault")
     p_golden.add_argument("--dir", default="tests/evals/triage")
     p_golden.add_argument("--name", default="golden_v1")
     p_golden.add_argument("--seed", type=int, default=13)
@@ -91,12 +80,6 @@ def main(argv=None):
     ns = parse_args(argv if argv is not None else sys.argv[1:])
     if ns.command == "search":
         _run_search(ns)
-    elif ns.command == "digest":
-        from sotawhat.digest import run_digest  # added in Phase 3
-        run_digest(ns)
-    elif ns.command == "backfill-links":
-        from sotawhat.backfill import run_backfill
-        run_backfill(ns)
     elif ns.command == "run":
         from sotawhat.pipeline.daily import main_daily
         raise SystemExit(main_daily(ns))

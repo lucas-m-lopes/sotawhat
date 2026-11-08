@@ -6,7 +6,7 @@ from pathlib import Path
 
 def main_golden(ns) -> int:
     from sotawhat.config import load_settings
-    from sotawhat.evals.golden import from_store, import_labels, read_vault, sample, write_draft
+    from sotawhat.evals.golden import from_store, import_labels, sample, write_draft
     from sotawhat.store.db import Store
 
     folder = Path(ns.dir)
@@ -22,8 +22,6 @@ def main_golden(ns) -> int:
     settings = load_settings()
     with Store(settings.db_path) as store:
         candidates = from_store(store)
-    if ns.vault:
-        candidates += read_vault(ns.vault)
     entries = sample(candidates, ns.n, seed=ns.seed)
     md, _ = write_draft(entries, folder, ns.name)
     print(f"{len(entries)} itens em {md}: rotule e rode `sotawhat eval golden import`")

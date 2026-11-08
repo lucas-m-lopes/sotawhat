@@ -1,6 +1,6 @@
-# tests/test_digest.py
+# tests/test_collect.py
 from sotawhat.models import Result
-from sotawhat.digest import collect
+from sotawhat.pipeline.collect import collect
 
 class FakeSource:
     def __init__(self, name, items):
@@ -27,7 +27,7 @@ def test_collect_records_concepts_per_id():
     assert by_id["2"].extra["concepts"] == ["k1", "k2"]
 
 def test_filter_relevant_keeps_ai_drops_others():
-    from sotawhat.digest import filter_relevant
+    from sotawhat.pipeline.collect import filter_relevant
     keep = Result(id="1", title="Deep learning for sepsis", authors=[],
                   date="", url="", abstract="x", source="pubmed")
     drop = Result(id="2", title="Aspirin trial", authors=[],

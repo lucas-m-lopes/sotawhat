@@ -96,6 +96,18 @@ class Extraction(BaseModel):
     data_modalities: list[Literal["imaging", "ehr", "text", "audio", "signals", "genomics", "video", "other"]]
 
 
+class NewsletterStory(BaseModel):
+    title: str = Field(description="short headline in the newsletter's language")
+    summary: str = Field(description="one to three sentences in the newsletter's own words")
+    link: int = Field(description="number n of the link [n] that points to the story's source; 0 when none")
+    category: Literal["news", "paper", "model", "tool", "repo", "opinion", "event", "job", "sponsor", "other"]
+
+
+class NewsletterStories(BaseModel):
+    """Segmentation of one newsletter e-mail into stories (task `segment`, P2)."""
+    stories: list[NewsletterStory] = Field(description="at most 15, in the order they appear")
+
+
 class SameEntity(BaseModel):
     """Entity-resolution judge (task `resolve`)."""
     same: bool

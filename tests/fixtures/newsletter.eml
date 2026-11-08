@@ -1,0 +1,27 @@
+From: AI Weekly <news@aiweekly.example>
+To: reader@example.com
+Subject: AI Weekly #42: open medical models and agent evals
+Date: Sat, 07 Nov 2026 13:00:00 +0000
+Message-ID: <abc123@aiweekly.example>
+List-Unsubscribe: <https://aiweekly.example/unsubscribe?u=1>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="BOUNDARY"
+
+--BOUNDARY
+Content-Type: text/plain; charset="utf-8"
+
+Plain version.
+
+--BOUNDARY
+Content-Type: text/html; charset="utf-8"
+
+<html><head><style>p{color:red}</style></head><body>
+<h2>Top stories</h2>
+<p><b>MedGemma 2 is out.</b> Google released <a href="https://click.aiweekly.example/track?id=1">MedGemma 2</a>, an open 27B model for radiology reports.</p>
+<p><b>Agent evals.</b> A new benchmark for tool-using agents: <a href="https://link.mail.beehiiv.com/ss/c/xyz">read the paper</a>.</p>
+<div><b>SPONSOR</b> Try <a href="https://sponsor.example/?utm_source=aiweekly">CloudGPU</a> today.</div>
+<p><a href="https://aiweekly.example/unsubscribe?u=1">Unsubscribe</a> | <a href="https://aiweekly.example/preferences">Manage preferences</a></p>
+<script>track()</script>
+</body></html>
+
+--BOUNDARY--

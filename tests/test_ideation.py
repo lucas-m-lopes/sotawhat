@@ -168,3 +168,29 @@ def test_prior_art_layers_fail_alone():
     assert PriorArt(exa_key="k", client=client).search("x")["exa"][0]["title"] == "ScribeCo"
     text = render_neighbors(found)
     assert "[openalex] Ambient scribes in the ED (2026)" in text and "[semantic_scholar] indisponível" in text
+
+
+def test_recent_pairs_lose_priority_and_earlier_ideas_are_not_repeated(g):  # noqa: F811
+    from sotawhat.ideation.candidates import recent_pairs
+
+    st, ids = g
+    config = IdeationConfig(candidates=2, control_share=0.0)
+    first = sample_candidates(st, config, now=NOW)
+    run = st.start_run("weekly")
+    for c in first:
+        st.add_idea(run, f"Usada {c['technique']}", card={"draft": draft("x")},
+                    candidate={"technique_id": c["technique_id"], "problem_id": c["problem_id"]})
+    assert recent_pairs(st, NOW, 28) == {(c["technique_id"], c["problem_id"]) for c in first}
+    again = sample_candidates(st, config, now=NOW)
+    assert {(c["technique_id"], c["problem_id"]) for c in again}.isdisjoint(recent_pairs(st, NOW, 28))
+    assert sample_candidates(st, IdeationConfig(candidates=2, control_share=0.0, recent_pair_days=0), now=NOW) == first
+
+    text = "Escriba de alta no PS. Escriba de alta no PS: transcreve e estrutura a consulta."
+    old = st.add_idea(run, "Escriba de alta no PS", card={"draft": draft("Escriba de alta no PS")},
+                      embedding=HashEmbedder().embed([text])[0])
+    st.update_idea(old, selected=True)
+    report = engine.IdeationReport(run_id=run + 1)
+    drafts = [{"candidate": first[0], "lens": "jtbd", "persona": "p", "model": "x/y",
+               "idea": IdeaDraft.model_validate(draft("Escriba de alta no PS"))}]
+    assert engine.dedup_and_store(st, HashEmbedder(), run + 1, drafts, IdeationConfig(), report) == []
+    assert report.discarded[0]["reason"].startswith(f"já proposta antes: ideia {old}")

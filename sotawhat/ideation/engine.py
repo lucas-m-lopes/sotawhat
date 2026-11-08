@@ -176,10 +176,22 @@ def _vectors(embedder, texts):
     return list(matrix / norms)
 
 
+def _closest(vector, others, threshold):
+    for other_id, title, other in others:
+        if other is not None and other.shape == vector.shape and float(vector @ other) >= threshold:
+            return other_id, title
+    return None
+
+
 def dedup_and_store(store, embedder, run_id, drafts, config, report) -> list:
+    """Discards a draft that repeats another draft of the batch, an idea the reader rejected, or an idea
+    already delivered or decided in an earlier run (finalist, explorar, testar, engavetada, construída)."""
     texts = [f"{d['idea'].titulo}. {d['idea'].mecanismo}" for d in drafts]
     vectors = _vectors(embedder, texts)
     rejected = [(r["id"], r["title"], store.idea_embedding(r["id"])) for r in store.list_ideas(status="rejeitada", limit=500)]
+    earlier = [(r["id"], r["title"], store.idea_embedding(r["id"])) for r in store.conn.execute(
+        "SELECT id, title FROM ideas WHERE COALESCE(run_id, -1) != ? AND (selected = 1 OR status IN "
+        "('curtida', 'testar', 'engavetada', 'construida')) ORDER BY id DESC LIMIT 500", (run_id,))]
     kept_vectors, kept = [], []
     for draft, vector in zip(drafts, vectors):
         idea, reason = draft["idea"], None
@@ -188,11 +200,10 @@ def dedup_and_store(store, embedder, run_id, drafts, config, report) -> list:
                 if float(vector @ other_vector) >= config.dedup_cosine:
                     reason = f"duplicada da ideia {other_id}"
                     break
-            if reason is None:
-                for rid, title, rvec in rejected:
-                    if rvec is not None and rvec.shape == vector.shape and float(vector @ rvec) >= config.rejected_cosine:
-                        reason = f"parecida com a rejeitada {rid} ({title[:60]})"
-                        break
+            if reason is None and (hit := _closest(vector, rejected, config.rejected_cosine)):
+                reason = f"parecida com a rejeitada {hit[0]} ({hit[1][:60]})"
+            if reason is None and (hit := _closest(vector, earlier, config.dedup_cosine)):
+                reason = f"já proposta antes: ideia {hit[0]} ({hit[1][:60]})"
         idea_id = store.add_idea(run_id, idea.titulo, card={"draft": idea.model_dump(), "model": draft["model"]},
                                  lens=draft["lens"], persona=draft["persona"], niche=niche_of(store, draft),
                                  candidate={k: v for k, v in draft["candidate"].items() if k != "context"}

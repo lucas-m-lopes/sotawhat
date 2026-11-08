@@ -30,6 +30,7 @@ class IdeationConfig:
     quotas: dict = field(default_factory=lambda: {"recent_technique": 0.4, "community_bridge": 0.3, "serendipity": 0.3})
     control_share: float = 0.1            # candidates with no graph context (SDD §8.1)
     context_triples: int = 30
+    recent_pair_days: int = 28            # pairs behind ideas of the last 4 weeks lose their priority
     dedup_cosine: float = 0.80
     rejected_cosine: float = 0.85
     weights: dict = field(default_factory=lambda: dict(WEIGHTS))

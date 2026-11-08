@@ -366,14 +366,16 @@ def send_weekly(notifier, store, payload, run_id, pause=0.4, sleep=time.sleep) -
 
 # --- runs ---------------------------------------------------------------------------------
 def run_weekly(store, gateway, embedder, ideation_config, searcher=None, mirror=None, now=None, theme=None,
-               mode="economico", kind="weekly", seed=7, workers=4) -> WeeklyReport:
+               mode="economico", kind="weekly", seed=None, workers=4) -> WeeklyReport:
     """kind "weekly": the whole Sunday job; kind "ideate": the idea engine only (no mirror sync, no labels and
-    no meta-review: the stored rules are used)."""
+    no meta-review: the stored rules are used). The seed defaults to the run id, so lenses, personas and the
+    serendipity pairs change from one run to the next."""
     from sotawhat.ideation.candidates import sample_candidates
     from sotawhat.ideation.engine import run_ideation
 
     now = now or datetime.now(timezone.utc)
     report = WeeklyReport(run_id=store.start_run(kind), day=now.date().isoformat(), kind=kind, theme=theme)
+    seed = report.run_id if seed is None else seed
     if gateway is not None:
         gateway.run_id = report.run_id
     try:

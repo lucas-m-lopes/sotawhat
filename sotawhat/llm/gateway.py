@@ -2,6 +2,7 @@
 """Task-level LLM gateway (SDD §6.6): strict JSON output, repair + fallback, budget, cost ledger."""
 import json
 import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from pydantic import ValidationError
@@ -18,6 +19,17 @@ class BudgetExceeded(Exception):
 
 class LLMFailure(Exception):
     pass
+
+
+@dataclass
+class StructuredResult:
+    output: object
+    model: str               # effective model reported by OpenRouter
+    provider: str | None
+    cost_usd: float          # every call made for this result, invalid attempts included
+    latency_ms: int          # the successful call
+    attempts: int            # calls made, including invalid JSON and errors
+    first_try_valid: bool    # valid on the very first call
 
 
 def _strictify(node):
@@ -62,11 +74,12 @@ def _period_starts(now):
 
 class LLMGateway:
     def __init__(self, client, store=None, settings=None, run_id=None, budget_day=None,
-                 budget_month=None, now=lambda: datetime.now(timezone.utc)):
+                 budget_month=None, now=lambda: datetime.now(timezone.utc), tasks=None):
         self.client = client
         self.store = store
         self.settings = settings
         self.run_id = run_id
+        self.tasks = tasks or {}   # config/llm.yaml `tasks`
         self._now = now
         if settings is not None:
             self.privacy = Privacy(zdr=settings.openrouter_zdr, data_collection=settings.openrouter_data_collection,
@@ -101,13 +114,18 @@ class LLMGateway:
         self.store.record_llm_call(**fields)
 
     def structured(self, task, messages, output_model, models=None):
-        """Return a validated `output_model`. Tries each model (with the remaining ones as server-side
-        fallbacks); one repair round per model when the JSON does not validate."""
-        spec = resolve(task, self.settings)
+        """Return a validated `output_model` (see `structured_call`)."""
+        return self.structured_call(task, messages, output_model, models).output
+
+    def structured_call(self, task, messages, output_model, models=None) -> StructuredResult:
+        """Tries each model (with the remaining ones as server-side fallbacks); one repair round per
+        model when the JSON does not validate. Returns the output plus what it took to get it."""
+        spec = resolve(task, self.settings, self.tasks)
         chain = tuple(models) if models else spec.models
         schema = strict_schema(output_model)
         name = re.sub(r"[^a-z0-9_]+", "_", output_model.__name__.lower())
         last_error = None
+        attempts, cost = 0, 0.0
         for i, model in enumerate(chain):
             convo = list(messages)
             for _attempt in range(2):
@@ -115,6 +133,7 @@ class LLMGateway:
                 payload = build_payload(chain[i:], convo, schema=schema, schema_name=name,
                                         reasoning=spec.reasoning, max_tokens=spec.max_tokens,
                                         privacy=self.privacy)
+                attempts += 1
                 try:
                     completion = self.client.chat(payload)
                 except InsufficientCredits as exc:
@@ -124,6 +143,7 @@ class LLMGateway:
                     self._record(task, model, status="error", error=str(exc))
                     last_error = exc
                     break
+                cost += completion.cost_usd
                 try:
                     result = output_model.model_validate_json(extract_json(completion.content))
                 except ValidationError as exc:
@@ -136,5 +156,8 @@ class LLMGateway:
                                                     f"schema: {problems}. Reply again with only valid JSON."}]
                     continue
                 self._record(task, model, completion)
-                return result
+                return StructuredResult(output=result, model=completion.model or model,
+                                        provider=completion.provider, cost_usd=cost,
+                                        latency_ms=completion.latency_ms, attempts=attempts,
+                                        first_try_valid=attempts == 1)
         raise LLMFailure(f"{task}: every model failed; last error: {last_error}")

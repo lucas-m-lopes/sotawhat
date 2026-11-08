@@ -1,0 +1,53 @@
+# config/rubric.yaml — rubrica da triagem (SDD §6.7). Toda chave é opcional; faltando, vale o padrão do código.
+# A = fronteira de IA/ML, B = aplicabilidade médico-hospitalar, C = acionabilidade (notas do LLM, 0–5);
+# D = novidade frente ao que chegou nos últimos novelty_window_days (calculada por embeddings, sem LLM).
+# O digest tem duas seções principais (decisão de 2026-11-08, a partir do golden set):
+version: 1
+
+# 1) IA ∩ Saúde: total = 0,35·A + 0,35·B + 0,20·C + 0,10·D − penalidades ≥ min_total e B ≥ min_b.
+#    Calibração de 2026-11-08 nas notas do bake-off (golden set v1): min_total 3,2 → 2,8 e
+#    frontier_min_total 3,6 → 3,3 (com o DeepSeek, F1 de "incluir" 0,65 → 0,89; o corte antigo descartava
+#    a IA aplicada típica, A3 B3 C1 = 2,8). min_b 2 → 3: no primeiro run real, papers gerais com "ponte
+#    plausível" (B2) ocupavam "IA ∩ Saúde"; agora vão para "Fronteira de IA" (F1 igual no golden).
+#    O golden tem só 3 "excluir" e 6 "radar": recalibrar com os votos (👍/👎) depois de 2–4 semanas.
+weights: {A: 0.35, B: 0.35, C: 0.20, D: 0.10}
+min_total: 2.8
+min_b: 3
+
+# 2) Fronteira de IA: IA forte que não entrou na seção 1, mesmo sem ligação com saúde.
+#    total de fronteira = 0,60·A + 0,25·C + 0,15·D − penalidades ≥ frontier_min_total,
+#    com A ≥ frontier_min_a e substância (0–3, nota do LLM) ≥ frontier_min_substance.
+frontier_weights: {A: 0.60, C: 0.25, D: 0.15}
+frontier_min_a: 4
+frontier_min_substance: 2
+frontier_min_total: 3.3
+
+# Radar: IA sem ligação com saúde que não chegou à seção 2 (A ≥ radar_min_a e B ≤ radar_max_b) → 1 linha.
+# Itens de fronteira além de frontier_limit também descem para o radar.
+radar_min_a: 4
+radar_max_b: 1
+
+# Limites do digest diário (o que passa de main_limit fica só nos arquivos do dia).
+main_limit: 10
+frontier_limit: 5
+radar_limit: 10
+
+# Penalidades: só o fornecedor como fonte (sem terceiro) e fontes fracas/agregadoras.
+vendor_only_penalty: 0.5
+weak_source_penalty: 0.5
+weak_sources: []            # ex.: ["rss:marktechpost"]
+
+# Similaridade máxima (cosseno, EmbeddingGemma-300m) com os itens recentes → D.
+# Abaixo de 0,70: D = 5; acima de 0,94: D = 0. Itens distintos ficam, em média, em 0,66 (medido em 2026-11-07).
+novelty_thresholds: [0.70, 0.76, 0.82, 0.88, 0.94]
+novelty_window_days: 30
+
+# Operação da triagem por LLM.
+max_text_chars: 8000        # ~2.000 tokens do texto de cada item
+max_items_per_run: 300
+backlog_days: 3             # itens não triados (orçamento, falha) ficam para os próximos runs por até N dias
+concurrency: 6
+
+# Classificador por perfil (regressão logística sobre embeddings, treinada com os seus votos).
+classifier_min_ratings: 100 # abaixo disso o LLM vê todos os itens (arranque a frio)
+classifier_top_n: 40        # depois, o LLM vê só os N melhores por perfil e por run

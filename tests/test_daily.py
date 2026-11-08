@@ -98,3 +98,32 @@ def test_vault_export_keeps_obsidian_notes_during_transition(tmp_path):
         run_daily(st, {"geral": [FakeSource("arxiv", [_r("2511.00001", "arxiv")])]}, vault=vault, today=DAY)
     notes = list((vault / "geral").rglob("*.md"))
     assert len(notes) == 1
+
+
+def test_triage_stage_runs_after_collection_and_is_recorded(tmp_path):
+    import json
+
+    from sotawhat.pipeline.triage import TriageStats
+
+    seen = []
+
+    def triage(store, run_id):
+        seen.append((run_id, store.count_items()))
+        return TriageStats(triaged=2, main=1, rejected=1)
+
+    sources = {"geral": [FakeSource("arxiv", [_r("2511.00001", "arxiv"), _r("2511.00002", "arxiv")])]}
+    with Store(tmp_path / "insight.db") as st:
+        report = run_daily(st, sources, today=DAY, triage=triage)
+        assert seen == [(report.run_id, 2)] and report.triage.main == 1
+        stats = json.loads(st.last_run("daily")["stats_json"])
+        assert stats["triage"]["triaged"] == 2
+
+
+def test_triage_crash_fails_the_run_but_keeps_the_items(tmp_path):
+    def triage(store, run_id):
+        raise RuntimeError("embedder exploded")
+
+    sources = {"geral": [FakeSource("arxiv", [_r("2511.00001", "arxiv")])]}
+    with Store(tmp_path / "insight.db") as st:
+        report = run_daily(st, sources, today=DAY, triage=triage)
+        assert not report.ok and "embedder exploded" in report.error and st.count_items() == 1

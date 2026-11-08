@@ -13,6 +13,10 @@ dependencies = [
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
     "truststore>=0.10",
+    "pyyaml>=6.0",
+    "numpy>=2.0",
+    "scikit-learn>=1.5",
+    "fastembed>=0.9",
 ]
 
 [project.optional-dependencies]
@@ -23,3 +27,6 @@ sotawhat = "sotawhat.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["sotawhat*"]
+
+[tool.setuptools.package-data]
+"sotawhat.llm.prompts" = ["*.md"]

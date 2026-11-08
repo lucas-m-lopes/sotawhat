@@ -28,8 +28,14 @@ DEFAULT_TASKS = {
 }
 
 
-def resolve(task, settings=None) -> TaskSpec:
+def resolve(task, settings=None, overrides=None) -> TaskSpec:
+    """Defaults < config/llm.yaml `tasks` (overrides) < SOTAWHAT_MODEL_<TASK> for the primary model."""
     spec = DEFAULT_TASKS[task]
+    custom = (overrides or {}).get(task) or {}
+    if custom:
+        spec = replace(spec, models=tuple(custom.get("models") or spec.models),
+                       reasoning=custom.get("reasoning", spec.reasoning),
+                       max_tokens=custom.get("max_tokens", spec.max_tokens))
     override = settings.model_override(task) if settings is not None else ""
     if override:
         spec = replace(spec, models=(override,) + tuple(m for m in spec.models if m != override))

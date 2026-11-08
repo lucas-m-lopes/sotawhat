@@ -39,9 +39,28 @@ Phase P0 adds:
   Moonshot Kimi) reached through OpenRouter, ZDR endpoints only. See
   `sotawhat/llm/` and SDD §6.6.
 
+Phase P1 adds the triage and the real digest:
+
+- Every new item goes through stage A without LLM: mute filters (`config/mute.yaml`), same-story
+  dedup on near-identical titles, local embeddings (EmbeddingGemma-300m via `fastembed`, CPU,
+  downloaded once to `data/models/`) and a novelty score. Then the LLM rubric
+  (`config/rubric.yaml`, prompt `sotawhat/llm/prompts/triage_v1.md`) scores frontier AI,
+  medical applicability and actionability with strict JSON, inside the daily budget.
+- The digest has two ranked sections, "IA ∩ Saúde" (up to 10) and "Fronteira de IA" (up to 5:
+  strong frontier AI even without a health link), each item with 👍 👎 🧪 buttons, plus a one-line
+  radar. It goes to Telegram and to `data/digests/YYYY-MM-DD.md` and `.html`.
+  Nothing relevant and nothing broken means nothing is sent.
+- With `DIGEST_EMAIL_TO` set, the same digest also goes by e-mail (SMTP; with Gmail it reuses
+  `GMAIL_ADDRESS` and the app password in `GMAIL_APP_PASSWORD`, never the account password).
+- `sotawhat feedback pull|listen` records the votes; after 100 votes a profile gets its own
+  classifier (logistic regression over the embeddings), which then decides what reaches the LLM.
+- `sotawhat eval golden draft|import` builds a golden set that you label by editing a Markdown
+  file, and `sotawhat eval models [--apply]` runs the bake-off of triage models against it
+  and can put the winner first in `config/llm.yaml`.
+
 To set it up, copy `.env.example` to `.env` and fill in at least `OPENROUTER_API_KEY`,
 `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Then schedule the daily run with
-`powershell -ExecutionPolicy Bypass -File scripts\schedule_daily.ps1 [-Vault PATH]`.
+`powershell -ExecutionPolicy Bypass -File scripts\schedule_daily.ps1 [-Vault PATH] [-Listener]`.
 
 ## Install
 

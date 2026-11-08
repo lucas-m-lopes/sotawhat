@@ -1,6 +1,7 @@
 # sotawhat/items.py
 """Normalized `Item` (SDD §6.4) and canonical ids for exact dedup across sources."""
 import hashlib
+import json
 import re
 from dataclasses import dataclass, field
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -98,3 +99,13 @@ def to_item(result, profile: str | None = None) -> Item:
         published_at=result.date or "", text=result.abstract or "",
         doi=ids.get("doi"), arxiv_id=ids.get("arxiv_id"), pmid=ids.get("pmid"),
         concepts=list((result.extra or {}).get("concepts", [])), profile=profile)
+
+
+def from_row(row) -> Item:
+    """An `items` row from the store back into an `Item`."""
+    return Item(
+        id=row["id"], kind=row["kind"], source=row["source"], source_id=row["source_id"] or "",
+        title=row["title"], url=row["canonical_url"] or "", authors=json.loads(row["authors_json"] or "[]"),
+        published_at=row["published_at"] or "", text=row["text"] or "", doi=row["doi"],
+        arxiv_id=row["arxiv_id"], pmid=row["pmid"], concepts=json.loads(row["concepts_json"] or "[]"),
+        profile=row["profile"])

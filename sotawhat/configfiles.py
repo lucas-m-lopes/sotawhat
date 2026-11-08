@@ -181,10 +181,12 @@ class AppConfig:
     rubric: Rubric
     mutes: Mutes
     llm: dict
+    aliases: dict = field(default_factory=dict)   # config/aliases.yaml (P3, entity resolution)
 
 
 def load_config(config_dir) -> AppConfig:
     config_dir = Path(config_dir)
     return AppConfig(rubric=load_rubric(config_dir / "rubric.yaml"),
                      mutes=load_mutes(config_dir / "mute.yaml"),
-                     llm=load_llm_config(config_dir / "llm.yaml"))
+                     llm=load_llm_config(config_dir / "llm.yaml"),
+                     aliases=load_aliases(config_dir / "aliases.yaml"))

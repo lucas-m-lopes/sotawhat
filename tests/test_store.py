@@ -17,7 +17,7 @@ def test_schema_created(tmp_path):
         names = {r[0] for r in st.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert {"items", "runs", "source_state", "llm_calls", "meta"} <= names
         version = st.conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-        assert version == "2"
+        assert version == "3"
 
 
 def test_upsert_dedupes_and_merges_concepts(tmp_path):

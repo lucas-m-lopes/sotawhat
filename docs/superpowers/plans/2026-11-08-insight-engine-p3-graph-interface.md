@@ -389,3 +389,69 @@
 7. Rodar `sotawhat doctor`.
 8. **Perguntar ao usuário** antes de registrar a tarefa `sotawhat-web` (logon) e antes do merge e do push.
 9. Escrever o adendo de execução neste plano.
+
+---
+
+## Adendo: execução (2026-11-08)
+
+O usuário escolheu "Grafo + interface" com a pergunta "Qual fase eu planejo e implemento agora?". Por isso, o plano e a implementação saíram na mesma sessão, na branch `feature/insight-engine-p3`, com um commit por tarefa. Em todas as tarefas os testes novos falharam antes da implementação e a suíte inteira passou depois:
+
+| Tarefa | Commit | Suíte |
+|---|---|---|
+| 0 · SDD v1.4 e plano | `ac3effe` | 178 |
+| 1 · Obsidian fora do código | `4ef631a` | 170 (−17 do Obsidian, +9) |
+| 2 · Schema 3 | `62a6340` | 177 |
+| 3 · Extração | `ec92bbd` | 183 |
+| 4 · Resolução de entidades | `5738118` | 195 |
+| 5 · Consultas do grafo | `eba598b` | 201 |
+| 6 · API web | `1a7679b` | 205 |
+| 7 · Interface | `cc43a07` | 206 |
+| 8 · Espelho no Neo4j | `8b1bee6` | 211 |
+| 9 · Servidor MCP | `4edc0bc` | 215 |
+| 10 · Grafo no run diário | `fa51c5a` | 221 |
+| 11 · `doctor` | `bcb4232` | 225 |
+| 12 · Documentação e agendamento | `27a7c5e` | 225 |
+| 13 · Prompt de extração ajustado nos 3 primeiros itens reais | `b2ccf3a` | 225 |
+| 13 · Interface ajustada com o grafo real | `8bd63f5` | 225 |
+| 13 · Juiz sem a regra de contenção para técnicas e problemas | `f9258ef` | 226 |
+
+### Mudanças além do plano
+
+- **Interface (Tarefa 7).** Um teste de fumaça no Chrome, sobre um grafo sintético, achou quatro defeitos antes do commit:
+  - o CSS de `.chip` e `.overlay` anulava o atributo `hidden`, e o overlay vazio cobria o grafo e bloqueava os cliques;
+  - o painel recebia listas e `null` como texto;
+  - as partes da linha de metadados ficavam grudadas;
+  - o destaque do mouse ficava preso quando o ponteiro saía do canvas.
+
+  Também entraram duas melhorias: a separação entre os vizinhos que são entidades e as categorias frequentes, e a remoção de números repetidos no painel da entidade.
+- **Prompt de extração (Tarefa 13).** Nos 3 primeiros itens reais, um problema veio com o enquadramento do próprio estudo (mais de 80 caracteres) e foi descartado junto com suas relações, e a System Usability Scale veio como regulação. O `extract_v1` foi corrigido no lugar, antes de qualquer uso em produção: problemas com no máximo seis palavras, gerais o bastante para se repetir, e escalas fora das regulações. As linhas de grafo desse teste (3 itens) foram apagadas e o backfill rodou do zero.
+
+### Tarefa 13: resultados
+
+1. **`NEO4J_PASSWORD`**: gerada no `.env` (32 caracteres hexadecimais), sem ser impressa.
+2. **`sotawhat graph up`**: 62 s, contando o download da imagem `neo4j:2026.10.1-community`, a subida do contêiner e a espera pelo Bolt. Resultado: contêiner `sotawhat-neo4j` *healthy*, portas só em 127.0.0.1 e volume `sotawhat_neo4j_data`.
+3. **Extração dos itens já aprovados** (`sotawhat graph extract`):
+   - **Teste com 3 itens:** 42 s e US$ 0,003. Levou ao ajuste do prompt descrito acima; as linhas desse teste foram apagadas.
+   - **Backfill:** 64 de 64 itens sem erro, em 3 min 18 s e US$ 0,035. A extração custou US$ 0,0005 por item (raciocínio alto, cerca de 12 s por chamada, 4 em paralelo). As 48 chamadas do juiz somaram US$ 0,0017.
+   - **Grafo resultante:**
+     - 388 entidades: 185 técnicas, 89 problemas, 55 modelos, 36 datasets, 12 organizações, 9 produtos e 2 regulações;
+     - 51 nós de categoria: 20 domínios, 13 tipos de problema e 18 famílias de técnica;
+     - 840 menções e 665 relações (317 explícitas e 348 `in_category`); 43 nomes ou relações descartados.
+   - **Mais citadas:** large language model (11 itens), electronic health record (3) e reinforcement learning (3).
+   - **Juiz:** chegou ao teto de 40 chamadas e não fundiu nada; daí o commit `f9258ef`.
+4. **Espelho:** sincronizado no fim da mesma etapa. O Neo4j ficou com 503 nós e 1.478 relações (840 `MENTIONS` e 638 tipadas), e `graph status` não mostra nada pendente.
+5. **Interface** (`sotawhat serve`, http://127.0.0.1:8765), conferida no Chrome com o grafo real:
+   - grafo, filtros, painel da entidade ("large language model": 11 itens, alias "LLM", relações e categorias), busca e votos;
+   - nenhum erro no console;
+   - os ajustes de rótulos, de layout e do cache vieram dessa conferência (`8bd63f5`).
+6. **MCP por stdio**, com o cliente do SDK, os dados reais e o `.env` real:
+   - as 6 ferramentas aparecem;
+   - `graph_stats` e `search` respondem;
+   - `cypher` lista os modelos mais citados direto do Neo4j;
+   - um `DETACH DELETE` é recusado.
+7. **`doctor`:** tudo OK, inclusive as verificações novas: "grafo: 388 entidades · 317 relações · 64 itens extraídos", "espelho Neo4j: 503 nós · 1478 relações" e "interface: no ar".
+8. **Custo:** US$ 0,16 de LLM no mês até aqui (limite da chave: US$ 5).
+
+**Pendências que dependem do usuário:**
+- registrar `sotawhat-web` (interface ao fazer logon) com `scripts\schedule_daily.ps1 -Web`;
+- merge da branch no `master` e push.

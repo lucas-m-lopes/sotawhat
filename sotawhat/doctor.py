@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from sotawhat.llm.tasks import resolve
 
-TASKS = ("triage", "segment", "vision", "extract", "synth", "resolve", "ideate", "critique", "judge")
+TASKS = ("triage", "segment", "vision", "extract", "synth", "resolve", "ideate", "critique", "judge", "accounts")
 _BAD_QUANT = {"fp4", "mxfp4", "nvfp4", "int4", "fp6"}
 
 

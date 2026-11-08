@@ -752,6 +752,7 @@ Todos os custos com os modelos chineses via OpenRouter, endpoints ZDR e tokens d
 - **Como ficou na P4 (medido em 2026-11-08).** O modo econômico implementado é mais enxuto que o acima, porque o limite da chave do OpenRouter (US$ 5) não renova.
   - **Configuração:** 12 candidatos × 3 lentes (em rotação pelas 6), mais a contrária em 25% do lote; dedup com um juiz por par técnica × problema; crítica, prior art e 2 juízes nos 10 melhores; 6 finalistas.
   - **Primeiro run real** (`ideate --n 4`): 13 rascunhos e 34 chamadas, US$ 0,038, 12 min. O MiMo-V2.6-Pro custa por chamada o dobro do DeepSeek V4.1 Flash, e o GLM-5.3-Flash é o mais barato.
+  - **Segundo run real**, já com o dedup por par e os gates por concordância: 13 rascunhos, 12 mantidos, 6 criticados e 4 finalistas, US$ 0,062, 21 min.
   - **Projeção do `run weekly`:** ≈ US$ 0,13 por semana (≈ US$ 0,55/mês) e ≈ 30 min.
 - **Modo completo:** ~60 candidatos × 8 lentes em rotação de 3–4 famílias, dossiês e críticas em ~40 sobreviventes, prior art e torneio entre ~20 finalistas com 3 juízes (Kimi K3.1 Pro, GLM-5.3, DeepSeek V4.1 Flash). Volume: ≈ 5 M de entrada + 2,2 M de saída por semana → **≈ US$ 4–7/semana (≈ US$ 18–31/mês)**, conforme o Kimi entre ou não como juiz. Antes: ≈ US$ 90/mês.
 - **Como decidir:** depois das 4 semanas iniciais, rodar 2 semanas no modo completo e comparar no ledger a taxa de ideias marcadas "vale explorar". Ficar no completo só se a taxa subir de forma clara.

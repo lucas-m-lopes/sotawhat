@@ -70,7 +70,8 @@ def test_host_check_page_and_static_files(client):
     assert c.get("/api/stats", headers={"host": "evil.example"}).status_code == 400
     page = c.get("/")
     assert page.status_code == 200 and "text/html" in page.headers["content-type"] and "sotawhat" in page.text
-    assert c.get("/static/app.js").text == "console.log('ok')"
+    script = c.get("/static/app.js")
+    assert script.text == "console.log('ok')" and script.headers["cache-control"] == "no-cache"
 
 
 def test_packaged_page_loads_only_local_files():

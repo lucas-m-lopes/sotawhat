@@ -233,7 +233,7 @@
     for (const node of data.nodes) {
       const start = seededRandom(hash(node.id));
       graph.addNode(node.id, { label: node.label, kind: node.type, entity: node, x: start(), y: start(),
-                               size: Math.min(4 + 2.6 * Math.sqrt(node.count || 1), 22) });
+                               size: Math.min(5 + 2.4 * Math.sqrt(node.count || 1), 22) });
     }
     for (const edge of data.edges) {
       if (!graph.hasNode(edge.source) || !graph.hasNode(edge.target) || graph.hasEdge(edge.source, edge.target)) continue;
@@ -248,12 +248,13 @@
       } catch (e) { /* no edges at all: no communities */ }
       const settings = lib.layoutForceAtlas2.inferSettings(graph);
       lib.layoutForceAtlas2.assign(graph, { iterations: graph.order > 500 ? 150 : 300,
-        settings: { ...settings, gravity: 1.2, scalingRatio: 8, slowDown: 3, barnesHutOptimize: graph.order > 300 } });
+        settings: { ...settings, gravity: 0.6, scalingRatio: 18, slowDown: 3, barnesHutOptimize: graph.order > 300 } });
     }
     if (state.selected && !graph.hasNode(state.selected)) state.selected = null;
     if (renderer) renderer.kill();
     renderer = new Sigma(graph, $("#graph"), {
-      renderEdgeLabels: false, zIndex: true, labelRenderedSizeThreshold: 7, labelDensity: 0.9, labelGridCellSize: 80,
+      // most entities start with a single mention: label them too and let the label grid avoid overlaps
+      renderEdgeLabels: false, zIndex: true, labelRenderedSizeThreshold: 6, labelDensity: 0.8, labelGridCellSize: 60,
       labelFont: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", labelSize: 13, labelWeight: "500",
       labelColor: { color: css("--fg") }, defaultEdgeColor: css("--edge"), defaultNodeColor: CATEGORY_COLOR,
       minCameraRatio: 0.05, maxCameraRatio: 4, defaultDrawNodeHover: drawHover, nodeReducer, edgeReducer,

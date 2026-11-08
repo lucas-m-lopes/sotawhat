@@ -49,6 +49,14 @@ def create_app(db_path, static_dir=STATIC) -> FastAPI:
     app = FastAPI(title="sotawhat", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(LOCAL_HOSTS))
 
+    @app.middleware("http")
+    async def revalidate_static(request: Request, call_next):
+        # without it the browser keeps an old app.js after an update (heuristic caching); ETag makes it cheap
+        response = await call_next(request)
+        if request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     def store(request: Request) -> Store:
         return request.app.state.store
 

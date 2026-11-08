@@ -85,8 +85,8 @@ def label_communities(gateway, store, groups, run_id, top=8, notes=None) -> list
                 "ORDER BY MAX(i.fetched_at) DESC LIMIT 8", members)]
             user = ("Main entities: " + ", ".join(f"{n} ({t})" for _, n, t in group["top"]) + "\nRecent items:\n"
                     + "\n".join(f"- {t[:160]}" for t in titles))
-            try:
-                res = gateway.structured_call("synth", [{"role": "system", "content": system},
+            try:   # a label and 2–3 sentences: the cheap judge chain (low reasoning) is enough
+                res = gateway.structured_call("judge", [{"role": "system", "content": system},
                                                         {"role": "user", "content": user}], CommunityLabel)
                 label, summary = res.output.rotulo.strip() or label, res.output.resumo.strip()
             except (BudgetExceeded, InsufficientCredits) as exc:

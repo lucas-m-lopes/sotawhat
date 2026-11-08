@@ -141,3 +141,14 @@ def test_notifier_get_chat_payload():
 
     bot = TelegramNotifier("1:x", "42", transport=httpx.MockTransport(handler))
     assert bot.get_chat() == {"type": "private"} and seen == [("getChat", {"chat_id": "42"})]
+
+
+def test_doctor_warns_when_a_dotenv_model_pin_hides_llm_yaml():
+    from sotawhat.doctor import check_model_pins
+    llm = {"tasks": {"triage": {"models": ["minimax/minimax-m3.1-flash", "z-ai/glm-5.3-flash"]}}, "bakeoff": {}}
+    pinned = Settings(_env_file=None, sotawhat_model_triage="deepseek/deepseek-v4.1-flash-1017")
+    check = check_model_pins(pinned, llm)
+    assert check.status == "warn" and "SOTAWHAT_MODEL_TRIAGE" in check.detail and "minimax/minimax-m3.1-flash" in check.detail
+    assert check_model_pins(Settings(_env_file=None), llm).status == "ok"
+    same = Settings(_env_file=None, sotawhat_model_triage="minimax/minimax-m3.1-flash")
+    assert check_model_pins(same, llm).status == "ok"

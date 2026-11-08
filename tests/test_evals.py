@@ -145,7 +145,8 @@ def test_frontier_counts_as_incluir_and_outcomes_keep_the_scores():
                                     first_try_valid=True)
 
     [o] = evaluate_model(Frontier(), [_entry(0, "geral", "arxiv", "main")], Rubric(), "a/model")
-    assert (o.predicted, o.decision) == ("main", "frontier") and (o.scores["A"], o.scores["S"]) == (5, 2)
+    assert (o.predicted, o.decision) == ("main", "frontier") and (o.scores["A"], o.scores["S"], o.scores["V"]) == (
+        5, 2, False)
     assert metrics([o])["f1"] == 1.0
     report = render_report("triage", "2026-11-08", {"a/model": metrics([o])}, {"a/model": [o]},
                            [_entry(0, "geral", "arxiv", "main")], "a/model")

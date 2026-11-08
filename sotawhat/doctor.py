@@ -217,6 +217,19 @@ def check_telegram(notifier) -> Check:
     return Check("bot do Telegram", "ok", f"{bot} → chat {chat.get('type', '?')}{name}")
 
 
+def check_model_pins(settings, llm_config) -> Check:
+    """SOTAWHAT_MODEL_<TASK> in .env beats config/llm.yaml (and so the bake-off winner) for the primary model."""
+    tasks = (llm_config or {}).get("tasks") or {}
+    hidden = []
+    for task in TASKS:
+        pin, chosen = settings.model_override(task), ((tasks.get(task) or {}).get("models") or [None])[0]
+        if pin and chosen and pin != chosen:
+            hidden.append(f"SOTAWHAT_MODEL_{task.upper()}={pin} passa por cima de config/llm.yaml ({chosen})")
+    if hidden:
+        return Check("modelos fixados no .env", "warn", "; ".join(hidden) + ": apague a linha no .env para usar o llm.yaml")
+    return Check("modelos fixados no .env", "ok", "nenhum conflito com config/llm.yaml")
+
+
 def check_email(settings, factory=None) -> Check:
     """Optional e-mail copy: off without DIGEST_EMAIL_TO; otherwise a real SMTP login that sends nothing."""
     from sotawhat.notify.email import EmailError, EmailNotifier
@@ -288,6 +301,7 @@ def main_doctor(ns) -> int:
     config_check, config = check_config(settings.sotawhat_config_dir)
     checks.append(config_check)
     llm_config = config.llm if config else None
+    checks.append(check_model_pins(settings, llm_config))
     client = OpenRouterClient(settings.openrouter_api_key, base_url=settings.openrouter_base_url)
     if settings.openrouter_api_key:
         checks.append(check_openrouter_key(client))

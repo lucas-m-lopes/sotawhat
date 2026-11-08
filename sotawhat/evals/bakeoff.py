@@ -28,7 +28,7 @@ class Outcome:
     why: str = ""
     error: str | None = None
     decision: str | None = None                      # the triage decision itself: main | frontier | radar | reject
-    scores: dict = field(default_factory=dict)       # A, B, C, S (substance), X (hard exclusion): for calibration
+    scores: dict = field(default_factory=dict)       # A, B, C, S (substance), X (exclusion), V (vendor only)
 
 
 def evaluate_model(gateway, golden, rubric, model, concurrency=4) -> list:
@@ -43,7 +43,7 @@ def evaluate_model(gateway, golden, rubric, model, concurrency=4) -> list:
         out = res.output
         decision, _ = decide(out, 5, rubric, item.source)   # golden items are judged as new (D = 5)
         scores = {"A": out.frontier_ai, "B": out.medical_applicability, "C": out.actionability,
-                  "S": out.substance, "X": out.hard_exclusion}
+                  "S": out.substance, "X": out.hard_exclusion, "V": out.vendor_only}
         return Outcome(entry["id"], entry["label"], "main" if decision == "frontier" else decision,
                        res.first_try_valid, res.latency_ms, out.summary_pt, out.why_it_matters_pt,
                        decision=decision, scores=scores)

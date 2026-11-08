@@ -99,3 +99,89 @@ def test_cli_serve():
     assert (ns.command, ns.port, ns.no_browser) == ("serve", None, False)
     ns = parse_args(["serve", "--port", "9000", "--no-browser"])
     assert (ns.port, ns.no_browser) == (9000, True)
+
+
+def _seed_ideas(db):
+    """Two finalists of one weekly run (one already liked) and one discarded draft."""
+    draft = {"titulo": "Escriba de alta no PS", "problema_jtbd": "Altas atrasam 2 h.", "stakeholder_dono": "coordenador do PS",
+             "setor": "A06", "mecanismo": "Resume o atendimento.", "tecnicas": ["ASR"], "capacidade_intermediaria": "resumo",
+             "dado_necessario": ["áudio"], "forma": "produto_b2b", "integracao": "FHIR", "modelo_negocio": "SaaS",
+             "why_now": "ASR em pt-BR.", "riscos": ["alucinação"], "hipotese_nula": "o médico não lê."}
+    with Store(db) as st:
+        run = st.start_run("weekly")
+        candidate = {"technique_id": 1, "technique": "speech recognition", "problem_id": 2, "problem": "discharge delay",
+                     "sampler": "recent_technique", "context": ["2026-11-07 · item: Ambient scribe RCT — ensaio"]}
+        ids = []
+        for title, score, status, selected in (("Escriba de alta no PS", 6.2, "nova", True),
+                                               ("Painel de leitos", 7.0, "curtida", True),
+                                               ("Escriba repetido", 0.0, "descartada", False)):
+            idea = st.add_idea(run, title, card={"draft": draft | {"titulo": title}, "model": "x/y",
+                                                 "dossie": {"piloto_90d": "1 unidade", "classe_samd": "II"}},
+                               lens="jtbd", persona="gestor de leitos", niche="A06|C?|produto_b2b", candidate=candidate,
+                               status=status)
+            st.update_idea(idea, score=score, selected=selected,
+                           scores={"eixos": {"valor": 8}, "gates": [], "confianca": 0.8, "justificativas": ["boa dor"]},
+                           novelty={"camadas": {"openalex": [{"title": "Scribes", "year": 2026, "url": "https://x.org"}],
+                                                "_nao_verificado": ["patentes"]},
+                                    "facetas": {"problema": {"estado": "nao_encontrado", "vizinhos": []}}, "nota": 7.5},
+                           critique={"criticas": [{"papel": "clinico", "veredito": "ajustar", "kill_criteria": ["sem PEP"],
+                                                   "o_que_mudaria": "piloto"}], "nasss_complexos": 2, "pre_mortem": "x"})
+            ids.append(idea)
+        st.update_idea(ids[2], discard_reason="duplicada da ideia 1")
+    return ids
+
+
+def test_ideas_page_api(client):
+    c, _, db = client
+    first, liked, dropped = _seed_ideas(db)
+    data = c.get("/api/ideas").json()
+    assert [i["id"] for i in data["ideas"]] == [liked, first] and data["counts"] == {"nova": 1, "curtida": 1}
+    card = data["ideas"][1]
+    assert card["sector_label"] == "emergência/triagem" and card["kill"] == ["sem PEP"] and card["unverified"] == ["patentes"]
+    assert "context" not in card["candidate"] and "já existe" in data["reasons"]
+    everything = c.get("/api/ideas", params={"finalists": "false"}).json()
+    assert everything["total"] == 3 and everything["counts"]["descartada"] == 1
+    only = c.get("/api/ideas", params={"finalists": "false", "status": "descartada"}).json()["ideas"]
+    assert [i["id"] for i in only] == [dropped] and only[0]["discard_reason"] == "duplicada da ideia 1"
+    assert c.get("/api/ideas", params={"status": "bogus"}).status_code == 422
+    detail = c.get(f"/api/ideas/{first}").json()
+    assert detail["context"] == ["2026-11-07 · item: Ambient scribe RCT — ensaio"] and detail["votes"] == []
+    assert c.get("/api/ideas/9999").status_code == 404
+
+
+def test_idea_votes_from_the_page(client):
+    c, _, db = client
+    first, liked, _ = _seed_ideas(db)
+    res = c.post("/api/ideas/vote", json={"idea_id": first, "value": "down", "note": " já existe "},
+                 headers={"origin": BASE})
+    assert res.status_code == 200 and res.json() == {"idea_id": first, "status": "rejeitada"}
+    assert c.post("/api/ideas/vote", json={"idea_id": liked, "value": "built"}).json()["status"] == "construida"
+    votes = c.get(f"/api/ideas/{first}").json()["votes"]
+    assert [(v["value"], v["note"], v["channel"]) for v in votes] == [("down", "já existe", "web")]
+    for body, headers, code in (
+            ({"idea_id": first, "value": "maybe"}, {}, 422),
+            ({"idea_id": 9999, "value": "up"}, {}, 404),
+            ({"idea_id": first, "value": "up", "note": "x" * 301}, {}, 422),
+            ({"idea_id": first, "value": "up"}, {"origin": "https://evil.example"}, 403),
+            ({"idea_id": first, "value": "up"}, {"origin": "null"}, 403)):
+        assert c.post("/api/ideas/vote", json=body, headers=headers).status_code == code, body
+    assert c.post("/api/ideas/vote", content='{"idea_id": 1, "value": "up"}',
+                  headers={"content-type": "text/plain"}).status_code == 415
+    assert c.post("/api/ideas/vote", content="[1]", headers={"content-type": "application/json"}).status_code == 422
+    assert c.post("/api/ideas/vote", content="{", headers={"content-type": "application/json"}).status_code == 422
+
+
+def test_trends_api(client):
+    c, ids, _ = client
+    data = c.get("/api/trends").json()
+    assert set(data) == {"trends", "communities", "gaps", "weekly", "rules"}
+    assert data["weekly"] is None and data["rules"] == [] and set(data["gaps"]) == {"recent_technique", "community_bridge",
+                                                                                    "serendipity"}
+
+
+def test_page_has_the_three_views():
+    from sotawhat.web.app import STATIC
+
+    page = (STATIC / "index.html").read_text(encoding="utf-8")
+    for anchor in ('href="#grafo"', 'href="#ideias"', 'href="#tendencias"', 'id="view-ideas"', 'id="view-trends"'):
+        assert anchor in page

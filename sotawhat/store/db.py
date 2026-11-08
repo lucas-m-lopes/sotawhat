@@ -11,9 +11,10 @@ from pathlib import Path
 
 import numpy as np
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 APPROVED = ("main", "frontier", "radar")
 ROLE_RANK = {"tag": 0, "mentioned": 1, "used": 2, "main": 3}
+IDEA_STATUS = {"up": "curtida", "down": "rejeitada", "test": "testar", "archive": "engavetada", "built": "construida"}
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
@@ -217,6 +218,52 @@ CREATE TABLE IF NOT EXISTS entity_embeddings(
 );
 """
 
+_SCHEMA_V4 = """
+CREATE TABLE IF NOT EXISTS ideas(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    version INTEGER NOT NULL DEFAULT 1,
+    parent_id INTEGER,
+    run_id INTEGER,
+    created_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'nova',  -- nova | curtida | rejeitada | testar | engavetada | construida | descartada
+    title TEXT NOT NULL,
+    lens TEXT,
+    persona TEXT,
+    niche TEXT,                           -- domain | technique family | form (portfolio cell)
+    candidate_json TEXT,                  -- technique × problem, sampler, compact subgraph
+    card_json TEXT NOT NULL,              -- IdeaDraft + dossier
+    critique_json TEXT,
+    novelty_json TEXT,                    -- prior art per layer + facet matrix
+    scores_json TEXT,                     -- rubric axes (SDD §8.4)
+    score REAL,
+    selected INTEGER NOT NULL DEFAULT 0,  -- 1 = finalist delivered in a weekly report
+    discard_reason TEXT,
+    embedding BLOB
+);
+CREATE INDEX IF NOT EXISTS idx_ideas_run ON ideas(run_id);
+CREATE TABLE IF NOT EXISTS communities(
+    run_id INTEGER NOT NULL,
+    community INTEGER NOT NULL,
+    label TEXT,
+    summary TEXT,
+    size INTEGER,
+    top_entity_id INTEGER,
+    PRIMARY KEY(run_id, community)
+);
+CREATE TABLE IF NOT EXISTS entity_communities(
+    run_id INTEGER NOT NULL,
+    entity_id INTEGER NOT NULL,
+    community INTEGER NOT NULL,
+    PRIMARY KEY(run_id, entity_id)
+);
+CREATE TABLE IF NOT EXISTS weekly_reports(
+    run_id INTEGER PRIMARY KEY,
+    day TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+"""
+
 _LLM_FIELDS = ("run_id", "task", "requested_model", "model", "provider", "generation_id",
                "input_tokens", "output_tokens", "reasoning_tokens", "cached_tokens",
                "cost_usd", "latency_ms", "status", "error")
@@ -248,6 +295,7 @@ class Store:
         self.conn.executescript(_SCHEMA)
         self.conn.executescript(_SCHEMA_V2)
         self.conn.executescript(_SCHEMA_V3)
+        self.conn.executescript(_SCHEMA_V4)
         columns = {row[1] for row in self.conn.execute("PRAGMA table_info(items)")}
         if "cluster_id" not in columns:
             self.conn.execute("ALTER TABLE items ADD COLUMN cluster_id TEXT")
@@ -714,3 +762,105 @@ class Store:
         with self._lock:
             self.conn.execute("UPDATE items SET graph_synced_at = NULL")
             self.conn.commit()
+
+    # --- idea ledger (schema 4) ---------------------------------------------
+    def add_idea(self, run_id, title, card, lens=None, persona=None, niche=None, candidate=None, parent_id=None,
+                 embedding=None, status="nova") -> int:
+        version = 1
+        if parent_id is not None:
+            parent = self.get_idea(parent_id)
+            version = (parent["version"] + 1) if parent is not None else 1
+        blob = np.asarray(embedding, dtype=np.float32).tobytes() if embedding is not None else None
+        with self._lock:
+            cur = self.conn.execute(
+                "INSERT INTO ideas(version, parent_id, run_id, created_at, status, title, lens, persona, niche,"
+                " candidate_json, card_json, embedding) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (version, parent_id, run_id, utcnow(), status, title, lens, persona, niche,
+                 json.dumps(candidate, ensure_ascii=False) if candidate is not None else None,
+                 json.dumps(card, ensure_ascii=False), blob))
+            self.conn.commit()
+            return cur.lastrowid
+
+    def update_idea(self, idea_id, **fields) -> None:
+        columns = {"score": "score", "status": "status", "selected": "selected", "discard_reason": "discard_reason",
+                   "title": "title", "niche": "niche"}
+        json_columns = {"scores": "scores_json", "critique": "critique_json", "novelty": "novelty_json",
+                        "card": "card_json", "candidate": "candidate_json"}
+        unknown = set(fields) - set(columns) - set(json_columns)
+        if unknown:
+            raise ValueError(f"unknown idea fields: {sorted(unknown)}")
+        sets, values = [], []
+        for key, value in fields.items():
+            if key in json_columns:
+                sets.append(f"{json_columns[key]} = ?")
+                values.append(json.dumps(value, ensure_ascii=False))
+            else:
+                sets.append(f"{columns[key]} = ?")
+                values.append(int(value) if key == "selected" else value)
+        with self._lock:
+            self.conn.execute(f"UPDATE ideas SET {', '.join(sets)} WHERE id = ?", values + [idea_id])
+            self.conn.commit()
+
+    def get_idea(self, idea_id):
+        return self.conn.execute("SELECT * FROM ideas WHERE id = ?", (idea_id,)).fetchone()
+
+    def idea_embedding(self, idea_id):
+        row = self.conn.execute("SELECT embedding FROM ideas WHERE id = ?", (idea_id,)).fetchone()
+        return np.frombuffer(row[0], dtype=np.float32) if row and row[0] else None
+
+    def list_ideas(self, status=None, run_id=None, selected=None, limit=200):
+        sql, args = "SELECT * FROM ideas WHERE 1 = 1", []
+        for column, value in (("status", status), ("run_id", run_id)):
+            if value is not None:
+                sql += f" AND {column} = ?"
+                args.append(value)
+        if selected is not None:
+            sql += " AND selected = ?"
+            args.append(int(selected))
+        return self.conn.execute(sql + " ORDER BY COALESCE(score, 0) DESC, id DESC LIMIT ?", args + [limit]).fetchall()
+
+    def vote_idea(self, idea_id, value, channel, note=None) -> str:
+        """Records the vote and moves the idea to the matching status; returns the new status."""
+        status = IDEA_STATUS[value]
+        self.add_feedback("idea", str(idea_id), value, channel, note=note)
+        self.update_idea(idea_id, status=status)
+        return status
+
+    # --- communities and weekly reports (schema 4) --------------------------
+    def save_communities(self, run_id, assignments, labels) -> None:
+        """assignments: {entity_id: community}; labels: {community: (label, summary, size, top_entity_id)}."""
+        with self._lock:
+            self.conn.executemany("INSERT OR REPLACE INTO entity_communities(run_id, entity_id, community) VALUES(?,?,?)",
+                                  [(run_id, e, c) for e, c in assignments.items()])
+            self.conn.executemany("INSERT OR REPLACE INTO communities(run_id, community, label, summary, size, top_entity_id)"
+                                  " VALUES(?,?,?,?,?,?)", [(run_id, c, *values) for c, values in labels.items()])
+            self.conn.commit()
+
+    def latest_communities(self):
+        run = self.conn.execute("SELECT MAX(run_id) FROM communities").fetchone()[0]
+        if run is None:
+            return []
+        return self.conn.execute("SELECT * FROM communities WHERE run_id = ? ORDER BY community", (run,)).fetchall()
+
+    def entity_community(self, entity_id):
+        row = self.conn.execute("SELECT community FROM entity_communities WHERE entity_id = ? ORDER BY run_id DESC"
+                                " LIMIT 1", (entity_id,)).fetchone()
+        return row[0] if row else None
+
+    def save_weekly_report(self, run_id, day, payload) -> None:
+        with self._lock:
+            self.conn.execute("INSERT OR REPLACE INTO weekly_reports(run_id, day, payload_json, created_at) VALUES(?,?,?,?)",
+                              (run_id, day, json.dumps(payload, ensure_ascii=False), utcnow()))
+            self.conn.commit()
+
+    def latest_weekly_report(self, kind=None):
+        """kind: "weekly" or "ideate" (the run that produced the report); None = any."""
+        if kind:
+            row = self.conn.execute("SELECT w.* FROM weekly_reports w JOIN runs r ON r.id = w.run_id WHERE r.kind = ? "
+                                    "ORDER BY w.run_id DESC LIMIT 1", (kind,)).fetchone()
+        else:
+            row = self.conn.execute("SELECT * FROM weekly_reports ORDER BY run_id DESC LIMIT 1").fetchone()
+        if row is None:
+            return None
+        return {"run_id": row["run_id"], "day": row["day"], "payload": json.loads(row["payload_json"]),
+                "created_at": row["created_at"]}

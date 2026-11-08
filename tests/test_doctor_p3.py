@@ -66,3 +66,40 @@ def test_check_web():
 def test_resolve_task_models_are_checked():
     assert "resolve" in TASKS
     assert "z-ai/glm-5.3-flash" in model_requirements()
+
+
+def test_p4_tasks_and_key_reset():
+    from sotawhat.doctor import check_openrouter_key
+    from sotawhat.llm.tasks import MIMO_PRO
+    from tests.test_doctor import FakeClient
+
+    assert {"ideate", "critique", "judge"} <= set(TASKS)
+    assert model_requirements()[MIMO_PRO] >= {"high", "low"}          # ideate (high) and judge (low)
+    total = check_openrouter_key(FakeClient(key={"limit": 5, "limit_remaining": 4.8, "limit_reset": None,
+                                                 "usage_monthly": 0.2}))
+    assert total.status == "warn" and "NÃO renova" in total.detail
+    monthly = check_openrouter_key(FakeClient(key={"limit": 20, "limit_remaining": 18.0, "limit_reset": "monthly",
+                                                   "usage_monthly": 2.0}))
+    assert monthly.status == "ok" and "renova: monthly" in monthly.detail
+
+
+def test_check_last_weekly(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    from sotawhat.doctor import check_last_weekly
+
+    now = datetime.now(timezone.utc) + timedelta(hours=1)          # finish_run stamps the real clock
+    with Store(tmp_path / "insight.db") as st:
+        none = check_last_weekly(st, now=now)
+        assert none.status == "warn" and "schedule_daily.ps1 -Weekly" in none.detail
+        run = st.start_run("weekly")
+        st.finish_run(run, ok=True, stats={"ideation": {"finalists": [1, 2], "stopped": None}})
+        ok = check_last_weekly(st, now=now)
+        assert ok.status == "ok" and "2 ideias" in ok.detail
+        assert check_last_weekly(st, now=now + timedelta(days=9)).status == "warn"
+        stopped = st.start_run("weekly")
+        st.finish_run(stopped, ok=True, stats={"ideation": {"finalists": [], "stopped": "budget"}})
+        assert check_last_weekly(st, now=now).status == "warn"
+        failed = st.start_run("weekly")
+        st.finish_run(failed, ok=False, stats={}, error="boom")
+        assert check_last_weekly(st, now=now).status == "fail"

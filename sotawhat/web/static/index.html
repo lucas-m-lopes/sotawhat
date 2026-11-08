@@ -4,19 +4,24 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>sotawhat · grafo</title>
+<title>sotawhat</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="mark" aria-hidden="true"></span>sotawhat <span class="muted">· grafo</span></div>
+  <div class="brand"><span class="mark" aria-hidden="true"></span>sotawhat</div>
+  <nav class="views" aria-label="Seções">
+    <a href="#grafo" data-view="graph">Grafo</a>
+    <a href="#ideias" data-view="ideas">Ideias</a>
+    <a href="#tendencias" data-view="trends">Tendências</a>
+  </nav>
   <div class="search">
     <input id="search" type="search" placeholder="Buscar entidade ou item…" autocomplete="off" aria-label="Buscar entidade ou item" aria-controls="results">
     <div id="results" class="results" role="listbox" hidden></div>
   </div>
   <div id="stats" class="stats muted"></div>
 </header>
-<main class="layout">
+<main id="view-graph" class="layout">
   <aside id="filters" class="filters" aria-label="Filtros">
     <section>
       <h2>Período</h2>
@@ -54,6 +59,43 @@
       <p class="muted">Cada nó é uma entidade (técnica, modelo, dataset, organização, produto, problema ou regulação) extraída dos itens que a triagem aprovou. As arestas ligam entidades citadas no mesmo item; as coloridas são relações explícitas, como "desenvolvido por" ou "aborda".</p>
     </div>
   </aside>
+</main>
+<main id="view-ideas" class="page" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Ideias</h1>
+      <p id="ideas-summary" class="muted">carregando…</p>
+    </div>
+    <label class="check"><input id="ideas-all" type="checkbox"> incluir não finalistas e descartadas</label>
+  </div>
+  <div id="ideas-status" class="segmented" role="radiogroup" aria-label="Situação das ideias"></div>
+  <div id="ideas-list" class="cards" aria-live="polite"></div>
+</main>
+<main id="view-trends" class="page" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Tendências</h1>
+      <p id="trends-meta" class="muted">carregando…</p>
+    </div>
+  </div>
+  <div class="columns">
+    <section class="column">
+      <h2>Em alta · 7 dias contra os 28 anteriores</h2>
+      <div id="trends-list"></div>
+    </section>
+    <section class="column">
+      <h2>Mapa · comunidades do grafo</h2>
+      <div id="communities-list"></div>
+    </section>
+    <section class="column">
+      <h2>Lacunas · matéria-prima das ideias</h2>
+      <div id="gaps-list"></div>
+    </section>
+  </div>
+  <section id="rules-box" class="rules" hidden>
+    <h2>Regras do meta-review (entram nos prompts de geração)</h2>
+    <ul id="rules-list"></ul>
+  </section>
 </main>
 <script src="/static/vendor/graphology.umd.min.js"></script>
 <script src="/static/vendor/graphology-library.min.js"></script>

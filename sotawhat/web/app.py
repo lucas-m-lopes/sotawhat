@@ -3,8 +3,9 @@
 
 A local server still gets requests that other web pages trigger in the browser, so:
 - it only binds to 127.0.0.1, and TrustedHostMiddleware refuses any other Host header (DNS rebinding);
-- the only write, a vote, needs a JSON body (a cross-site form or a no-cors fetch cannot send one)
-  and an Origin that is absent or local."""
+- the writes (votes on items and on ideas) need a JSON body (a cross-site form or a no-cors fetch
+  cannot send one) and an Origin that is absent or local.
+P4 adds the ideas page (/api/ideas, /api/ideas/{id}, /api/ideas/vote) and the trends panel (/api/trends)."""
 import json
 import logging
 import os
@@ -19,10 +20,11 @@ from urllib.parse import urlsplit
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from sotawhat.graph import query as q
+from sotawhat.ideation import ledger
 from sotawhat.store.db import Store
 
 STATIC = Path(__file__).parent / "static"
@@ -33,6 +35,28 @@ log = logging.getLogger("sotawhat.web")
 class Vote(BaseModel):
     item_id: str
     value: Literal["up", "down", "test"]
+
+
+class IdeaVote(BaseModel):
+    idea_id: int
+    value: Literal["up", "down", "test", "archive", "built"]
+    note: str | None = Field(default=None, max_length=300)
+
+
+async def json_body(request: Request) -> dict:
+    """The checks every write goes through: JSON content type and a local (or absent) Origin."""
+    if not request.headers.get("content-type", "").lower().startswith("application/json"):
+        raise HTTPException(415, "envie JSON")
+    origin = request.headers.get("origin")
+    if origin and urlsplit(origin).hostname not in LOCAL_HOSTS:
+        raise HTTPException(403, "origem não permitida")
+    try:
+        body = json.loads(await request.body() or b"{}")
+    except ValueError as exc:
+        raise HTTPException(422, f"JSON inválido: {exc}") from None
+    if not isinstance(body, dict):
+        raise HTTPException(422, "envie um objeto JSON")
+    return body
 
 
 def create_app(db_path, static_dir=STATIC) -> FastAPI:
@@ -98,20 +122,45 @@ def create_app(db_path, static_dir=STATIC) -> FastAPI:
 
     @app.post("/api/feedback")
     async def api_feedback(request: Request):
-        if not request.headers.get("content-type", "").lower().startswith("application/json"):
-            raise HTTPException(415, "envie JSON")
-        origin = request.headers.get("origin")
-        if origin and urlsplit(origin).hostname not in LOCAL_HOSTS:
-            raise HTTPException(403, "origem não permitida")
         try:
-            vote = Vote.model_validate(json.loads(await request.body() or b"{}"))
-        except (ValueError, ValidationError) as exc:
+            vote = Vote.model_validate(await json_body(request))
+        except ValidationError as exc:
             raise HTTPException(422, f"voto inválido: {exc}") from None
         st = store(request)
         if not st.get_items([vote.item_id]):
             raise HTTPException(404, "item não encontrado")
         st.add_feedback("item", vote.item_id, vote.value, channel="web")
         return {"item_id": vote.item_id, "vote": st.item_votes(ids=[vote.item_id]).get(vote.item_id)}
+
+    # --- ideas and trends (P4) ---------------------------------------------------------
+    @app.get("/api/ideas")
+    def api_ideas(request: Request, status: str = "", finalists: bool = True, limit: int = Query(100, ge=1, le=500)):
+        if status and status not in ledger.STATUSES:
+            raise HTTPException(422, f"status inválido; use um de {', '.join(ledger.STATUSES)}")
+        return ledger.list_ideas(store(request), status=status or None, finalists_only=finalists, limit=limit)
+
+    @app.get("/api/ideas/{idea_id}")
+    def api_idea(idea_id: int, request: Request):
+        detail = ledger.idea_detail(store(request), idea_id)
+        if detail is None:
+            raise HTTPException(404, "ideia não encontrada")
+        return detail
+
+    @app.post("/api/ideas/vote")
+    async def api_idea_vote(request: Request):
+        try:
+            vote = IdeaVote.model_validate(await json_body(request))
+        except ValidationError as exc:
+            raise HTTPException(422, f"voto inválido: {exc}") from None
+        st = store(request)
+        if st.get_idea(vote.idea_id) is None:
+            raise HTTPException(404, "ideia não encontrada")
+        status = st.vote_idea(vote.idea_id, vote.value, "web", note=(vote.note or "").strip() or None)
+        return {"idea_id": vote.idea_id, "status": status}
+
+    @app.get("/api/trends")
+    def api_trends(request: Request):
+        return ledger.trends_view(store(request))
 
     return app
 

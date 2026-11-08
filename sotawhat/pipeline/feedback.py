@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timezone
 
 from sotawhat.notify.telegram import TelegramError
-from sotawhat.pipeline.deliver import CODES, VOTES, keyboard
+from sotawhat.pipeline.deliver import CODES, VOTES, idea_keyboard, keyboard
 from sotawhat.store.db import utcnow
 
 VALUES = {code: value for value, code in CODES.items()}
@@ -44,10 +44,22 @@ def handle_update(store, notifier, update, allowed_user) -> str:
             _answer(notifier, query, "item não encontrado")
             return "ignored"
         value = parsed[1]
-        store.add_feedback("item", row["item_id"], value, "telegram")
-        _answer(notifier, query, f"{VOTES[value]} registrado")
         message = query.get("message") or {}
         chat, message_id = (message.get("chat") or {}).get("id"), message.get("message_id")
+        if row["item_id"].startswith("idea:"):                      # P4: weekly report ideas
+            status = store.vote_idea(int(row["item_id"].split(":", 1)[1]), value, "telegram")
+            _answer(notifier, query, f"ideia: {status}")
+            if chat is not None and message_id:
+                try:
+                    notifier.edit_reply_markup(chat, message_id, idea_keyboard(row, value))
+                except TelegramError:
+                    pass
+            return "vote"
+        if value not in VOTES:
+            _answer(notifier, query, "opção só vale para ideias")
+            return "ignored"
+        store.add_feedback("item", row["item_id"], value, "telegram")
+        _answer(notifier, query, f"{VOTES[value]} registrado")
         rows = store.deliveries_for_message(chat, message_id) if chat is not None and message_id else []
         if rows:
             try:

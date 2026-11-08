@@ -2,7 +2,7 @@
 import argparse
 import sys
 
-_SUBCOMMANDS = {"search", "run", "doctor", "feedback", "eval", "serve", "serve-mcp", "graph"}
+_SUBCOMMANDS = {"search", "run", "ideate", "doctor", "feedback", "eval", "serve", "serve-mcp", "graph"}
 
 def parse_args(argv):
     # Backward compat: `sotawhat <keyword...> [N]` with no subcommand -> search.
@@ -18,10 +18,17 @@ def parse_args(argv):
     p_search.add_argument("words", nargs="+")
 
     p_run = sub.add_parser("run")
-    p_run.add_argument("kind", choices=["daily"])
+    p_run.add_argument("kind", choices=["daily", "weekly"])
     p_run.add_argument("--limit", type=int, default=10)
     p_run.add_argument("--no-notify", action="store_true")
-    p_run.add_argument("--no-llm", action="store_true", help="collect and run stage A only (no LLM calls)")
+    p_run.add_argument("--no-llm", action="store_true", help="daily: collect and run stage A only (no LLM calls)")
+    p_run.add_argument("--modo", choices=["economico", "completo"], default="economico", help="weekly: idea engine mode")
+
+    p_ideate = sub.add_parser("ideate", help="idea engine on demand (report in data/weekly, ideas on Telegram)")
+    p_ideate.add_argument("--tema", default=None, help='keep only technique × problem pairs about this theme, e.g. "UTI"')
+    p_ideate.add_argument("--n", type=int, default=None, help="finalists wanted (N candidates, critique for N + 2)")
+    p_ideate.add_argument("--modo", choices=["economico", "completo"], default="economico")
+    p_ideate.add_argument("--no-notify", action="store_true", help="write the report only (no Telegram, no e-mail)")
 
     p_doctor = sub.add_parser("doctor")
     p_doctor.add_argument("--llm", action="store_true", help="smoke-test each primary model (cents)")
@@ -92,9 +99,15 @@ def main(argv=None):
     ns = parse_args(argv if argv is not None else sys.argv[1:])
     if ns.command == "search":
         _run_search(ns)
+    elif ns.command == "run" and ns.kind == "weekly":
+        from sotawhat.pipeline.weekly import main_weekly
+        raise SystemExit(main_weekly(ns))
     elif ns.command == "run":
         from sotawhat.pipeline.daily import main_daily
         raise SystemExit(main_daily(ns))
+    elif ns.command == "ideate":
+        from sotawhat.pipeline.weekly import main_ideate
+        raise SystemExit(main_ideate(ns))
     elif ns.command == "doctor":
         from sotawhat.doctor import main_doctor
         raise SystemExit(main_doctor(ns))

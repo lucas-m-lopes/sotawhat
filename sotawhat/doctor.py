@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from sotawhat.llm.tasks import resolve
 
-TASKS = ("triage", "segment", "vision", "extract", "synth", "resolve")
+TASKS = ("triage", "segment", "vision", "extract", "synth", "resolve", "ideate", "critique", "judge")
 _BAD_QUANT = {"fp4", "mxfp4", "nvfp4", "int4", "fp6"}
 
 
@@ -147,8 +147,11 @@ def check_openrouter_key(client) -> Check:
     remaining = info.get("limit_remaining")
     low = remaining is not None and remaining < 0.2 * limit
     rest = f"US$ {remaining:.2f}" if remaining is not None else "?"
-    return Check("chave OpenRouter", "warn" if low else "ok",
-                 f"limite US$ {limit:.2f} · restante {rest} · uso no mês US$ {usage:.2f}")
+    detail = f"limite US$ {limit:.2f} · restante {rest} · uso no mês US$ {usage:.2f}"
+    if "limit_reset" in info and not info["limit_reset"]:
+        # without a reset the limit is a total for the life of the key: the runs stop once it is spent
+        return Check("chave OpenRouter", "warn", f"{detail} · o limite NÃO renova (defina renovação mensal na chave)")
+    return Check("chave OpenRouter", "warn" if low else "ok", detail + f" · renova: {info.get('limit_reset') or '?'}")
 
 
 def check_models(client, requirements, today=None) -> list:
@@ -378,6 +381,24 @@ def check_last_run(store, now=None, max_age_hours=36) -> Check:
     return Check("último run diário", "ok", f"concluído há {age:.0f} h")
 
 
+def check_last_weekly(store, now=None, max_age_days=8) -> Check:
+    now = now or datetime.now(timezone.utc)
+    row = store.last_run("weekly")
+    if row is None:
+        return Check("último run semanal", "warn", "nenhum ainda: rode `sotawhat run weekly` ou agende com "
+                                                 "`scripts\\schedule_daily.ps1 -Weekly` (domingo, 20:00)")
+    if not row["ok"]:
+        return Check("último run semanal", "fail", f"falhou em {row['finished_at']}: {row['error']}")
+    age = (now - datetime.fromisoformat(row["finished_at"])).total_seconds() / 86400
+    stats = json.loads(row["stats_json"] or "{}")
+    ideation = stats.get("ideation") or {}
+    detail = (f"concluído há {age:.0f} d · {len(ideation.get('finalists') or [])} ideias · US$ {row['cost_usd'] or 0:.3f}"
+              + (f" · interrompido: {ideation['stopped']}" if ideation.get("stopped") else ""))
+    if age > max_age_days:
+        return Check("último run semanal", "warn", f"{detail}; o agendamento semanal está ativo?")
+    return Check("último run semanal", "warn" if ideation.get("stopped") else "ok", detail)
+
+
 def check_month_cost(store, budget_month, now=None) -> Check:
     now = now or datetime.now(timezone.utc)
     start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
@@ -431,6 +452,7 @@ def main_doctor(ns) -> int:
     checks += [check_github(settings), check_hf(settings), check_gmail(settings)]
     with Store(settings.db_path) as store:
         checks.append(check_last_run(store))
+        checks.append(check_last_weekly(store))
         checks.append(check_month_cost(store, settings.sotawhat_llm_budget_usd_month))
         min_ratings = config.rubric.classifier_min_ratings if config else 100
         checks += check_classifiers(store, settings.embeddings_model, min_ratings, list(PROFILES))

@@ -62,6 +62,10 @@ def _run_search(ns):
     print(render_grouped(results, ns.keyword))
 
 def main(argv=None):
+    import truststore
+    truststore.inject_into_ssl()   # trust the Windows store (local TLS inspection; never verify=False)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")   # cp1252 consoles/pipes must not crash on emoji
     ns = parse_args(argv if argv is not None else sys.argv[1:])
     if ns.command == "search":
         _run_search(ns)

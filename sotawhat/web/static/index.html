@@ -12,6 +12,7 @@
   <div class="brand"><span class="mark" aria-hidden="true"></span>sotawhat</div>
   <nav class="views" aria-label="Seções">
     <a href="#grafo" data-view="graph">Grafo</a>
+    <a href="#hoje" data-view="today">Hoje</a>
     <a href="#ideias" data-view="ideas">Ideias</a>
     <a href="#tendencias" data-view="trends">Tendências</a>
   </nav>
@@ -59,6 +60,19 @@
       <p class="muted">Cada nó é uma entidade (técnica, modelo, dataset, organização, produto, problema ou regulação) extraída dos itens que a triagem aprovou. As arestas ligam entidades citadas no mesmo item; as coloridas são relações explícitas, como "desenvolvido por" ou "aborda".</p>
     </div>
   </aside>
+</main>
+<main id="view-today" class="page" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Hoje</h1>
+      <p id="today-meta" class="muted">carregando…</p>
+    </div>
+  </div>
+  <div id="today-list"></div>
+  <section class="rules">
+    <h2>Últimos runs</h2>
+    <div id="runs-list" class="runs"></div>
+  </section>
 </main>
 <main id="view-ideas" class="page" hidden>
   <div class="page-head">

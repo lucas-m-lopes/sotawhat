@@ -12,7 +12,7 @@ def _it(iid, title):
 
 
 def test_titles_from_two_sources_are_the_same_story():
-    # real pair from the vault: JMIR RSS vs PubMed (en dash vs hyphen, trailing period)
+    # real pair from the old 2.0 notes: JMIR RSS vs PubMed (en dash vs hyphen, trailing period)
     a = "Knowledge-Augmented Large Language Model for Multimodal Electronic Health Record–Based Risk Prediction"
     b = "Knowledge-Augmented Large Language Model for Multimodal Electronic Health Record-Based Risk Prediction."
     assert norm_title(a) == norm_title(b)

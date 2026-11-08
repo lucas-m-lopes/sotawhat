@@ -42,6 +42,16 @@ class Settings(BaseSettings):
 
     crossref_mailto: str = ""
 
+    sotawhat_web_port: int = 8765     # `sotawhat serve` (P3), always on 127.0.0.1
+
+    # Neo4j mirror of the entity graph (P3, D16); empty password = mirror off (the interface works anyway)
+    neo4j_uri: str = "bolt://localhost:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = ""
+    neo4j_database: str = "neo4j"
+    neo4j_heap_max: str = "1G"
+    neo4j_pagecache: str = "1G"
+
     # e-mail copy of the digest: with Gmail only DIGEST_EMAIL_TO is new; it reuses the Gmail address and
     # app password that P2 uses to read the newsletters (IMAP). SMTP_* only for another provider.
     gmail_address: str = ""

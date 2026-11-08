@@ -1,14 +1,14 @@
 # scripts/schedule_daily.ps1 - registers `sotawhat run daily` in Windows Task Scheduler (SDD 6.12).
 # Usage, from the repository root in PowerShell:
-#   .\scripts\schedule_daily.ps1                         # 07:00, no Obsidian export
-#   .\scripts\schedule_daily.ps1 -Vault "D:\Lucas\obsidian_vaults\ml_ai_med_vault"
+#   .\scripts\schedule_daily.ps1                         # 07:00
 #   .\scripts\schedule_daily.ps1 -Listener               # also: Telegram feedback listener at logon (P1)
+#   .\scripts\schedule_daily.ps1 -Web                    # also: graph interface at logon (P3)
 # Runs as the current user while logged on; a missed run starts as soon as possible (StartWhenAvailable).
 param(
     [string]$Time = "07:00",
-    [string]$Vault = "",
     [string]$TaskName = "sotawhat-daily",
-    [switch]$Listener
+    [switch]$Listener,
+    [switch]$Web
 )
 $ErrorActionPreference = "Stop"
 $repo = (Resolve-Path "$PSScriptRoot\..").Path
@@ -17,7 +17,6 @@ if (-not (Test-Path $exe)) { throw "Not found: $exe - install first: uv pip inst
 if (-not (Test-Path (Join-Path $repo ".env"))) { Write-Warning "No .env in $repo - copy .env.example to .env and fill it in." }
 
 $arguments = "run daily"
-if ($Vault) { $arguments += " --vault `"$Vault`"" }
 
 # WorkingDirectory = repo root, so the `.env` file, `config\` and `data\insight.db` are found.
 $action = New-ScheduledTaskAction -Execute $exe -Argument $arguments -WorkingDirectory $repo
@@ -40,4 +39,18 @@ if ($Listener) {
     Register-ScheduledTask -TaskName "sotawhat-feedback" -Action $listen -Trigger $logon -Settings $listenSettings `
         -Description "sotawhat 3.0 - votos do Telegram em tempo real" -Force | Out-Null
     Get-ScheduledTask -TaskName "sotawhat-feedback" | Select-Object TaskName, State
+}
+
+if ($Web) {
+    # The graph interface (P3) at http://127.0.0.1:8765, up after every logon; it reads data\insight.db.
+    # pythonw.exe has no console window; output goes to data\logs. Restarts if it crashes.
+    $pythonw = Join-Path $repo ".venv\Scripts\pythonw.exe"
+    if (-not (Test-Path $pythonw)) { throw "Not found: $pythonw" }
+    $serve = New-ScheduledTaskAction -Execute $pythonw -Argument "-m sotawhat.cli serve --no-browser" -WorkingDirectory $repo
+    $logonWeb = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+    $webSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew `
+        -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 5)
+    Register-ScheduledTask -TaskName "sotawhat-web" -Action $serve -Trigger $logonWeb -Settings $webSettings `
+        -Description "sotawhat 3.0 - interface do grafo em http://127.0.0.1:8765" -Force | Out-Null
+    Get-ScheduledTask -TaskName "sotawhat-web" | Select-Object TaskName, State
 }

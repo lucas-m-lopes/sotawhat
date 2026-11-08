@@ -1,16 +1,18 @@
 # sotawhat/pipeline/daily.py
 """`sotawhat run daily` (SDD §6.1): feedback -> collect -> normalize -> exact dedup -> SQLite ->
-triage (stage A + LLM) -> digest files + Telegram. Extraction and the graph arrive in P3."""
+triage (stage A + LLM) -> digest files + Telegram + e-mail -> graph stage (P3: extraction, entity
+resolution, taxonomy categories, Neo4j mirror), in a `graph` run of its own so the digest never waits."""
 import html
+import json
 import logging
 import re
 import sys
 from dataclasses import dataclass, field
 from datetime import date
 
-from sotawhat.digest import collect, filter_relevant
 from sotawhat.items import to_item
 from sotawhat.notify.telegram import esc, esc_attr
+from sotawhat.pipeline.collect import collect, filter_relevant
 from sotawhat.profiles import PROFILES
 
 ALERT_AFTER = 3   # consecutive failures before a source is flagged as an alert
@@ -51,7 +53,7 @@ def _record_health(store, sources, errors, report):
                 store.record_source_ok(key)
 
 
-def run_daily(store, sources_by_profile, limit=10, vault=None, today=None, triage=None) -> DailyReport:
+def run_daily(store, sources_by_profile, limit=10, today=None, triage=None) -> DailyReport:
     """triage: optional callable (store, run_id) -> TriageStats, run after collection."""
     day = (today or date.today()).isoformat()
     report = DailyReport(run_id=store.start_run("daily"), day=day)
@@ -69,10 +71,6 @@ def run_daily(store, sources_by_profile, limit=10, vault=None, today=None, triag
             report.new_items += [it for it in items if it.id in new_ids]
             _record_health(store, sources, errors, report)
             log.info("%s: %d collected, %d new", name, len(items), len(new_ids))
-            if vault:
-                from sotawhat.obsidian import write_notes
-                write_notes(results, vault=vault, profile_name=name, tags=profile["tags"],
-                            keywords=profile["keywords"], added=day)
         if triage is not None:
             report.triage = triage(store, report.run_id)
     except Exception as exc:  # noqa: BLE001 - the run must always be closed and reported
@@ -86,6 +84,116 @@ def run_daily(store, sources_by_profile, limit=10, vault=None, today=None, triag
     row = store.conn.execute("SELECT cost_usd FROM runs WHERE id = ?", (report.run_id,)).fetchone()
     report.cost_usd = row[0]
     return report
+
+
+@dataclass
+class GraphReport:
+    run_id: int
+    extraction: object = None      # ExtractionStats
+    categories: int = 0            # new 'tag' mentions (triage categories)
+    mirror: object = None          # SyncStats, when the Neo4j mirror synced
+    mirror_note: str | None = None
+    ok: bool = True
+    error: str | None = None
+    cost_usd: float = 0.0
+
+
+def run_graph_stage(store, gateway, resolver, mirror=None, limit=None, concurrency=4, now=None) -> GraphReport:
+    """Extraction (when there is a gateway), triage categories of every approved item, then the Neo4j mirror.
+    A missing or failing mirror is a note; anything else unexpected closes the `graph` run as failed."""
+    from sotawhat.pipeline.extract import run_extraction
+
+    report = GraphReport(run_id=store.start_run("graph"))
+    try:
+        if gateway is not None:
+            gateway.run_id = report.run_id
+        report.extraction = run_extraction(store, report.run_id, gateway, resolver, limit=limit,
+                                           concurrency=concurrency, now=now)
+        for row in store.approved_items():
+            report.categories += resolver.link_categories(row["item_id"], json.loads(row["tags_json"] or "{}"),
+                                                          row["fetched_at"])
+        if mirror is None:
+            report.mirror_note = "espelho Neo4j desligado (NEO4J_PASSWORD vazio)"
+        elif not mirror.ping():
+            report.mirror_note = "Neo4j fora do ar; a próxima sincronização aplica o atraso"
+        else:
+            try:
+                report.mirror = mirror.sync(store)
+            except Exception as exc:  # noqa: BLE001 - SQLite already holds the graph; the mirror catches up later
+                log.warning("neo4j sync: %s", exc)
+                report.mirror_note = f"falha ao sincronizar o Neo4j ({type(exc).__name__}: {exc})"
+    except Exception as exc:  # noqa: BLE001 - the graph run must always be closed and reported
+        log.exception("graph stage failed")
+        report.ok = False
+        report.error = f"{type(exc).__name__}: {exc}"
+    stats = {"extraction": report.extraction.as_dict() if report.extraction else None,
+             "categories": report.categories, "mirror": report.mirror.as_dict() if report.mirror else None,
+             "mirror_note": report.mirror_note}
+    store.finish_run(report.run_id, ok=report.ok, stats=stats, error=report.error)
+    report.cost_usd = store.conn.execute("SELECT cost_usd FROM runs WHERE id = ?", (report.run_id,)).fetchone()[0]
+    return report
+
+
+def render_graph_line(report) -> str:
+    x = report.extraction
+    parts = [f"grafo: {x.extracted if x else 0} itens extraídos"]
+    if x:
+        parts += [f"+{x.new_entities} entidades", f"{x.mentions} menções", f"{x.relations} relações"]
+        if x.merges:
+            parts.append(f"{x.merges} fusões")
+        if x.errors:
+            parts.append(f"{x.errors} com erro")
+        if x.deferred:
+            parts.append(f"{x.deferred} na fila")
+    if report.mirror is not None:
+        parts.append(f"Neo4j sincronizado ({report.mirror.items} itens)")
+    elif report.mirror_note:
+        parts.append(report.mirror_note)
+    parts.append(f"US$ {report.cost_usd:.3f}".replace(".", ","))
+    if report.error:
+        parts.append(f"ERRO: {report.error}")
+    return " · ".join(parts)
+
+
+def _graph_parts(settings, store, gateway, embedder, config):
+    from sotawhat.graph.neo4j_sync import Neo4jMirror
+    from sotawhat.graph.resolve import Resolver, make_judge
+
+    resolver = Resolver(store, embedder=embedder, judge=make_judge(gateway) if gateway is not None else None,
+                        aliases=config.aliases)
+    return resolver, Neo4jMirror.from_settings(settings)
+
+
+def main_graph_extract(ns, settings) -> int:
+    """`sotawhat graph extract [--limit N]`: the graph stage on its own (e.g. the first backfill)."""
+    from sotawhat.configfiles import ConfigError, load_config
+    from sotawhat.llm.gateway import LLMGateway
+    from sotawhat.llm.openrouter import OpenRouterClient
+    from sotawhat.store.db import Store
+    from sotawhat.store.vectors import get_embedder
+
+    setup_logging(settings.sotawhat_data_dir, date.today().isoformat(), settings.sotawhat_log_level)
+    try:
+        config = load_config(settings.sotawhat_config_dir)
+    except ConfigError as exc:
+        print(f"[config] {exc}", file=sys.stderr)
+        return 2
+    with Store(settings.db_path) as store:
+        gateway = None
+        if settings.openrouter_api_key:
+            client = OpenRouterClient(settings.openrouter_api_key, base_url=settings.openrouter_base_url,
+                                      app_title=settings.openrouter_app_title)
+            gateway = LLMGateway(client, store=store, settings=settings, tasks=config.llm["tasks"])
+        else:
+            print("sem OPENROUTER_API_KEY: só as categorias da triagem entram no grafo", file=sys.stderr)
+        resolver, mirror = _graph_parts(settings, store, gateway, get_embedder(settings), config)
+        try:
+            report = run_graph_stage(store, gateway, resolver, mirror, limit=getattr(ns, "limit", None))
+        finally:
+            if mirror is not None:
+                mirror.close()
+    print(render_graph_line(report))
+    return 0 if report.ok else 1
 
 
 def render_summary(report, max_items=10) -> str:
@@ -177,7 +285,7 @@ def main_daily(ns) -> int:
                 gates = {}
             return run_triage(st, run_id, gateway, config.rubric, config.mutes, embedder, gates)
 
-        report = run_daily(store, sources, limit=ns.limit, vault=ns.vault, triage=triage)
+        report = run_daily(store, sources, limit=ns.limit, triage=triage)
         digest = build_digest(store, report, config.rubric)
         md_path, _ = write_files(digest, settings.sotawhat_data_dir / "digests")
         print(render_markdown(digest) if report.triage and report.triage.llm else to_plain(render_summary(report)))
@@ -195,4 +303,13 @@ def main_daily(ns) -> int:
             except EmailError as exc:
                 print(f"[e-mail] {exc}", file=sys.stderr)
                 log.error("e-mail: %s", exc)
+        if not getattr(ns, "no_llm", False):     # the graph stage comes after the digest, never before it
+            resolver, mirror = _graph_parts(settings, store, gateway, embedder, config)
+            try:
+                graph_report = run_graph_stage(store, gateway, resolver, mirror)
+            finally:
+                if mirror is not None:
+                    mirror.close()
+            print(f"[{render_graph_line(graph_report)}]")
+            log.info("graph %s", render_graph_line(graph_report))
     return 0 if report.ok else 1

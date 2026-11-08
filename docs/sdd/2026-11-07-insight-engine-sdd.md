@@ -2,10 +2,11 @@
 
 **Tipo:** Software Design Document (SDD) — serve também como *spec* para desenvolvimento orientado a especificação (spec-driven).
 **Data:** 2026-11-07
-**Status:** v1.3 (2026-11-08):
+**Status:** v1.4 (2026-11-08):
 - respostas do usuário de 2026-11-07 incorporadas: Instagram pessoal, Neo4j no Docker Desktop, LLMs chineses via OpenRouter;
 - medições da P1 incorporadas: modelo de embeddings e deduplicação por título (§6.3, §6.7, D3);
 - decisões de 2026-11-08 incorporadas: digest em duas seções, "IA ∩ Saúde" e "Fronteira de IA" (escolha feita a partir do golden set), e cópia do digest por e-mail (§6.7, §6.11, §16.1);
+- v1.4: o Obsidian sai do projeto, e nada lê nem escreve no vault (§9, D12). A interface própria com o grafo vem para a P3, que passa a ser executada antes da P2. O grafo de entidades fica no SQLite, e o Neo4j vira espelho (§6.3, §11, D16);
 - perguntas restantes em §16.2.
 **Documentos relacionados:**
 - Specs anteriores: `docs/superpowers/specs/2026-06-13-sotawhat-multisource-digest-design.md`, `2026-06-14-medico-ai-intersection-design.md`, `2026-06-14-obsidian-concept-links-design.md`
@@ -13,6 +14,7 @@
 - Variáveis de ambiente: `.env.example` (raiz do repositório)
 - Plano da fase P0: `docs/superpowers/plans/2026-11-07-insight-engine-p0-foundation.md` (executado na branch `feature/insight-engine-p0`)
 - Plano da fase P1: `docs/superpowers/plans/2026-11-08-insight-engine-p1-triage-digest.md`
+- Plano da fase P3: `docs/superpowers/plans/2026-11-08-insight-engine-p3-graph-interface.md`
 
 ---
 
@@ -26,7 +28,7 @@ Este SDD redefine o projeto como um **motor de insights** com cinco capacidades 
 2. **Filtro de ruído com critério explícito** — entra a **IA/ML com aplicabilidade médico-hospitalar plausível** e, numa seção própria, a **IA de fronteira forte mesmo sem ligação com saúde** (decisão de 2026-11-08, §16.1); artigos puramente clínicos (sem IA) e notícias de IA sem substância técnica são descartados por um classificador leve treinado com o feedback do usuário mais uma rubrica avaliada por LLM, com regras de inclusão/exclusão explícitas.
 3. **Grafo de conhecimento próprio** — substitui o Obsidian por um grafo (Neo4j como escolha primária; ver §6.3 e §15) com entidades extraídas por LLM (técnicas, problemas clínicos/operacionais, organizações, produtos, modelos, datasets, regulações), relações com proveniência e validade temporal, embeddings, comunidades e tendências.
 4. **Gerador de ideias** — semanal e sob demanda: combina técnicas recentes × problemas hospitalares (descoberta baseada em literatura + predição de links no grafo + agentes LLM com personas), critica, verifica novidade contra bases externas, pontua com uma rubrica específica de saúde (regulatório, dados, evidência, tempo até piloto) e registra feedback.
-5. **Entrega e consulta sem fricção** — digest diário (Telegram e/ou e-mail + Markdown/HTML local), relatório semanal de ideias, servidor MCP para perguntar ao grafo de dentro do Claude Code/Claude Desktop, visualização web local do grafo.
+5. **Entrega e consulta sem fricção** — digest diário (Telegram e/ou e-mail + Markdown/HTML local), relatório semanal de ideias, servidor MCP para perguntar ao grafo de dentro do Claude Code/Claude Desktop e uma interface web própria e local, com o grafo navegável (sem Obsidian).
 
 ```
  FONTES ──► COLETA ──► NORMALIZAÇÃO/DEDUP ──► TRIAGEM (LLM, rubrica) ──► EXTRAÇÃO (entidades/relações)
@@ -90,7 +92,7 @@ Tudo roda localmente (Windows 11 + Python 3.12 + Neo4j Community no Docker Deskt
 | G4 | Gerar ideias genuinamente novas e acionáveis | 5–10 ideias/semana com rubrica preenchida e verificação de novidade; ≥ 30% marcadas pelo usuário como "vale explorar" após calibração |
 | G5 | Operação sem fricção | 1 comando/agendamento; nenhuma reautenticação manual por ≥ 60 dias (Gmail, Instagram, GitHub); alerta automático quando algo falha |
 | G6 | Custo previsível e baixo | Custo LLM + serviços dentro do orçamento de §13 (meta: ≤ US$ 15/mês na configuração recomendada; corte duro pelo limite mensal da chave do OpenRouter), com custo real por chamada e por execução |
-| G7 | Sem lock-in | Export contínuo em Markdown/JSON (inclusive compatível com Obsidian) e dump do grafo |
+| G7 | Sem lock-in | Export do grafo e dos itens aprovados em JSON/CSV, mais dumps do SQLite e do Neo4j; nada depende do Obsidian |
 
 ### 2.2 Não-objetivos (escopo excluído desta versão)
 
@@ -131,7 +133,7 @@ Levantamento completo em `docs/research/2026-11-07-insight-engine/plataformas_si
 
 **Conclusão:** nenhuma plataforma faz, de ponta a ponta, *fontes heterogêneas pessoais → relevância aprendida → grafo pessoal temporal com análise estrutural → ideias de produto julgadas e verificadas*, e nenhuma tem foco hospitalar nem Brasil. A lacuna estrutural está exatamente na junção **filtrar → grafo → idear**.
 
-**Build × buy × reuse por etapa:** *reutilizar* nas pontas (ingestão — feedparser/httpx já existentes, APIs oficiais; PDF → Markdown com docling; embeddings locais; Neo4j; export Markdown), *construir* fino no meio (classificador por perfil, dedup de histórias, inteligência estrutural em GDS/NetworkX, ideação com torneio e verificação de novidade), *comprar* quase nada (tiers gratuitos de Semantic Scholar/OpenAlex/Exa; HikerAPI/Apify para Instagram; opcionalmente InfraNodus Basic como *benchmark* de lacunas). Padrões a copiar, não a depender: `zotero-arxiv-daily` (perfil por biblioteca), `condenseit` (scoring aditivo + orçamento), `idea-generator-2` (júri calibrado + scouts), `NoviScl/AI-Researcher` (overgeneration + dedup + torneio), `SciAgentsDiscovery` (caminho no grafo → ideia), `claude-obsidian` (convenções de vault), `fabric` (esqueleto de prompts).
+**Build × buy × reuse por etapa:** *reutilizar* nas pontas (ingestão — feedparser/httpx já existentes, APIs oficiais; PDF → Markdown com docling; embeddings locais; Neo4j; export JSON), *construir* fino no meio (classificador por perfil, dedup de histórias, inteligência estrutural em GDS/NetworkX, ideação com torneio e verificação de novidade), *comprar* quase nada (tiers gratuitos de Semantic Scholar/OpenAlex/Exa; HikerAPI/Apify para Instagram; opcionalmente InfraNodus Basic como *benchmark* de lacunas). Padrões a copiar, não a depender: `zotero-arxiv-daily` (perfil por biblioteca), `condenseit` (scoring aditivo + orçamento), `idea-generator-2` (júri calibrado + scouts), `NoviScl/AI-Researcher` (overgeneration + dedup + torneio), `SciAgentsDiscovery` (caminho no grafo → ideia), `fabric` (esqueleto de prompts).
 
 ---
 
@@ -172,8 +174,8 @@ Levantamento completo em `docs/research/2026-11-07-insight-engine/plataformas_si
 | RF12 | Gerar ideias (§8) semanalmente e sob demanda, com verificação de novidade e rubrica; manter ledger com versões e feedback |
 | RF13 | Entregar digest diário e relatório semanal (Telegram, Markdown/HTML, e-mail opcional); expor MCP server; expor web local de visualização |
 | RF14 | Receber feedback (Telegram/CLI/web) e usá-lo em calibração e prompts |
-| RF15 | Migrar o vault Obsidian atual (2.893 notas) para o novo armazenamento, reprocessando triagem/extração em lote |
-| RF16 | Exportar continuamente itens aprovados em Markdown (compatível com Obsidian) e dumps do grafo/SQLite |
+| RF15 | *(removido em 2026-11-08)* O vault antigo do Obsidian não é lido nem migrado; o grafo começa pelos itens que o próprio sotawhat coleta (§9) |
+| RF16 | Exportar o grafo e os itens aprovados em JSON/CSV (`sotawhat graph export`) e manter dumps do SQLite e do Neo4j |
 | RF17 | Manter a busca interativa atual (`sotawhat search ...`) funcionando |
 
 ### 4.2 Não-funcionais
@@ -269,7 +271,7 @@ A priorização acima usa 1 dia de observação. Após 2–4 semanas, o relatór
 │  4 TRIAGE    mutes + classificador por perfil → rubrica LLM → score    [LR + LLM barato] │
 │  5 EXTRACT   entidades/relações/claims (saída estruturada)             [LLM forte]    │
 │  6 GRAPH     resolução de entidades + upsert Neo4j + proveniência      [embeddings]   │
-│  7 DELIVER   digest diário (Telegram/MD/HTML/e-mail) + export MD       [LLM forte]    │
+│  7 DELIVER   digest diário (Telegram/MD/HTML/e-mail) + export JSON     [LLM forte]    │
 │                                                                                      │
 │  sotawhat run weekly  (domingo 20:00)                                                 │
 │  8 INTEL     comunidades, tendências, lacunas, mapa semanal            [GDS/NetworkX + LLM] │
@@ -285,18 +287,18 @@ A priorização acima usa 1 dia de observação. Após 2–4 semanas, o relatór
 ```
 sotawhat/
   __init__.py
-  cli.py                 # run daily|weekly · search · ideate · feedback · serve-mcp · serve-web · migrate-vault · auth gmail|instagram · doctor
+  cli.py                 # run daily|weekly · search · ideate · feedback · serve (web) · serve-mcp · graph up|extract|sync|status|export · auth gmail|instagram · doctor
   config.py              # pydantic-settings: .env + config/*.yaml
   models.py              # Item, Cluster, Triage, Extraction, Entity, Relation, Idea, Feedback, Run (pydantic)
   store/
-    db.py                # SQLite (schema versionado, migrações simples)
-    graph.py             # interface GraphStore; backends: neo4j_store.py (primário), memory_store.py (NetworkX: testes/degradado), ladybug_store.py (opcional, embutido)
-    vectors.py           # embeddings locais (fastembed/BGE-M3) + índice (Neo4j vector index ou LanceDB)
+    db.py                # SQLite (schema versionado, migrações simples): itens, triagem, entidades, menções, relações
+    vectors.py           # embeddings locais (fastembed, EmbeddingGemma): novidade, classificador e resolução de entidades
     classifier.py        # classificador de relevância por perfil (embeddings + regressão logística), retreino com feedback
   sources/               # Source base + adapters (existentes + gmail, instagram, github, mcp_registry, skills, hf_hub, medrxiv, regulatory, manual_inbox)
   pipeline/
     daily.py weekly.py   # orquestração de `run daily` / `run weekly`
-    collect.py normalize.py dedup.py triage.py extract.py graph_sync.py intelligence.py ideate.py deliver.py feedback.py migrate.py
+    collect.py dedup.py triage.py extract.py intelligence.py ideate.py deliver.py feedback.py
+  graph/                 # (P3) resolve.py: entidades e aliases · query.py: consultas da interface e do MCP · neo4j_sync.py: espelho · docker.py: `graph up`
   llm/
     openrouter.py        # cliente HTTP fino (httpx) da API OpenRouter: chat completions, json_schema estrito, ZDR, fallbacks, custo real
     gateway.py           # tarefa → modelo(s); validação Pydantic + reparo; orçamento; registro em llm_calls
@@ -307,31 +309,31 @@ sotawhat/
   notify/telegram.py     # envio de mensagens (P0); o bot interativo fica em telegram_bot.py (P1)
   doctor.py              # verificação de chaves, modelos, Docker/Neo4j, última execução, custo
   taxonomy/              # domains.yaml · problems.yaml · techniques.yaml · aliases.yaml (ontologia controlada)
-  mcp_server.py          # servidor MCP (FastMCP) sobre SQLite + grafo
-  web/                   # FastAPI + sigma.js: grafo, busca, digest, feedback
+  mcp_server.py          # (P3) servidor MCP (`MCPServer` do SDK `mcp` 2.x) sobre o SQLite, com Cypher só leitura no Neo4j
+  web/                   # (P3) FastAPI + sigma.js 3: grafo, busca, itens e votos; arquivos JS no próprio pacote (sem CDN)
   telegram_bot.py        # entrega, feedback por botões, captura manual
-compose.yaml             # Neo4j CE 2026.10 + APOC + GDS no Docker Desktop (volume nomeado, portas só em 127.0.0.1)
-scripts/                 # schedule_daily.ps1 · start_graph.ps1 (abre o Docker Desktop, sobe o Neo4j, espera o healthcheck) · backup.ps1
+compose.yaml             # Neo4j CE 2026.10 no Docker Desktop (volume nomeado, portas só em 127.0.0.1; APOC + GDS na P4)
+scripts/                 # schedule_daily.ps1 (run diário; votos e interface ao fazer logon) · backup.ps1; o Neo4j sobe com `sotawhat graph up`
 config/                  # sources.yaml · llm.yaml · instagram_accounts.yaml · github_queries.yaml · rubric.yaml · interests.yaml
 tests/                   # unit + fixtures + evals/ (golden sets)
 docs/                    # sdd/ · research/ · superpowers/
 data/ (ignorado)         # insight.db · raw/ · media/ · digests/ · exports/
 ```
 
-Compatibilidade: `sotawhat search` continua; `sotawhat digest --vault` passa a ser um alias de `run daily --export-obsidian <vault>` durante a transição (§9).
+Compatibilidade: `sotawhat search` continua. Os comandos do Obsidian (`digest`, `backfill-links` e a opção `--vault`) saíram em 2026-11-08 (§9).
 
 ### 6.3 Armazenamento
 
 | Camada | Tecnologia | Papel |
 |---|---|---|
-| Operacional | **SQLite** (`data/insight.db`, modo WAL) | Itens brutos e normalizados, clusters, triagem, extrações, ideias, feedback, execuções, custo LLM, cursores por fonte. Fonte de verdade reconstrutível. |
-| Conhecimento | **Neo4j Community 2026.10 no Docker Desktop** (`compose.yaml` na raiz; dados num volume nomeado dentro do WSL2, mais rápido e seguro que montar `D:\`; portas 7474/7687 só em `127.0.0.1`; `restart: unless-stopped`); plugins APOC + Graph Data Science Community via `NEO4J_PLUGINS` | Entidades, relações com proveniência/tempo, índice vetorial, algoritmos (Leiden, PageRank, similaridade, predição de links), consultas Cypher, MCP (`mcp-neo4j-cypher` oficial + servidor próprio) e web. |
+| Operacional | **SQLite** (`data/insight.db`, modo WAL) | Itens brutos e normalizados, clusters, triagem, extrações, **entidades, menções e relações (o grafo que a interface mostra)**, ideias, feedback, execuções, custo LLM, cursores por fonte. Fonte de verdade. |
+| Conhecimento | **Neo4j Community 2026.10 no Docker Desktop** (`compose.yaml` na raiz; dados num volume nomeado dentro do WSL2, mais rápido e seguro que montar `D:\`; portas 7474/7687 só em `127.0.0.1`; `restart: unless-stopped`); plugins APOC + Graph Data Science Community via `NEO4J_PLUGINS` só a partir da P4 | Espelho do grafo de entidades guardado no SQLite (D16): consultas Cypher no Neo4j Browser e pelo MCP (só leitura), índice vetorial e, na P4, algoritmos (Leiden, PageRank, similaridade, predição de links). A interface e o MCP não dependem dele. |
 | Vetores | Índice vetorial do Neo4j (`Item.embedding`, entidades, ideias) — alternativa: LanceDB local | Dedup semântico, resolução de entidades, busca semântica, novidade de ideias. |
 | Embeddings | Modelo local multilíngue: **EmbeddingGemma-300m** via `fastembed` 0.9 (CPU, 768-d, ~1,2 GB baixados uma vez para `data/models/`, ~2,4 itens/s no Ryzen 5 5500). O BGE-M3 não está no `fastembed` (medições em `embeddings_dedup.md`) | Sem custo por chamada; funciona em pt/en. Opcional por flag: Voyage AI `voyage-4-lite` (200 M tokens grátis). |
 | Classificador | `scikit-learn` (regressão logística sobre embeddings + sinais sociais), modelo versionado em `data/models/` | Porta de relevância por perfil, retreinada com o feedback (§6.7). |
-| Arquivos | `data/raw/<fonte>/<data>/…`, `data/media/…`, `data/digests/…`, `data/exports/obsidian/…`, `data/auth/…` | Payloads brutos (auditoria), imagens/vídeos do IG, digests, export Markdown, tokens. |
+| Arquivos | `data/raw/<fonte>/<data>/…`, `data/media/…`, `data/digests/…`, `data/exports/…`, `data/auth/…` | Payloads brutos (auditoria), imagens/vídeos do IG, digests, exports JSON/CSV do grafo, tokens. |
 
-**Backends do `GraphStore`:** `neo4j` (primário); `memory` (NetworkX persistido em pickle/SQLite — testes e modo degradado: tudo funciona exceto Cypher ad hoc e Bloom); `ladybug` (opcional, embutido e sem servidor, se o usuário preferir "zero-ops" — §15, D1). A decisão de stack e as alternativas avaliadas (Memgraph, FalkorDB, Kùzu arquivado, AuraDB Free) estão em §15 e em `docs/research/…/grafo_stack.md`.
+**Grafo no SQLite, espelho no Neo4j (D16, 2026-11-08):** as entidades, as menções (item → entidade) e as relações extraídas ficam em tabelas do SQLite (§6.4). A interface web e o MCP consultam essas tabelas e, por isso, funcionam mesmo com o Docker Desktop fechado. `sotawhat graph sync` espelha tudo no Neo4j com `MERGE` idempotente e uma marca d'água por item (`items.graph_synced_at`), o que dispensa o `graph_outbox`; `sotawhat graph sync --rebuild` recria o espelho do zero (RNF8). Com isso, o backend `memory` e a alternativa LadybugDB deixam de ser necessários. A decisão de stack e as alternativas avaliadas (Memgraph, FalkorDB, Kùzu arquivado, AuraDB Free) estão em §15 e em `docs/research/…/grafo_stack.md`.
 
 ### 6.4 Modelo de dados operacional (SQLite)
 
@@ -346,10 +348,13 @@ triage(item_id PK, run_id, pre_score, classifier_version,          -- estágio A
        tags_json,                                                   -- {domains, problem_types, techniques, evidence_stage, stakeholders, br_applicability, cfm_risk, substance, audience}
        cost_usd)
 classifier_models(version PK, trained_at, n_labels, metrics_json, path)
-extractions(item_id PK, run_id, model, prompt_version, payload_json, cost_usd)   -- Extraction (§6.8)
-entities(id PK, type, canonical_name, aliases_json, taxonomy_key, embedding_ref, first_seen, last_seen)
-entity_mentions(item_id, entity_id, role, confidence)
-entity_merges(id PK, kept_entity_id, merged_entity_id, method, confidence, decided_at, reverted)
+extractions(item_id PK, run_id, status, model, prompt_version, payload_json, error, cost_usd, attempts)  -- Extraction (§6.8)
+entities(id PK, type, name, norm, category, first_seen, last_seen, mention_count)  -- UNIQUE(type, norm)
+entity_aliases(type, alias_norm, entity_id, alias)                   -- PK(type, alias_norm): nomes alternativos
+entity_mentions(item_id, entity_id, role)                            -- main | used | mentioned | tag
+entity_relations(subject_id, predicate, object_id, item_id, valid_from)   -- uses, addresses, developed_by, …
+entity_merges(id PK, entity_id, name, method, score, decided_at)     -- exact | alias | judge (auditoria)
+entity_embeddings(entity_id PK, model, dim, vector)                  -- nomes, para a resolução
 ideas(id PK, version, parent_id, created_at, status, title, card_json, scores_json, novelty_json, run_id)
 feedback(id PK, target_type, target_id, value, note, created_at, channel)       -- item | idea | entity
 runs(id PK, kind, started_at, finished_at, stats_json, cost_usd, ok, error)
@@ -357,7 +362,6 @@ source_state(source PK, cursor_json, last_ok_at, last_error, consecutive_failure
 llm_calls(id PK, run_id, task, requested_model, model, provider, generation_id,   -- model/provider efetivos
           input_tokens, output_tokens, reasoning_tokens, cached_tokens,
           cost_usd, latency_ms, status, error, created_at)                -- cost_usd = usage.cost (real)
-graph_outbox(id PK, op, payload_json, created_at, applied_at)             -- operações de grafo pendentes (Neo4j fora do ar)
 star_snapshots(repo, date, stars, forks)                            -- velocidade de repositórios
 ```
 
@@ -383,7 +387,7 @@ Princípio: três famílias de nós — **fonte** (`Item` e subtipos, com proven
 
 | Label | Papel | Propriedades principais |
 |---|---|---|
-| `Item` (+ sublabel: `Paper`, `Article`, `NewsletterItem`, `Post`, `Repo`, `MCPServer`, `Skill`, `ModelRelease`, `DatasetRelease`, `ProductNews`, `RegulationNews`, `Manual`) | unidade ingerida | `id` (canônico: doi / arxiv_id / github_full_name / URL normalizada / ig_shortcode), `title, url, source, published_at, ingested_at, lang, summary_pt, why_it_matters_pt, scores{A,B,C,D,total}, evidence_stage (D0–D6), br_applicability (F0–F3), cfm_risk (G), audience[], embedding, content_hash, obsidian_path (legado), seen_id (legado)` |
+| `Item` (+ sublabel: `Paper`, `Article`, `NewsletterItem`, `Post`, `Repo`, `MCPServer`, `Skill`, `ModelRelease`, `DatasetRelease`, `ProductNews`, `RegulationNews`, `Manual`) | unidade ingerida | `id` (canônico: doi / arxiv_id / github_full_name / URL normalizada / ig_shortcode), `title, url, source, published_at, ingested_at, lang, summary_pt, why_it_matters_pt, scores{A,B,C,D,total}, evidence_stage (D0–D6), br_applicability (F0–F3), cfm_risk (G), audience[], embedding, content_hash` |
 | `Chunk` (opcional, itens longos) | proveniência fina | `text, order, embedding` + `FROM_ITEM`, `NEXT_CHUNK` |
 | `Technique` | método/modelo/capacidade de IA | `name, family (C01–C21), aliases[], description_pt, first_seen, last_seen, mention_count, trend_7d, pagerank, community_id, importance, embedding, merged_from[]` |
 | `Capability` | o "B" do modelo ABC (verbo-objeto intermediário) | `name, embedding, first_seen` |
@@ -433,7 +437,7 @@ Decisão do usuário (§16.1, item 12): modelos chineses comparáveis aos da Ant
 - **Fallbacks:** campo `models` com 2–3 modelos de famílias diferentes por etapa; o OpenRouter também troca de provedor sozinho quando um endpoint falha.
 - **Custo real:** cada resposta traz `usage.cost` (US$), tokens de entrada, saída, raciocínio e cache, e os `model`/`provider` efetivos, tudo gravado em `llm_calls`. Antes de cada chamada, o gateway compara o gasto do dia/semana/mês com os tetos (§13).
 - **Cache:** prefixos estáveis (rubrica, ontologia, few-shot) no início do prompt. DeepSeek e Moonshot fazem cache implícito com roteamento "sticky".
-- **Batch:** a Batch API do OpenRouter (~50% do preço, ≤ 24 h) não oferece ZDR e **não é usada**. Nos modelos escolhidos, o endpoint síncrono ZDR mais barato custa o mesmo ou menos que a variante `:batch`. Lotes grandes, como a migração do vault, rodam síncronos com concorrência de 4–8.
+- **Batch:** a Batch API do OpenRouter (~50% do preço, ≤ 24 h) não oferece ZDR e **não é usada**. Nos modelos escolhidos, o endpoint síncrono ZDR mais barato custa o mesmo ou menos que a variante `:batch`. Lotes grandes, como o backfill da extração, rodam síncronos com concorrência de 4–8.
 - **Raciocínio:** `reasoning: {effort: low|high|max, exclude: true}` por etapa. Tokens de raciocínio são cobrados como saída; `exclude` só evita trafegá-los. O catálogo de 2026-11-07 impõe duas restrições: GLM-5.3, GLM-5.3-Flash e MiniMax-M3.1-Flash têm raciocínio obrigatório e recusam `none`, e o DeepSeek V4.1 Flash 1017 recusa `medium`. Por isso cada cadeia de fallback usa um nível aceito por todos os seus modelos, e o `doctor` confere cada modelo contra o catálogo vivo.
 - **Modelos por etapa:** padrão em `llm/tasks.py`, sobrescrito por `config/llm.yaml` e pelas variáveis `SOTAWHAT_MODEL_*`. O *bake-off* da P1 valida a escolha final.
 
@@ -477,33 +481,43 @@ Decisão do usuário (§16.1, item 12): modelos chineses comparáveis aos da Ant
 
 ### 6.8 Extração de entidades e relações
 
-Saída estruturada (Pydantic) por item aprovado:
+Implementação na P3 (`sotawhat/pipeline/extract.py`, `sotawhat/graph/resolve.py`, prompt `extract_v1.md`). Entram os itens aprovados na triagem (`main`, `frontier` e `radar`); duplicatas, rejeitados e silenciados ficam de fora. Saída estruturada (Pydantic, JSON estrito) por item:
 
 ```python
-class EntityRef(BaseModel):
-    name: str                 # nome canônico em inglês
-    type: Literal["technique","problem","domain","organization","person","model","dataset","product","regulation"]
-    taxonomy_key: str | None  # chave do vocabulário controlado, se houver
-    confidence: float
+EntityType = Literal["technique", "model", "dataset", "organization", "product", "problem", "regulation"]
 
-class Claim(BaseModel):
-    text: str; metric: str | None; value: str | None; comparison: str | None
+class ExtractedEntity(BaseModel):
+    name: str            # nome canônico em inglês; nomes próprios como escritos no texto (com a versão)
+    type: EntityType
+    category: str        # C01–C21 para técnica/modelo, B01–B15 para problema, "none" no resto
+    role: Literal["main", "used", "mentioned"]
 
-class Relation(BaseModel):
-    subject: str; predicate: Literal["USES","ADDRESSES","BY","SUBJECT_TO","COMPARES_WITH","BUILDS_ON"]
-    object: str; confidence: float
+class ExtractedRelation(BaseModel):
+    source: str
+    relation: Literal["uses", "addresses", "developed_by", "evaluated_on", "compared_with", "builds_on",
+                      "regulated_by"]
+    target: str
+
+class ExtractedClaim(BaseModel):
+    text_pt: str         # pt-BR; números só se estiverem no texto
+    metric: str
+    value: str
 
 class Extraction(BaseModel):
-    entities: list[EntityRef]
-    relations: list[Relation]
-    claims: list[Claim]
-    maturity: Literal["research","prototype","product","deployed","regulated"]
-    evidence_level: Literal["preprint","peer_reviewed","rct","real_world","vendor_claim","opinion"]
-    data_modalities: list[str]      # imaging, ehr, text, audio, signals, genomics, video
-    hospital_stakeholders: list[str]
+    entities: list[ExtractedEntity]          # até 12
+    relations: list[ExtractedRelation]       # até 10, só entre as entidades listadas
+    claims: list[ExtractedClaim]             # até 5
+    maturity: Literal["research", "prototype", "product", "deployed", "regulated", "unclear"]
+    data_modalities: list[Literal["imaging", "ehr", "text", "audio", "signals", "genomics", "video", "other"]]
 ```
 
-**Resolução de entidades (upsert):** (1) normalização e tabela de aliases (`taxonomy/aliases.yaml`); (2) busca vetorial por nome+tipo no grafo (limiar 0,92 → mesmo nó; 0,80–0,92 → juiz LLM com os dois candidatos); (3) caso novo, criar nó com `first_seen`. Todas as decisões de merge ficam registradas (`entity_merges`) para auditoria e reversão.
+Pessoas ficam de fora nesta versão (LGPD, §6.13); as organizações respondem "quem está ativo". As categorias da triagem (domínios A, tipos de problema B e famílias de técnica C) também viram nós do grafo, sem custo de LLM, ligados a todos os itens aprovados.
+
+**Resolução de entidades (upsert):**
+1. Normalização: minúsculas, sem acentos nem pontuação, sem "the". O acrônimo entre parênteses vira alias: "retrieval-augmented generation (RAG)". Técnicas e problemas ficam no singular.
+2. Correspondência exata por (tipo, nome normalizado) na tabela de aliases, que começa com `config/aliases.yaml`. Modelo e produto formam um grupo só, porque a fronteira entre eles varia de texto para texto.
+3. Candidatos parecidos, sempre com os mesmos números ("GPT-4o" ≠ "GPT-4.1", "MedGemma 1.5" ≠ "MedGemma 2"): semelhança de texto, um nome contido no outro ("DeepMind" ⊂ "Google DeepMind") ou cosseno alto entre os embeddings dos nomes. Os candidatos vão a um juiz LLM barato (tarefa `resolve`), com teto de chamadas por run. Acima do teto, ou sem resposta, cria-se uma entidade nova, porque separar é melhor que fundir errado.
+4. Toda fusão fica registrada em `entity_merges` (método, nota, data), para auditoria. Relações fora dos padrões permitidos (tipo de origem × tipo de destino, por relação) são descartadas e contadas.
 
 ### 6.9 Inteligência do grafo (semanal + diário leve)
 
@@ -527,16 +541,16 @@ Ver §8.
 | **Telegram** (principal) | digest diário (resumo + itens com botões 👍/👎/🧪), relatório semanal, alertas de falha; recebe links para captura manual | bot próprio (`telegram_bot.py`, long polling) — sem servidor público |
 | **Markdown/HTML local** | `data/digests/YYYY-MM-DD.md` + `.html` | sempre gerado |
 | **E-mail** (opcional, ligado em 2026-11-08) | cópia do digest diário (as duas seções e o radar; os votos continuam no Telegram) | SMTP com STARTTLS em `smtp.gmail.com:587`, reaproveitando `GMAIL_ADDRESS` + a senha de app de `GMAIL_APP_PASSWORD` (a mesma da leitura das newsletters na P2); destinatário em `DIGEST_EMAIL_TO`. HTML só com estilos inline. Uma senha que não tem o formato de senha de app é recusada antes de conectar, para que a senha da conta nunca seja enviada |
-| **MCP server** | `search_items`, `get_entity`, `neighbors`, `trends`, `gaps`, `list_ideas`, `feedback`, `cypher_readonly` | `mcp` SDK (FastMCP) sobre SQLite + Neo4j; registrado em `.mcp.json` |
-| **Web local** | grafo interativo (sigma.js), busca, filtros por período/tipo, página do item/entidade/ideia, feedback | FastAPI em `localhost:8765` |
-| **Export Obsidian** (transição e backup sem lock-in) | uma nota por item aprovado com frontmatter tipado (`type, source, published, relevance, why_it_matters, entities, status, rating`) + notas-entidade reais (técnica/problema/organização/solução) com wikilinks + arquivos `.base` versionados (inbox por score, por fonte, kanban por status, ideias por nota) | `data/exports/obsidian/` ou o vault atual; idempotente (sobrescreve por `id`) |
+| **MCP server** (P3) | `search`, `entity`, `neighbors`, `recent_items`, `graph_stats` e `cypher` (só leitura, no Neo4j); `trends`, `gaps` e `list_ideas` chegam na P4 | `sotawhat serve-mcp` (stdio, `MCPServer` do SDK `mcp` 2.x) sobre o SQLite; registrado em `.mcp.json` |
+| **Interface web** (P3; antes P6) | grafo navegável das entidades (técnicas, modelos, datasets, organizações, produtos, problemas, regulações e as categorias da taxonomia); filtros por período, tipo e número de menções; busca; painel da entidade (itens, vizinhos, relações) e do item (resumo, por que importa, votos 👍/👎/🧪) | `sotawhat serve`: FastAPI em `127.0.0.1:8765`, lendo do SQLite; sigma.js 3 + graphology com os arquivos JS no próprio pacote; pode subir ao fazer logon |
+| **Export** (sem lock-in) | grafo (nós e arestas) e itens aprovados | `sotawhat graph export`: JSON + CSV em `data/exports/` |
 
 **Regras de cadência e formato (evidência em `plataformas_similares.md`, P8–P9):** nota diária curta (tipicamente ≤ 10 itens: 1 frase + "por que importa para você" + score + link + fonte), seção *Radar* com 1 linha por item; **"nada relevante hoje" → não envia**; síntese semanal mais longa (3–5 itens no estilo Doctor Penguin + tendências + lacunas + ideias) e *catch-up* automático após dias sem leitura; medicina tende a cadência semanal, ML a diária — o digest diário é predominantemente ML∩medicina aplicada e o semanal consolida. Cada item traz score visível e número de fontes independentes.
 
 ### 6.12 Agendamento e operação
 
-- `sotawhat run daily` às **07:00** e `sotawhat run weekly` aos domingos às **20:00** via Task Scheduler. `scripts/schedule_daily.ps1` registra as tarefas com *wake to run*. O Docker Desktop é um aplicativo da sessão do usuário e não roda sem logon. Por isso a coleta, a triagem e o digest não dependem do grafo, e uma terceira tarefa, "ao fazer logon", roda `sotawhat graph sync` para aplicar o que ficou pendente. O bot do Telegram e o MCP server rodam sob demanda ou também na tarefa "ao fazer logon".
-- No início das etapas de grafo, `scripts/start_graph.ps1` (ou o equivalente em Python) testa `docker info`. Se o Docker Desktop estiver fechado, o script o abre (`"$Env:ProgramFiles\Docker\Docker\Docker Desktop.exe"`) e espera até 120 s; depois roda `docker compose up -d neo4j` (idempotente) e espera o *healthcheck* (`cypher-shell 'RETURN 1'`). Se o grafo não responder, o run continua com o backend `memory`, grava as operações em `graph_outbox` (SQLite) para a próxima sincronização e marca `graph_degraded=true` no resumo. Pré-requisito: no Docker Desktop, Settings → General → "Start Docker Desktop when you sign in".
+- `sotawhat run daily` às **07:00** e `sotawhat run weekly` aos domingos às **20:00** via Task Scheduler. `scripts/schedule_daily.ps1` registra as tarefas com *wake to run*. O Docker Desktop é um aplicativo da sessão do usuário e não roda sem logon. Por isso nada no run diário depende do Neo4j: a extração e a resolução gravam no SQLite, e o espelho no Neo4j é sincronizado quando ele responde (no próprio run ou com `sotawhat graph sync`). O ouvinte de votos e a interface web podem rodar como tarefas "ao fazer logon"; o MCP sobe sob demanda, pelo Claude Code.
+- `sotawhat graph up` testa `docker info`. Se o Docker Desktop estiver fechado, abre-o (`"$Env:ProgramFiles\Docker\Docker\Docker Desktop.exe"`) e espera até 120 s; depois roda `docker compose up -d neo4j` (idempotente) e espera o Neo4j responder. O run diário só tenta conectar: se o Neo4j não responder, o resumo avisa, e a próxima sincronização aplica o atraso (marca d'água em `items.graph_synced_at`). Pré-requisito: no Docker Desktop, Settings → General → "Start Docker Desktop when you sign in".
 - Lock file por run; retries por fonte (3×, backoff exponencial); `source_state.consecutive_failures ≥ 3` gera alerta.
 - `sotawhat doctor` verifica:
   - chaves e tokens: OpenRouter (saldo e limite via `GET /api/v1/key`), Telegram (`getMe`), Gmail, Apify, GitHub e HF;
@@ -730,13 +744,14 @@ Todos os custos com os modelos chineses via OpenRouter, endpoints ZDR e tokens d
 
 ---
 
-## 9. Migração do Obsidian
+## 9. Sem Obsidian (decisão de 2026-11-08)
 
-1. `sotawhat migrate-vault --vault <path>`: lê as 2.893 notas (frontmatter YAML + corpo), cria `Item`s com `source` derivado da pasta, `kind=paper`, `text=abstract`, `published_at=date`, `fetched_at=added`; preserva `.sotawhat_seen.json` como mapa de ids antigos.
-2. Triagem em lote com o modelo de triagem (síncrono, concorrência 4–8, ZDR; ≈ US$ 1 no total). A expectativa é aprovar 20–35%, porque o vault contém muito ruído do perfil `geral` e do PubMed amplo.
-3. Extração em lote dos aprovados (≈ 600–1.000 itens) e carga no grafo.
-4. O vault antigo fica intacto como arquivo; o export Markdown novo (§6.11) pode apontar para uma pasta nova dentro do mesmo vault durante 60 dias, para comparação.
-5. Critério para desligar o Obsidian: 4 semanas seguidas em que o usuário não abre o vault para consultar (auto-declarado) e todas as consultas são atendidas por Telegram/MCP/web.
+O usuário pediu "uma interface com um grafo construído por nós" e nenhum uso do Obsidian. Consequências:
+
+1. Nada lê nem escreve no vault (`D:\Lucas\obsidian_vaults\ml_ai_med_vault`), que fica intacto como arquivo pessoal do usuário. Em 2026-11-08 a tarefa agendada foi registrada de novo, sem `--vault`, antes de qualquer escrita.
+2. Saem do código os comandos `digest` e `backfill-links`, a opção `--vault` de `run daily` e de `eval golden draft`, os módulos `obsidian.py` e `backfill.py` e o script `schedule_digest.ps1` (P3, tarefa 1).
+3. As 2.893 notas antigas não são migradas (escolha "Ignorar o vault"). O grafo começa com os itens que o próprio sotawhat coletou desde a P0 e cresce a cada run. O golden set v1, que já usou uma amostra dessas notas, continua valendo como dado de avaliação.
+4. A interface é a página web da P3 (§6.11). A cópia de segurança sem lock-in é o export JSON/CSV mais os dumps (G7, D12).
 
 ---
 
@@ -750,7 +765,7 @@ O arquivo `.env.example` na raiz do repositório lista todas as variáveis com c
 |---|---|---|---|
 | 1 | Conta no OpenRouter, créditos e chave dedicada | openrouter.ai → **Credits**: comprar US$ 10–20 (o checkout mostra a taxa). → **Keys**: criar a chave "sotawhat" com **limite mensal** (ex.: US$ 30) → `OPENROUTER_API_KEY`. → **Settings → Privacy**: ligar ZDR em "All other models" e manter desligados o *logging* e o "uso de entradas/saídas" | o código também envia `zdr: true`; os tetos internos ficam em `SOTAWHAT_LLM_BUDGET_USD_*` (§13) |
 | 2 | Python 3.12 + `uv` (já instalados) e `ffmpeg` (reels) | `winget install ffmpeg` | `faster-whisper` baixa o modelo no 1º uso |
-| 3 | Docker Desktop + Neo4j Community 2026.10 | No Docker Desktop (já instalado): Settings → General → "Start Docker Desktop when you sign in". Opcional: `%UserProfile%\.wslconfig` com `[wsl2]` `memory=6GB`. A partir da P3: `docker compose up -d neo4j` na raiz do repositório | plugins APOC + GDS Community via `NEO4J_PLUGINS`; `NEO4J_PASSWORD` no `.env`; portas só em 127.0.0.1 |
+| 3 | Docker Desktop + Neo4j Community 2026.10 | No Docker Desktop (já instalado): Settings → General → "Start Docker Desktop when you sign in". Opcional: `%UserProfile%\.wslconfig` com `[wsl2]` `memory=6GB`. A partir da P3: `sotawhat graph up` na raiz do repositório | APOC + GDS só na P4; `NEO4J_PASSWORD` no `.env`; portas só em 127.0.0.1 |
 | 4 | Gmail: verificação em 2 etapas + App Password | `myaccount.google.com/apppasswords` | ou projeto no Google Cloud (Gmail API, app *Desktop*, publicado "In production") |
 | 5 | Filtro/label `newsletters/ai` no Gmail | Gmail → Configurações → Filtros | remetentes confirmados pelo header do 1º e-mail |
 | 6 | Instagram: nada a configurar na Meta (conta pessoal, §7.2) | — | captura manual pelo bot do Telegram + varredura via Apify |
@@ -767,7 +782,7 @@ O arquivo `.env.example` na raiz do repositório lista todas as variáveis com c
 | Grupo | Variáveis | Expiração / rotação |
 |---|---|---|
 | Núcleo e LLM | `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`, `OPENROUTER_ZDR` (`true`), `OPENROUTER_DATA_COLLECTION` (`deny`), `OPENROUTER_QUANTIZATIONS`, `SOTAWHAT_DATA_DIR`, `SOTAWHAT_TZ`, `SOTAWHAT_LOG_LEVEL`, `SOTAWHAT_LLM_BUDGET_USD_DAY`, `SOTAWHAT_LLM_BUDGET_USD_RUN_WEEKLY`, `SOTAWHAT_LLM_BUDGET_USD_MONTH`, `SOTAWHAT_MODEL_TRIAGE`, `SOTAWHAT_MODEL_SEGMENT`, `SOTAWHAT_MODEL_VISION`, `SOTAWHAT_MODEL_EXTRACT`, `SOTAWHAT_MODEL_SYNTH`; opcional `ANTHROPIC_API_KEY` (rodada *premium*, desligada) | chave do OpenRouter: limite mensal na própria chave; rotacionar se vazar |
-| Grafo e vetores | `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`, `NEO4J_HEAP_MAX`, `NEO4J_PAGECACHE`, `GRAPH_BACKEND` (`neo4j`∣`ladybug`∣`memory`), `EMBEDDINGS_BACKEND` (`fastembed`∣`voyage`), `VOYAGE_API_KEY` (opcional) | — |
+| Grafo, interface e vetores | `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` (vazio = espelho desligado; a interface funciona igual), `NEO4J_DATABASE`, `NEO4J_HEAP_MAX`, `NEO4J_PAGECACHE`, `SOTAWHAT_WEB_PORT` (8765), `EMBEDDINGS_BACKEND` (`fastembed`∣`voyage`), `VOYAGE_API_KEY` (opcional) | — |
 | Gmail | `GMAIL_BACKEND` (`imap`∣`api`), `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD` · ou `GOOGLE_CLIENT_SECRET_FILE`, `GMAIL_TOKEN_FILE` (ou `GOOGLE_OAUTH_CLIENT_ID/SECRET` + `GMAIL_REFRESH_TOKEN` em CI); `GMAIL_LABEL`, `GMAIL_QUERY` | App Password: revogada ao trocar a senha; refresh token: 7 dias se app em "Testing", senão até troca de senha / 6 meses sem uso / > 100 tokens |
 | Instagram | `APIFY_TOKEN` (padrão) ∣ `HIKERAPI_TOKEN` (∣ `SCRAPECREATORS_API_KEY`, `BRIGHTDATA_API_TOKEN`); T4: `IG_UNOFFICIAL_ENABLED=false`, `IG_USERNAME`, `IG_PASSWORD`, `IG_SESSION_FILE`, `IG_TOTP_SECRET`, `IG_PROXY_URL`. API oficial **não usada** (conta pessoal): `IG_*`/`FB_*` ficam comentadas no `.env.example` para o caso de conversão futura | crédito da Apify renova todo mês; saldo HikerAPI não expira; sessão T4 até `LoginRequired` |
 | Telegram | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_ID`, `TELEGRAM_CHAT_ID`; opcional `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` | sem expiração; `/revoke` no BotFather |
@@ -781,7 +796,7 @@ O arquivo `.env.example` na raiz do repositório lista todas as variáveis com c
 Mínimo por fase:
 - P0: `OPENROUTER_API_KEY`, `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`.
 - P2: `GMAIL_ADDRESS` + `GMAIL_APP_PASSWORD`, `GITHUB_TOKEN`, `HF_TOKEN`.
-- P3: `NEO4J_PASSWORD`.
+- P3: `NEO4J_PASSWORD`, gerada localmente e usada só pelo Neo4j em 127.0.0.1.
 - P5: `APIFY_TOKEN`. O registry MCP, o catálogo Docker, feeds Atom do GitHub, arXiv, PubMed e RSS funcionam sem credenciais.
 
 ---
@@ -792,13 +807,13 @@ Mínimo por fase:
 |---|---|---|---|
 | **P0 · Fundação** (semana 1) | `config.py`, SQLite + schema, `Item` + ids canônicos, **gateway LLM OpenRouter** (JSON estrito, ZDR, fallbacks, custo real em `llm_calls`, tetos de orçamento), adapters atuais ligados ao novo `collect`, **correção dos feeds da Nature** (detecção de HTML + fonte Crossref por ISSN) e remoção dos feeds mortos (§5.1), `run daily` mínimo (coleta + normalização + dedup exato) agendado, `doctor` (com teste de fumaça dos modelos), Telegram de alerta. Plano: `docs/superpowers/plans/2026-11-07-insight-engine-p0-foundation.md` | run diário completa e manda resumo no Telegram; testes antigos continuam verdes; nenhum feed devolve HTML em silêncio; `doctor --llm` valida JSON estrito nos modelos padrão | 3–4 dias |
 | **P1 · Triagem + digest** (semana 2) | *mute filters*, rubrica, prompt v1, saída estruturada, dedup semântico (embeddings locais), classificador por perfil (treina quando houver ≥ 100 avaliações), digest MD/HTML/Telegram com botões de feedback, golden set inicial (50 itens), **bake-off de modelos** (`sotawhat eval models`) e `config/llm.yaml`. Plano: `docs/superpowers/plans/2026-11-08-insight-engine-p1-triage-digest.md` | digest diário com ≤ 15 itens; feedback persistido; modelo de triagem escolhido por dados | 3–4 dias |
-| **P2 · Novas fontes I** (semana 3) | Tier 1 do §5 (Crossref/PubMed `[jour]`, ScienceDirect, JAMA AI, medRxiv API, FDA CSV, Google News), AlphaSignal RSS, The Batch via sitemap, Gmail (newsletters → itens), GitHub (busca + estrelas + releases), HF Hub, MCP registry, skills | cada fonte com fixture + teste; itens aparecem no digest com proveniência | 4–5 dias |
-| **P3 · Grafo** (semanas 4–5) | `compose.yaml` do Neo4j no Docker Desktop + `start_graph.ps1` + `graph_outbox` + tarefa "ao fazer logon", `GraphStore` (Neo4j + fallback), extração v1, resolução de entidades, upsert com proveniência, migração do vault, MCP server, export Obsidian | grafo com ≥ 1.000 itens migrados; consultas via MCP no Claude Code | 6–8 dias |
+| **P2 · Novas fontes I** (executada depois da P3) | Tier 1 do §5 (Crossref/PubMed `[jour]`, ScienceDirect, JAMA AI, medRxiv API, FDA CSV, Google News), AlphaSignal RSS, The Batch via sitemap, Gmail (newsletters → itens), GitHub (busca + estrelas + releases), HF Hub, MCP registry, skills | cada fonte com fixture + teste; itens aparecem no digest com proveniência | 4–5 dias |
+| **P3 · Grafo + interface** (executada antes da P2, decisão de 2026-11-08) | remoção do Obsidian; extração v1 (entidades, relações e números) dos itens aprovados; resolução de entidades com aliases e juiz LLM; categorias da taxonomia como nós; **interface web própria** (FastAPI + sigma.js, lendo do SQLite); espelho no Neo4j (`compose.yaml`, `sotawhat graph up` e `sync`); MCP server; export JSON/CSV; extração e espelho no run diário. Plano: `docs/superpowers/plans/2026-11-08-insight-engine-p3-graph-interface.md` | grafo navegável em `localhost:8765` com os itens já aprovados; consultas pelo MCP no Claude Code; Neo4j espelhado; nada do Obsidian no código | 4–6 dias |
 | **P4 · Inteligência + ideação** (semanas 6–7) | comunidades/tendências/lacunas, mapa semanal, pipeline de ideação (§8), ledger, novidade, relatório semanal, feedback de ideias | 1º relatório semanal com 5–10 idea cards e verificação de novidade | 6–8 dias |
 | **P5 · Instagram** (semana 8) | adapter conforme §7.2 (varredura de contas públicas via Apify/HikerAPI + captura manual pelo Telegram + curadoria da lista de seguidos), extração multimodal | posts das contas configuradas no digest; custo dentro do teto | 3–5 dias |
-| **P6 · Web + endurecimento** (semana 9) | web local do grafo, evals de extração/ideação, backup, documentação, calibração de pesos com 4 semanas de feedback | métricas G2–G4 medidas e reportadas | 4–5 dias |
+| **P6 · Endurecimento** (semana 9) | evals de extração/ideação, backup, documentação, calibração de pesos com 4 semanas de feedback, melhorias da interface (a primeira versão veio na P3) | métricas G2–G4 medidas e reportadas | 3–4 dias |
 
-Cada fase vira um *plan* no padrão `docs/superpowers/plans/` (TDD, tarefas pequenas), como nas entregas anteriores do repositório.
+Cada fase vira um *plan* no padrão `docs/superpowers/plans/` (TDD, tarefas pequenas), como nas entregas anteriores do repositório. Ordem de execução desde 2026-11-08: P0 → P1 → P3 → P2 → P4 → P5 → P6.
 
 ---
 
@@ -851,7 +866,7 @@ Tokens de raciocínio contam como saída; nas etapas com raciocínio alto, a est
 | Opcionais: Voyage, Exa, Lens/EPO OPS, BigQuery; rodada *premium* com Claude (desligada) | — | — | 0 (rodada *premium*: ≈ US$ 4–8) |
 | **Configuração recomendada inicial** (diário + mapa semanal + ideação econômica + IG) | | | **≈ US$ 8–11/mês** (antes: ≈ US$ 45–50, uma redução de ~80%) |
 | Configuração com ideação completa | | | ≈ US$ 25–40/mês |
-| Migração do vault (uma vez) | triagem de 2.893 notas + extração de ~900 aprovadas (DeepSeek V4.1 Flash, síncrono, ZDR) | — | ≈ US$ 2 (antes: US$ 11) |
+| Extração dos itens já aprovados (uma vez, P3) | ~65 itens (DeepSeek V4.1 Flash, síncrono, ZDR) | — | < US$ 0,10 (a migração do vault saiu do escopo, §9) |
 
 **Controle de gasto (três camadas):**
 1. **Corte duro fora do código:** limite mensal na própria chave do OpenRouter (ex.: US$ 30; US$ 50 no modo completo).
@@ -891,7 +906,7 @@ Tokens de raciocínio contam como saída; nas etapas com raciocínio alto, a est
 
 | ID | Decisão | Alternativas consideradas | Motivo |
 |---|---|---|---|
-| D1 | **Grafo: Neo4j Community 2026.10 no Docker Desktop** (escolha do usuário, §16.1 item 11; `compose.yaml`, volume nomeado, portas só em localhost), plugins APOC + GDS Community; interface `GraphStore` fina; **LadybugDB** (fork MIT do Kùzu, embutido, `pip install ladybug`) documentado como alternativa "zero-ops" | Memgraph (ótimo MAGE, mas só Docker/WSL e licença BSL), FalkorDB (SSPL, Docker, sem Louvain/Leiden), **Kùzu (arquivado em 2025-10-10 — não usar)**, LadybugDB como primário, AuraDB Free (pausa após 72 h, apaga após 30 d, 200k nós), só NetworkX, só Obsidian | o usuário citou Neo4j; GDS CE traz Leiden, similaridade e predição de links in-database (insumos diretos da ideação); Neo4j Desktop/Bloom dá visualização imediata; servidor MCP oficial `mcp-neo4j-cypher` (Neo4j Labs, PyPI 0.6.0) permite consultar o grafo do Claude Code desde a fase P3; `neo4j-graphrag` 1.23 tem retrievers híbridos (o LLM continua passando pelo gateway próprio); é o único backend comum a todos os frameworks avaliados. Risco: JVM (~1–2 GB RAM) dentro do WSL2 e dependência do Docker Desktop aberto na sessão do usuário — mitigado por `start_graph.ps1`, `graph_outbox` e backend `memory`; a interface `GraphStore` + Cypher portável + export Parquet semanal mantêm a porta aberta para LadybugDB. Detalhes: `grafo_stack.md` (KQ1, KQ7) |
+| D1 | **Grafo: Neo4j Community 2026.10 no Docker Desktop** (escolha do usuário, §16.1 item 11; `compose.yaml`, volume nomeado, portas só em localhost), plugins APOC + GDS Community; interface `GraphStore` fina; **LadybugDB** (fork MIT do Kùzu, embutido, `pip install ladybug`) documentado como alternativa "zero-ops" | Memgraph (ótimo MAGE, mas só Docker/WSL e licença BSL), FalkorDB (SSPL, Docker, sem Louvain/Leiden), **Kùzu (arquivado em 2025-10-10 — não usar)**, LadybugDB como primário, AuraDB Free (pausa após 72 h, apaga após 30 d, 200k nós), só NetworkX, só Obsidian | o usuário citou Neo4j; GDS CE traz Leiden, similaridade e predição de links in-database (insumos diretos da ideação); Neo4j Desktop/Bloom dá visualização imediata; servidor MCP oficial `mcp-neo4j-cypher` (Neo4j Labs, PyPI 0.6.0) permite consultar o grafo do Claude Code desde a fase P3; `neo4j-graphrag` 1.23 tem retrievers híbridos (o LLM continua passando pelo gateway próprio); é o único backend comum a todos os frameworks avaliados. Risco: JVM (~1–2 GB RAM) dentro do WSL2 e dependência do Docker Desktop aberto na sessão do usuário — mitigado por `sotawhat graph up` e, desde a v1.4, pelo fato de a interface e o MCP lerem do SQLite (D16). Detalhes: `grafo_stack.md` (KQ1, KQ7) |
 | D2 | SQLite como registro operacional, grafo reconstruível | só grafo; Postgres | simplicidade local, auditoria, reprocessamento |
 | D3 | Embeddings locais por padrão (**EmbeddingGemma-300m** via `fastembed` 0.9, CPU, multilíngue; o BGE-M3 previsto antes não existe no `fastembed`); a fusão "mesma história" usa título quase idêntico, não cosseno (medição 2026-11-07); **Voyage AI `voyage-4-lite`** como opção por flag (US$ 0,02/M tokens, 200 M tokens grátis; a Anthropic não oferece embeddings) | OpenAI/Gemini embeddings; sentence-transformers pesados | custo zero e offline por padrão; troca sem migração (dimensão fixa por índice; reindexar ao trocar) |
 | D4 | Instagram: conta pessoal, logo **sem API oficial**. Captura manual pelo Telegram sempre ligada + varredura diária das contas públicas via Apify (HikerAPI como alternativa); método não oficial só por opt-in, desligado | converter a conta para Creator e usar Business Discovery; só instagrapi | escolha do usuário (§16.1, item 6); risco zero para a conta pessoal; custo dentro do crédito grátis da Apify |
@@ -902,10 +917,11 @@ Tokens de raciocínio contam como saída; nas etapas com raciocínio alto, a est
 | D9 | Relevância em dois estágios: classificador leve por perfil (embeddings + regressão logística com 👍/👎) como porta após 100 avaliações; LLM barato (modelo de triagem) só para rubrica, "por que importa" e extração | LLM em tudo; só regex/keywords | padrão com métrica publicada (Scholar Inbox F1 ≈ 84); custo 10× menor; responde à crítica "LLM é overkill" sem a fragilidade do regex |
 | D10 | Gateway próprio e fino sobre a API do OpenRouter (`httpx`, Chat Completions, `json_schema` estrito + validação Pydantic), com interface de provedor; Claude opcional pelo SDK oficial `anthropic` | SDK `openai` com `base_url`; SDK do OpenRouter; litellm/instructor/pydantic-ai | controle total dos campos próprios do OpenRouter (`provider`, `models`, `plugins`, `usage.cost`); nenhuma dependência nova além de `pydantic`; testes com `httpx.MockTransport`; trocar de provedor não mexe no pipeline |
 | D11 | Vocabulários controlados (A/B/C/D–G) + entidades abertas resolvidas por alias/embedding/juiz | ontologia totalmente aberta; ontologia totalmente fechada | chaves estáveis para scoring e consultas, sem perder nomes específicos (modelos, produtos) |
-| D12 | Export Markdown contínuo (compatível com Obsidian, com `.base`) como visão/backup; SQLite + grafo como sistema | Markdown como fonte de verdade (padrão Letta/Basic Memory/claude-obsidian) | o usuário pediu substituir o Obsidian por um grafo com inteligência própria; o export preserva a saída sem lock-in (G7) |
+| D12 | **Sem Obsidian** (v1.4): nada lê nem escreve no vault; o export é JSON/CSV mais dumps do SQLite e do Neo4j | export Markdown compatível com Obsidian como visão de transição (v1.0–v1.3); Markdown como fonte de verdade (padrão Letta/Basic Memory/claude-obsidian) | pedido do usuário em 2026-11-08 ("não quero usar o vault do Obsidian ou o Obsidian whatsoever"); a interface própria (D16) substitui a visão do vault |
 | D13 | Ideação com geração independente por lentes, críticos separados, prior art por facetas, torneio multi-juiz, seleção por portfólio e ledger com motivo de rejeição | agente único "coordenador"; Elo único; nota de novidade como critério principal | evidência 2024–2026 (§8.1) |
 | D14 | Privacidade de LLM: ZDR obrigatório em todas as chamadas (`zdr: true` + imposição na conta), `data_collection: "deny"`, quantização ≥ fp8, sem Batch API (que não oferece ZDR) | Batch API para economizar; aceitar endpoints que retêm dados | as ideias são propriedade intelectual; exigir ZDR quase não custa nada nos modelos escolhidos, porque o endpoint ZDR elegível mais barato costuma ser o mais barato de todos |
 | D15 | Modelo de cada etapa escolhido por *bake-off* periódico com os golden sets do projeto | confiar só em benchmarks públicos | índices públicos divergem entre versões e trazem números autodeclarados; o catálogo muda todo mês |
+| D16 | **Grafo de entidades no SQLite; interface e MCP leem do SQLite; Neo4j como espelho**, sincronizado por marca d'água | interface lendo do Neo4j com fallback NetworkX (v1.0–v1.3); LadybugDB embutido | a interface funciona com o Docker Desktop fechado (o run das 07:00 pode acontecer sem sessão); uma só implementação das consultas, testável sem Docker; o Neo4j continua útil para Cypher, Neo4j Browser e, na P4, GDS |
 
 ---
 
@@ -923,6 +939,8 @@ As respostas mudam a implementação; onde não houver resposta, a suposição i
 | 13 | Fable 5.1 na rodada final? | sem resposta; superada pela 12 | Fable não entra. A rodada *premium* com Claude fica **opcional e desligada** (`ANTHROPIC_API_KEY` vazio) |
 | 3 | Perfil `geral` (IA pura): radar ou desligado? | No golden set (2026-11-08), 24 dos 51 itens "incluir" eram IA de fronteira sem ligação com saúde; diante disso, a escolha foi "Duas seções" | O digest ganha duas seções principais: "IA ∩ Saúde" (≤ 10) e "Fronteira de IA" (≤ 5, com botões de voto); o radar fica com o resto. Regras em §6.7; pesos e limites em `config/rubric.yaml`; o prompt deixou de pedir pontes médicas inventadas |
 | 9 | Canal: Telegram, e-mail ou ambos? | "Gostaria que o digest viesse na minha caixa de e-mail tbem" | Ambos. Telegram para ler e votar, e e-mail com a cópia do digest pelo SMTP do Gmail, usando a senha de app (§6.11, `DIGEST_EMAIL_TO`) |
+| 16 | Export Markdown no vault por 60 dias? Migrar as 2.893 notas antigas? | "quero uma interface com um grafo construído por nós. Não quero usar o vault do Obsidian ou o Obsidian whatsoever"; depois, "Ignorar o vault" | Obsidian fora do projeto: nada lê nem escreve no vault, a tarefa diária foi registrada de novo sem `--vault`, os comandos do Obsidian saem do código e as notas antigas não são migradas (§9, D12, RF15) |
+| — | Próxima fase depois da P1 | "Grafo + interface" | A P3 é executada antes da P2 e traz a interface web, antes prevista na P6 (§6.11, §11) |
 
 ### 16.2 Perguntas ainda abertas (valem as suposições)
 
@@ -954,7 +972,7 @@ As respostas mudam a implementação; onde não houver resposta, a suposição i
 15. Para verificação de novidade: liberar acesso à **Lens.org** (requer e-mail institucional) e/ou **EPO OPS** (grátis até 4 GB/semana)? Usar **Exa** (crédito grátis)? *Suposição:* Semantic Scholar + OpenAlex + GitHub + EPO OPS.
 
 **Transição**
-16. Manter o export Markdown no vault atual (pasta nova) por 60 dias? Migrar as 2.893 notas antigas (≈ US$ 2)? *Suposição:* sim e sim.
+16. *(respondida — §16.1: sem Obsidian e sem migração)*
 17. Manter o nome `sotawhat` (versão 3.0) ou renomear o repositório? *Suposição:* manter.
 
 ---
@@ -987,8 +1005,8 @@ Limitação comum: a cota de busca web da sessão esgotou-se durante a pesquisa;
 | Dedup | títulos normalizados + Jaccard/`difflib` (stdlib) com índice invertido | juiz LLM para notícias (P2); `datasketch` (MinHash LSH) se o volume crescer |
 | Classificador | `scikit-learn` 1.9 (`LogisticRegression`, validação cruzada estratificada) | — |
 | Configuração editável | `pyyaml` 6 (`config/rubric.yaml`, `mute.yaml`, `llm.yaml`) | — |
-| Grafo | `neo4j` 6.x driver; imagem `neo4j:2026.10-community` no Docker Desktop + APOC + GDS CE; opcional `neo4j-graphrag` 1.23 (retrievers) | `ladybug` 0.22 (embutido); `networkx` 3.7 para algoritmos fora do GDS |
-| MCP | `mcp` 2.3 (FastMCP) — servidor próprio; `mcp-neo4j-cypher` 0.6 (oficial Neo4j Labs) desde a P3 | — |
+| Grafo | entidades no SQLite; espelho com o driver `neo4j` 6.4 e a imagem `neo4j:2026.10.1-community` no Docker Desktop (APOC + GDS CE na P4); opcional `neo4j-graphrag` 1.23 (retrievers) | `networkx` 3.7 para algoritmos fora do GDS |
+| MCP | `mcp` 2.3 (`MCPServer`): servidor próprio sobre o SQLite, com Cypher só leitura no Neo4j | `mcp-neo4j-cypher` 0.6 (Neo4j Labs) |
 | Gmail | `imapclient` 4.1 (`gmail_search`/X-GM-RAW) | `google-api-python-client` 2.201 + `google-auth-oauthlib` 1.5 |
 | HTML/links | `html2text` 2025.4, `trafilatura` 2.3, `w3lib` 2.6, `httpx` | `readability-lxml` |
 | Instagram | Graph API via `httpx`; `apify-client` 3.4 ou HikerAPI via `httpx` | `instagrapi` 3.2 (T4, opt-in) |
@@ -997,8 +1015,7 @@ Limitação comum: a cota de busca web da sessão esgotou-se durante a pesquisa;
 | Vídeo/áudio | `ffmpeg`, `faster-whisper` 1.2 | — |
 | PDF (opcional) | `docling` | `pymupdf4llm` (AGPL) |
 | Telegram | `python-telegram-bot` 22.8 | `aiogram`, `telethon` |
-| Web | FastAPI + Sigma.js 4 / Graphology | Neo4j Desktop/Bloom, NeoDash, Gephi Lite |
-| Vault | `python-frontmatter` 1.3, `obsidiantools` 0.11 (migração) | — |
+| Web | FastAPI + uvicorn; sigma.js 3.0.3, graphology 0.26 e graphology-library 0.8 (ForceAtlas2 e Louvain no navegador), arquivos no pacote, sem CDN. O sigma.js 4 saiu em outubro de 2026 e ainda é novo demais | Neo4j Browser/Bloom, NeoDash, Gephi Lite |
 
 ### C. Glossário
 

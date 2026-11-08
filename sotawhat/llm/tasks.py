@@ -23,6 +23,7 @@ DEFAULT_TASKS = {
     "segment": TaskSpec((MIMO_FLASH, DEEPSEEK_FLASH), "low", 4000),
     "vision": TaskSpec((MIMO_FLASH, GLM_FLASH, MINIMAX_FLASH), "low", 1500),
     "extract": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO, GLM), "high", 12000),
+    "resolve": TaskSpec((DEEPSEEK_FLASH, GLM_FLASH), "low", 600),     # entity-resolution judge (P3)
     "synth": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO), "high", 12000),
     "smoke": TaskSpec((DEEPSEEK_FLASH,), "low", 600),
 }

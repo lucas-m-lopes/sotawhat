@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from sotawhat.llm.tasks import resolve
 
-TASKS = ("triage", "segment", "vision", "extract", "synth")
+TASKS = ("triage", "segment", "vision", "extract", "synth", "resolve")
 _BAD_QUANT = {"fp4", "mxfp4", "nvfp4", "int4", "fp6"}
 
 
@@ -113,7 +113,7 @@ def check_golden(path) -> Check:
         return Check("golden set", "ok", f"{labeled} itens rotulados")
     if labeled:
         return Check("golden set", "warn", f"{labeled} itens rotulados (meta ≥ 50 para o bake-off)")
-    return Check("golden set", "warn", "nenhum item rotulado: `sotawhat eval golden draft --vault <vault>`")
+    return Check("golden set", "warn", "nenhum item rotulado: `sotawhat eval golden draft`")
 
 
 def check_settings(settings) -> list:
@@ -248,6 +248,55 @@ def check_email(settings, factory=None) -> Check:
     return Check(name, "ok", f"login SMTP ok em {settings.smtp_host}:{settings.smtp_port} → {settings.digest_email_to}")
 
 
+def check_neo4j(settings, store, factory=None) -> Check:
+    """The Neo4j mirror (P3, D16): optional, so being off is a warning; configured but silent is a failure."""
+    name = "espelho Neo4j"
+    if not settings.neo4j_password:
+        return Check(name, "warn", "desligado (NEO4J_PASSWORD vazio); a interface funciona sem ele")
+    if factory is None:
+        from sotawhat.graph.neo4j_sync import Neo4jMirror
+        factory = Neo4jMirror.from_settings
+    mirror = factory(settings)
+    try:
+        if not mirror.ping():
+            return Check(name, "fail", f"não responde em {settings.neo4j_uri}: rode `sotawhat graph up`")
+        counts = mirror.counts()
+    finally:
+        mirror.close()
+    synced = store.meta_get("graph_synced_at")
+    age = ""
+    if synced:
+        hours = (datetime.now(timezone.utc) - datetime.fromisoformat(synced)).total_seconds() / 3600
+        age = f" · última sincronização há {hours:.0f} h"
+    return Check(name, "ok", f"{counts['nodes']} nós · {counts['relationships']} relações{age}")
+
+
+def check_graph(store, max_backlog=50) -> Check:
+    from sotawhat.graph.query import stats
+
+    s = stats(store)
+    entities = sum(n for t, n in s["entities"].items() if t not in ("domain", "problem_type", "technique_family"))
+    if not entities and not s["extracted"]:
+        return Check("grafo", "warn", "vazio: rode `sotawhat graph extract` para extrair os itens já aprovados")
+    detail = f"{entities} entidades · {s['relations']} relações · {s['extracted']} itens extraídos"
+    if s["pending_extraction"] > max_backlog:
+        return Check("grafo", "warn", f"{detail} · {s['pending_extraction']} aprovados sem extração "
+                                      "(rode `sotawhat graph extract`)")
+    return Check("grafo", "ok", detail + (f" · {s['pending_extraction']} na fila" if s["pending_extraction"] else ""))
+
+
+def check_web(port, connect=None) -> Check:
+    import socket
+
+    connect = connect or socket.create_connection
+    try:
+        connect(("127.0.0.1", port), timeout=0.5).close()
+    except OSError:
+        return Check("interface", "warn", f"fora do ar: rode `sotawhat serve` (porta {port}) ou agende com "
+                                          "`scripts\\schedule_daily.ps1 -Web`")
+    return Check("interface", "ok", f"no ar em http://127.0.0.1:{port}/")
+
+
 def check_last_run(store, now=None, max_age_hours=36) -> Check:
     now = now or datetime.now(timezone.utc)
     row = store.last_run("daily")
@@ -319,6 +368,8 @@ def main_doctor(ns) -> int:
         if notifier.configured:
             checks.append(check_feedback(store))
         checks.append(check_golden("tests/evals/triage/golden_v1.jsonl"))
+        checks.append(check_graph(store))
+        checks.append(check_neo4j(settings, store))
         if ns.llm:
             if settings.openrouter_api_key:
                 overrides = llm_config["tasks"] if llm_config else None
@@ -326,5 +377,6 @@ def main_doctor(ns) -> int:
                 checks += llm_smoke(LLMGateway(client, store=store, settings=settings, tasks=overrides), primaries)
             else:
                 checks.append(Check("fumaça LLM", "fail", "sem OPENROUTER_API_KEY"))
+    checks.append(check_web(settings.sotawhat_web_port))
     print(render(checks))
     return 1 if any(c.status == "fail" for c in checks) else 0

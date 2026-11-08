@@ -1,0 +1,27 @@
+# compose.yaml — Neo4j Community no Docker Desktop: espelho do grafo de entidades (SDD §6.3, D16).
+# Suba com `sotawhat graph up`, que repassa NEO4J_PASSWORD, NEO4J_HEAP_MAX e NEO4J_PAGECACHE do .env.
+# A senha nunca fica neste arquivo. As portas abrem só em 127.0.0.1, e os dados ficam no volume nomeado
+# sotawhat_neo4j_data. Os plugins APOC e GDS entram na P4, quando os algoritmos forem usados.
+name: sotawhat
+services:
+  neo4j:
+    image: neo4j:2026.10.1-community
+    container_name: sotawhat-neo4j
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
+    environment:
+      NEO4J_AUTH: "neo4j/${NEO4J_PASSWORD:?defina NEO4J_PASSWORD no .env e rode sotawhat graph up}"
+      NEO4J_server_memory_heap_max__size: "${NEO4J_HEAP_MAX:-1G}"
+      NEO4J_server_memory_pagecache_size: "${NEO4J_PAGECACHE:-1G}"
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$${NEO4J_AUTH#neo4j/}\" 'RETURN 1' > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+volumes:
+  neo4j_data:

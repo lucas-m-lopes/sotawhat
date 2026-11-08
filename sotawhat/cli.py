@@ -2,7 +2,7 @@
 import argparse
 import sys
 
-_SUBCOMMANDS = {"search", "digest", "backfill-links", "run", "doctor", "feedback", "eval"}
+_SUBCOMMANDS = {"search", "run", "doctor", "feedback", "eval", "serve", "serve-mcp", "graph"}
 
 def parse_args(argv):
     # Backward compat: `sotawhat <keyword...> [N]` with no subcommand -> search.
@@ -17,24 +17,26 @@ def parse_args(argv):
     p_search = sub.add_parser("search")
     p_search.add_argument("words", nargs="+")
 
-    p_digest = sub.add_parser("digest")
-    p_digest.add_argument("--profile", required=True)
-    p_digest.add_argument("--vault", required=True)
-    p_digest.add_argument("--limit", type=int, default=10)
-
-    p_backfill = sub.add_parser("backfill-links")
-    p_backfill.add_argument("--vault", required=True)
-    p_backfill.add_argument("--profile", default="all")
-
     p_run = sub.add_parser("run")
     p_run.add_argument("kind", choices=["daily"])
     p_run.add_argument("--limit", type=int, default=10)
-    p_run.add_argument("--vault", default=None, help="also write Obsidian notes (transition, SDD §9)")
     p_run.add_argument("--no-notify", action="store_true")
     p_run.add_argument("--no-llm", action="store_true", help="collect and run stage A only (no LLM calls)")
 
     p_doctor = sub.add_parser("doctor")
     p_doctor.add_argument("--llm", action="store_true", help="smoke-test each primary model (cents)")
+
+    p_serve = sub.add_parser("serve", help="graph interface on http://127.0.0.1:8765")
+    p_serve.add_argument("--port", type=int, default=None, help="default: SOTAWHAT_WEB_PORT (8765)")
+    p_serve.add_argument("--no-browser", action="store_true", help="do not open the browser")
+
+    sub.add_parser("serve-mcp", help="MCP server sotawhat-graph over stdio (for Claude Code)")
+
+    p_graph = sub.add_parser("graph", help="entity graph: Neo4j mirror, extraction backlog, export")
+    p_graph.add_argument("graph_action", choices=["up", "extract", "sync", "status", "export"])
+    p_graph.add_argument("--rebuild", action="store_true", help="sync: empty the Neo4j mirror and send everything")
+    p_graph.add_argument("--limit", type=int, default=None, help="extract: at most N items")
+    p_graph.add_argument("--out", default=None, help="export: folder (default data/exports)")
 
     p_feedback = sub.add_parser("feedback")
     p_feedback.add_argument("action", choices=["pull", "listen"])
@@ -44,7 +46,6 @@ def parse_args(argv):
     p_golden = eval_sub.add_parser("golden")
     p_golden.add_argument("action", choices=["draft", "import"])
     p_golden.add_argument("--n", type=int, default=60)
-    p_golden.add_argument("--vault", default=None, help="also sample notes from the old Obsidian vault")
     p_golden.add_argument("--dir", default="tests/evals/triage")
     p_golden.add_argument("--name", default="golden_v1")
     p_golden.add_argument("--seed", type=int, default=13)
@@ -91,12 +92,6 @@ def main(argv=None):
     ns = parse_args(argv if argv is not None else sys.argv[1:])
     if ns.command == "search":
         _run_search(ns)
-    elif ns.command == "digest":
-        from sotawhat.digest import run_digest  # added in Phase 3
-        run_digest(ns)
-    elif ns.command == "backfill-links":
-        from sotawhat.backfill import run_backfill
-        run_backfill(ns)
     elif ns.command == "run":
         from sotawhat.pipeline.daily import main_daily
         raise SystemExit(main_daily(ns))
@@ -109,6 +104,15 @@ def main(argv=None):
     elif ns.command == "eval":
         from sotawhat.evals.commands import main_eval
         raise SystemExit(main_eval(ns))
+    elif ns.command == "serve":
+        from sotawhat.web.app import main_serve
+        raise SystemExit(main_serve(ns))
+    elif ns.command == "serve-mcp":
+        from sotawhat.mcp_server import main_mcp
+        raise SystemExit(main_mcp(ns))
+    elif ns.command == "graph":
+        from sotawhat.graph.commands import main_graph
+        raise SystemExit(main_graph(ns))
 
 if __name__ == "__main__":
     main()

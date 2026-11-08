@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "sotawhat-graph": {
+      "type": "stdio",
+      "command": ".venv/Scripts/sotawhat.exe",
+      "args": ["serve-mcp"]
+    }
+  }
+}

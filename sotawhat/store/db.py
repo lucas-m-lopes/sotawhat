@@ -1,6 +1,8 @@
 # sotawhat/store/db.py
-"""SQLite operational store (SDD §6.4): items, runs, source health, LLM cost ledger and, since
-schema 2 (P1), triage, embeddings, clusters, feedback, deliveries, classifiers and the inbox."""
+"""SQLite operational store (SDD §6.4): items, runs, source health, LLM cost ledger; since schema 2 (P1)
+triage, embeddings, clusters, feedback, deliveries, classifiers and the inbox; since schema 3 (P3) the
+entity graph that the interface and the MCP read (extractions, entities, aliases, mentions, relations,
+merges, entity embeddings) and the Neo4j mirror watermark (`items.graph_synced_at`)."""
 import json
 import sqlite3
 import threading
@@ -9,7 +11,9 @@ from pathlib import Path
 
 import numpy as np
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+APPROVED = ("main", "frontier", "radar")
+ROLE_RANK = {"tag": 0, "mentioned": 1, "used": 2, "main": 3}
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
@@ -146,6 +150,73 @@ CREATE TABLE IF NOT EXISTS inbox(
 );
 """
 
+_SCHEMA_V3 = """
+CREATE TABLE IF NOT EXISTS extractions(
+    item_id TEXT PRIMARY KEY,
+    run_id INTEGER,
+    status TEXT NOT NULL,            -- ok | error
+    model TEXT,
+    prompt_version TEXT,
+    payload_json TEXT,               -- validated Extraction (SDD §6.8)
+    error TEXT,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 1,
+    extracted_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS entities(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,              -- technique | model | dataset | organization | product | problem | regulation
+                                     -- | domain | problem_type | technique_family (taxonomy categories)
+    name TEXT NOT NULL,
+    norm TEXT NOT NULL,              -- normalized name (graph/resolve.normalize)
+    category TEXT,                   -- taxonomy key: C.. (technique/model), B.. (problem), the key itself (category)
+    first_seen TEXT,                 -- fetched_at of the first and the last item that mention it
+    last_seen TEXT,
+    mention_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    UNIQUE(type, norm)
+);
+CREATE TABLE IF NOT EXISTS entity_aliases(
+    grp TEXT NOT NULL,               -- resolution group: the type, except model and product ("artifact")
+    alias_norm TEXT NOT NULL,
+    entity_id INTEGER NOT NULL,
+    alias TEXT NOT NULL,
+    PRIMARY KEY(grp, alias_norm)
+);
+CREATE TABLE IF NOT EXISTS entity_mentions(
+    item_id TEXT NOT NULL,
+    entity_id INTEGER NOT NULL,
+    role TEXT NOT NULL,              -- main | used | mentioned | tag
+    PRIMARY KEY(item_id, entity_id)
+);
+CREATE INDEX IF NOT EXISTS idx_mentions_entity ON entity_mentions(entity_id);
+CREATE TABLE IF NOT EXISTS entity_relations(
+    subject_id INTEGER NOT NULL,
+    predicate TEXT NOT NULL,         -- uses | addresses | developed_by | evaluated_on | compared_with | builds_on
+                                     -- | regulated_by | in_category
+    object_id INTEGER NOT NULL,
+    item_id TEXT NOT NULL,           -- provenance
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(subject_id, predicate, object_id, item_id)
+);
+CREATE INDEX IF NOT EXISTS idx_relations_item ON entity_relations(item_id);
+CREATE TABLE IF NOT EXISTS entity_merges(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_id INTEGER NOT NULL,      -- the entity an extracted name was resolved to
+    name TEXT NOT NULL,              -- the name as extracted
+    item_id TEXT,
+    method TEXT NOT NULL,            -- alias | judge
+    score REAL,
+    decided_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS entity_embeddings(
+    entity_id INTEGER PRIMARY KEY,
+    model TEXT NOT NULL,
+    dim INTEGER NOT NULL,
+    vector BLOB NOT NULL
+);
+"""
+
 _LLM_FIELDS = ("run_id", "task", "requested_model", "model", "provider", "generation_id",
                "input_tokens", "output_tokens", "reasoning_tokens", "cached_tokens",
                "cost_usd", "latency_ms", "status", "error")
@@ -176,9 +247,12 @@ class Store:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(_SCHEMA)
         self.conn.executescript(_SCHEMA_V2)
+        self.conn.executescript(_SCHEMA_V3)
         columns = {row[1] for row in self.conn.execute("PRAGMA table_info(items)")}
         if "cluster_id" not in columns:
             self.conn.execute("ALTER TABLE items ADD COLUMN cluster_id TEXT")
+        if "graph_synced_at" not in columns:
+            self.conn.execute("ALTER TABLE items ADD COLUMN graph_synced_at TEXT")
         self.conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('schema_version', ?)",
                           (str(SCHEMA_VERSION),))
         self.conn.commit()
@@ -479,3 +553,164 @@ class Store:
                                 (channel, json.dumps(payload, ensure_ascii=False), utcnow()))
         self.conn.commit()
         return cur.lastrowid
+
+    # --- extraction (schema 3) ----------------------------------------------
+    def record_extraction(self, item_id, run_id, status, model=None, prompt_version=None, payload=None,
+                          error=None, cost_usd=0.0) -> None:
+        payload_json = json.dumps(payload, ensure_ascii=False) if payload is not None else None
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO extractions(item_id, run_id, status, model, prompt_version, payload_json, error, cost_usd,"
+                " extracted_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(item_id) DO UPDATE SET"
+                " run_id = excluded.run_id, status = excluded.status, model = excluded.model,"
+                " prompt_version = excluded.prompt_version, payload_json = excluded.payload_json,"
+                " error = excluded.error, cost_usd = excluded.cost_usd, extracted_at = excluded.extracted_at,"
+                " attempts = extractions.attempts + 1",
+                (item_id, run_id, status, model, prompt_version, payload_json, error, cost_usd, utcnow()))
+            self.conn.commit()
+
+    def get_extraction(self, item_id):
+        return self.conn.execute("SELECT * FROM extractions WHERE item_id = ?", (item_id,)).fetchone()
+
+    def extraction_candidates(self, max_attempts=3, limit=None):
+        """Approved items (main, frontier, radar) with no good extraction yet, or whose extraction errored
+        fewer than `max_attempts` times: main first, then frontier and radar, newest first."""
+        sql = ("SELECT i.*, t.decision, t.tags_json FROM items i JOIN triage t ON t.item_id = i.id"
+               " LEFT JOIN extractions x ON x.item_id = i.id"
+               f" WHERE t.decision IN ({_in(APPROVED)})"
+               " AND (x.item_id IS NULL OR (x.status = 'error' AND x.attempts < ?))"
+               " ORDER BY CASE t.decision WHEN 'main' THEN 0 WHEN 'frontier' THEN 1 ELSE 2 END, i.fetched_at DESC")
+        args = list(APPROVED) + [max_attempts]
+        if limit:
+            sql += " LIMIT ?"
+            args.append(int(limit))
+        return self.conn.execute(sql, args).fetchall()
+
+    def approved_items(self):
+        """(item_id, tags_json, fetched_at) of every approved item, oldest first."""
+        return self.conn.execute(
+            f"SELECT t.item_id, t.tags_json, i.fetched_at FROM triage t JOIN items i ON i.id = t.item_id"
+            f" WHERE t.decision IN ({_in(APPROVED)}) ORDER BY i.fetched_at", list(APPROVED)).fetchall()
+
+    # --- entities (schema 3) ------------------------------------------------
+    def add_entity(self, type_, name, norm, category=None) -> int:
+        """Id of the entity (type, norm), created when missing."""
+        with self._lock:
+            self.conn.execute("INSERT OR IGNORE INTO entities(type, name, norm, category, created_at) VALUES(?,?,?,?,?)",
+                              (type_, name, norm, category, utcnow()))
+            self.conn.commit()
+            return self.conn.execute("SELECT id FROM entities WHERE type = ? AND norm = ?", (type_, norm)).fetchone()[0]
+
+    def get_entity(self, entity_id):
+        return self.conn.execute("SELECT * FROM entities WHERE id = ?", (entity_id,)).fetchone()
+
+    def entities_of_types(self, types):
+        types = list(types)
+        return self.conn.execute(f"SELECT * FROM entities WHERE type IN ({_in(types)}) ORDER BY id", types).fetchall()
+
+    def add_alias(self, grp, alias_norm, entity_id, alias) -> bool:
+        """False when the alias already points somewhere (the first entity keeps it)."""
+        with self._lock:
+            cur = self.conn.execute("INSERT OR IGNORE INTO entity_aliases(grp, alias_norm, entity_id, alias)"
+                                    " VALUES(?,?,?,?)", (grp, alias_norm, entity_id, alias))
+            self.conn.commit()
+            return cur.rowcount == 1
+
+    def entity_context(self, entity_id) -> str:
+        """Title of the latest item that mentions the entity (context for the resolution judge)."""
+        row = self.conn.execute("SELECT i.title FROM entity_mentions m JOIN items i ON i.id = m.item_id"
+                                " WHERE m.entity_id = ? ORDER BY i.fetched_at DESC LIMIT 1", (entity_id,)).fetchone()
+        return row[0] if row else ""
+
+    def entity_by_alias(self, grp, alias_norm):
+        return self.conn.execute("SELECT e.* FROM entity_aliases a JOIN entities e ON e.id = a.entity_id"
+                                 " WHERE a.grp = ? AND a.alias_norm = ?", (grp, alias_norm)).fetchone()
+
+    def _dirty(self, item_id) -> None:
+        self.conn.execute("UPDATE items SET graph_synced_at = NULL WHERE id = ?", (item_id,))
+
+    def add_mention(self, item_id, entity_id, role, seen) -> bool:
+        """True for a new (item, entity) pair: the entity counts the item once and widens its first/last
+        seen. A repeated pair only promotes the role (mentioned < used < main), never demotes it."""
+        with self._lock:
+            cur = self.conn.execute("INSERT OR IGNORE INTO entity_mentions(item_id, entity_id, role) VALUES(?,?,?)",
+                                    (item_id, entity_id, role))
+            if cur.rowcount == 1:
+                self.conn.execute(
+                    "UPDATE entities SET mention_count = mention_count + 1,"
+                    " first_seen = CASE WHEN first_seen IS NULL OR ? < first_seen THEN ? ELSE first_seen END,"
+                    " last_seen = CASE WHEN last_seen IS NULL OR ? > last_seen THEN ? ELSE last_seen END WHERE id = ?",
+                    (seen, seen, seen, seen, entity_id))
+                self._dirty(item_id)
+                self.conn.commit()
+                return True
+            current = self.conn.execute("SELECT role FROM entity_mentions WHERE item_id = ? AND entity_id = ?",
+                                        (item_id, entity_id)).fetchone()[0]
+            if ROLE_RANK.get(role, 0) > ROLE_RANK.get(current, 0):
+                self.conn.execute("UPDATE entity_mentions SET role = ? WHERE item_id = ? AND entity_id = ?",
+                                  (role, item_id, entity_id))
+                self._dirty(item_id)
+            self.conn.commit()
+            return False
+
+    def add_relation(self, subject_id, predicate, object_id, item_id) -> bool:
+        with self._lock:
+            cur = self.conn.execute("INSERT OR IGNORE INTO entity_relations(subject_id, predicate, object_id, item_id,"
+                                    " created_at) VALUES(?,?,?,?,?)", (subject_id, predicate, object_id, item_id, utcnow()))
+            if cur.rowcount == 1:
+                self._dirty(item_id)
+            self.conn.commit()
+            return cur.rowcount == 1
+
+    def relations_of_item(self, item_id) -> list:
+        rows = self.conn.execute("SELECT subject_id, predicate, object_id FROM entity_relations WHERE item_id = ?"
+                                 " ORDER BY subject_id, predicate, object_id", (item_id,)).fetchall()
+        return [tuple(r) for r in rows]
+
+    def record_merge(self, entity_id, name, method, score=None, item_id=None) -> int:
+        with self._lock:
+            cur = self.conn.execute("INSERT INTO entity_merges(entity_id, name, item_id, method, score, decided_at)"
+                                    " VALUES(?,?,?,?,?,?)", (entity_id, name, item_id, method, score, utcnow()))
+            self.conn.commit()
+            return cur.lastrowid
+
+    def save_entity_embeddings(self, model, pairs) -> None:
+        rows = [(entity_id, model, int(vec.shape[0]), np.asarray(vec, dtype=np.float32).tobytes())
+                for entity_id, vec in pairs]
+        with self._lock:
+            self.conn.executemany("INSERT OR REPLACE INTO entity_embeddings(entity_id, model, dim, vector)"
+                                  " VALUES(?,?,?,?)", rows)
+            self.conn.commit()
+
+    def load_entity_embeddings(self, model, ids) -> dict:
+        ids = list(ids)
+        if not ids:
+            return {}
+        rows = self.conn.execute(f"SELECT entity_id, dim, vector FROM entity_embeddings WHERE model = ?"
+                                 f" AND entity_id IN ({_in(ids)})", [model] + ids).fetchall()
+        return {r[0]: np.frombuffer(r[2], dtype=np.float32, count=r[1]) for r in rows}
+
+    # --- Neo4j mirror watermark (schema 3) ----------------------------------
+    def graph_dirty_items(self, limit=None) -> list:
+        """Approved items with graph content that changed since the last mirror sync, oldest first."""
+        sql = (f"SELECT i.id FROM items i JOIN triage t ON t.item_id = i.id WHERE t.decision IN ({_in(APPROVED)})"
+               " AND i.graph_synced_at IS NULL AND EXISTS (SELECT 1 FROM entity_mentions m WHERE m.item_id = i.id)"
+               " ORDER BY i.fetched_at, i.id")
+        args = list(APPROVED)
+        if limit:
+            sql += " LIMIT ?"
+            args.append(int(limit))
+        return [r[0] for r in self.conn.execute(sql, args).fetchall()]
+
+    def mark_graph_synced(self, item_ids, when=None) -> None:
+        ids = list(item_ids)
+        if not ids:
+            return
+        with self._lock:
+            self.conn.execute(f"UPDATE items SET graph_synced_at = ? WHERE id IN ({_in(ids)})", [when or utcnow()] + ids)
+            self.conn.commit()
+
+    def mark_all_graph_dirty(self) -> None:
+        with self._lock:
+            self.conn.execute("UPDATE items SET graph_synced_at = NULL")
+            self.conn.commit()

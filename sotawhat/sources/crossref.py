@@ -45,7 +45,11 @@ def parse_works(payload, source):
 
 
 class CrossrefJournalSource(Source):
+    """Since P2 a channel: every journal here is AI or AI-heavy (the medico AI-term filter still applies),
+    so a run takes the recent works of each journal, up to `max_items` per journal, instead of keyword hits."""
     name = "crossref"
+    keywordless = True
+    max_items = 10
 
     def __init__(self, journals, days=7, rows=50, mailto=""):
         # journals: list of (label, ISSN) — same shape as RSSSource.feeds
@@ -85,3 +89,15 @@ class CrossrefJournalSource(Source):
             collected.extend(parse_works(payload, source=f"crossref:{label}"))
         kw = keyword.lower()
         return [r for r in collected if kw in (r.title + " " + r.abstract).lower()][:limit]
+
+    def fetch(self, limit):
+        collected = []
+        self.feed_errors = {}
+        for label, issn in self.feeds:
+            try:
+                payload = self._fetch_once(issn)
+            except Exception as exc:  # noqa: BLE001 - one journal failing must not abort the others
+                self.feed_errors[label] = f"{type(exc).__name__}: {exc}"
+                continue
+            collected.extend(parse_works(payload, source=f"crossref:{label}")[:limit])
+        return collected

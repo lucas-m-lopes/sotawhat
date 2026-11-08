@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     # app password that P2 uses to read the newsletters (IMAP). SMTP_* only for another provider.
     gmail_address: str = ""
     gmail_app_password: str = ""
+    gmail_query: str = "label:newsletters-ai newer_than:2d"   # P2: Gmail search syntax (X-GM-RAW)
     digest_email_to: str = ""
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587

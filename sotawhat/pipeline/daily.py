@@ -53,10 +53,13 @@ def _record_health(store, sources, errors, report):
                 store.record_source_ok(key)
 
 
-def run_daily(store, sources_by_profile, limit=10, today=None, triage=None) -> DailyReport:
-    """triage: optional callable (store, run_id) -> TriageStats, run after collection."""
+def run_daily(store, sources_by_profile, limit=10, today=None, triage=None, on_start=None) -> DailyReport:
+    """triage: optional callable (store, run_id) -> TriageStats, run after collection. on_start(run_id) runs
+    before collecting (P2: LLM calls made while collecting, like newsletter segmentation, belong to this run)."""
     day = (today or date.today()).isoformat()
     report = DailyReport(run_id=store.start_run("daily"), day=day)
+    if on_start is not None:
+        on_start(report.run_id)
     try:
         for name, sources in sources_by_profile.items():
             profile = PROFILES[name]
@@ -246,6 +249,7 @@ def main_daily(ns) -> int:
     from sotawhat.pipeline.deliver import build_digest, render_markdown, send_digest, send_email, write_files
     from sotawhat.pipeline.triage import run_triage
     from sotawhat.profiles import build_sources
+    from sotawhat.sources.gmail import make_segmenter
     from sotawhat.store.classifier import refresh
     from sotawhat.store.db import Store
     from sotawhat.store.vectors import get_embedder
@@ -258,7 +262,6 @@ def main_daily(ns) -> int:
     except ConfigError as exc:
         print(f"[config] {exc}", file=sys.stderr)
         return 2
-    sources = {name: build_sources(name, crossref_mailto=settings.crossref_mailto) for name in PROFILES}
     notifier = TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id)
     use_llm = bool(settings.openrouter_api_key) and not getattr(ns, "no_llm", False)
     with Store(settings.db_path) as store:
@@ -273,6 +276,8 @@ def main_daily(ns) -> int:
             client = OpenRouterClient(settings.openrouter_api_key, base_url=settings.openrouter_base_url,
                                       app_title=settings.openrouter_app_title)
             gateway = LLMGateway(client, store=store, settings=settings, tasks=config.llm["tasks"])
+        segmenter = make_segmenter(gateway) if gateway is not None else None
+        sources = {name: build_sources(name, settings=settings, segmenter=segmenter) for name in PROFILES}
 
         def triage(st, run_id):
             if gateway is not None:
@@ -285,7 +290,8 @@ def main_daily(ns) -> int:
                 gates = {}
             return run_triage(st, run_id, gateway, config.rubric, config.mutes, embedder, gates)
 
-        report = run_daily(store, sources, limit=ns.limit, triage=triage)
+        report = run_daily(store, sources, limit=ns.limit, triage=triage,
+                           on_start=lambda run_id: setattr(gateway, "run_id", run_id) if gateway else None)
         digest = build_digest(store, report, config.rubric)
         md_path, _ = write_files(digest, settings.sotawhat_data_dir / "digests")
         print(render_markdown(digest) if report.triage and report.triage.llm else to_plain(render_summary(report)))

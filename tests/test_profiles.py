@@ -38,3 +38,31 @@ def test_nature_journals_come_from_crossref():
 def test_stalled_feeds_removed():
     from sotawhat.profiles import LAB_FEEDS
     assert "the-gradient" not in [name for name, _ in LAB_FEEDS]
+
+
+def _names(sources):
+    return [s.name for s in sources]
+
+
+def test_p2_channel_sources_per_profile(tmp_path):
+    from sotawhat.config import Settings
+
+    settings = Settings(_env_file=None, sotawhat_data_dir=tmp_path, github_token="ghp_x", hf_token="hf_x",
+                        gmail_address="eu@gmail.com", gmail_app_password="abcdefghijklmnop")
+    medico = build_sources("medico", settings=settings)
+    assert _names(medico) == ["pubmed", "arxiv", "medical", "crossref", "health-ai-news", "health-news", "google-news",
+                              "medrxiv", "fda-ai-devices", "github-med", "hf-medical", "mcp-health"]
+    channels = [s for s in medico if s.keywordless]
+    assert {s.name for s in channels} >= {"crossref", "medrxiv", "fda-ai-devices", "github-med", "google-news"}
+    assert next(s for s in medico if s.name == "github-med").token == "ghp_x"
+    assert str(next(s for s in medico if s.name == "fda-ai-devices").state_path).startswith(str(tmp_path))
+    geral = build_sources("geral", settings=settings, segmenter=lambda *a: [])
+    assert _names(geral) == ["arxiv", "semantic_scholar", "hf_papers", "labs", "ai-news", "the-batch", "gmail",
+                             "github-ai", "hf-trending", "mcp-recent"]
+    assert next(s for s in geral if s.name == "hf-trending").token == "hf_x"
+    assert next(s for s in geral if s.name == "labs").keywordless is False
+
+
+def test_without_settings_the_stateful_channels_stay_out():
+    assert not {"fda-ai-devices", "the-batch", "gmail"} & set(_names(build_sources("medico") + build_sources("geral")))
+    assert "gmail" not in _names(build_sources("geral"))

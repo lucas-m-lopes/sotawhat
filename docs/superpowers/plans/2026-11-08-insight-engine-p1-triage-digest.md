@@ -4953,3 +4953,70 @@ git commit -m "feat: optional Telegram vote listener at logon; P1 docs and env v
   - o classificador ainda não usa sinais sociais (P2);
   - a captura manual fica em `inbox`, sem processamento (P5);
   - o prompt v1 ainda não foi testado contra modelos reais; o bake-off da Tarefa 14 é o primeiro teste e pode levar a um `triage_v2`.
+
+---
+
+## Adendo: execução (2026-11-08)
+
+A P1 foi executada na branch `feature/insight-engine-p1`, criada a partir do P0, com um commit por tarefa. As Tarefas 0 a 13 seguiram o plano sem desvio. Em cada uma, o teste novo falhou antes da implementação e a suíte passou depois, com as mesmas contagens do plano (107 → 162).
+
+### Mudanças além do plano (cada uma com TDD e commit próprio)
+
+| Mudança | Motivo | O que mudou | Suíte |
+|---|---|---|---|
+| Duas seções | No golden set, 24 dos 51 itens "incluir" eram IA de fronteira sem ligação com saúde. O usuário escolheu "Duas seções" | Nova decisão `frontier`: `A ≥ 4`, substância ≥ 2 e `0,60·A + 0,25·C + 0,15·D − penalidades ≥ limiar`. Limites: 10 em "IA ∩ Saúde", 5 em "Fronteira de IA" (🔭 no Telegram; o excedente desce para o radar) e 10 no radar. O prompt deixou de pedir pontes médicas inventadas, e `generic_ai_no_bridge` vale só para notícia sem substância. O bake-off conta `frontier` como "incluir" e grava as notas de cada item | 162 → 165 |
+| Isolamento dos testes | O `.env` real passou a ter chaves vivas | `conftest.py` desliga a leitura de `.env` em todos os testes | 165 → 166 |
+| E-mail | Pedido do usuário | `notify/email.py` (STARTTLS na 587, TLS na 465), ativado por `DIGEST_EMAIL_TO`; reaproveita `GMAIL_ADDRESS` e `GMAIL_APP_PASSWORD`. Uma senha sem o formato de senha de app é recusada antes de conectar. HTML só com estilos inline | 166 → 171 |
+| `doctor`: Telegram e SMTP | O `TELEGRAM_CHAT_ID` estava com o nome do bot, e o `doctor` do P0 mostrava "configurado" | Um chat id que não é número falha. O `getChat` confirma o chat; se falhar, o `doctor` sugere o número de quem mandou `/start`. Login SMTP sem envio | 171 → 175 |
+| `doctor`: modelo fixado no `.env` | `SOTAWHAT_MODEL_TRIAGE` no `.env` passava por cima do vencedor do bake-off | O `doctor` avisa; no `.env.example`, `SOTAWHAT_MODEL_*` agora vem vazio; o bake-off também guarda `vendor_only` | 175 → 176 |
+| Português sem CJK | O MiniMax pôs caracteres chineses em 13 de 60 resumos no bake-off e em 15 de 84 no primeiro run real | Um validador em `TriageOutput` trata o texto com CJK como inválido, e o gateway pede de novo ou passa para o próximo modelo | 176 → 178 |
+
+### Tarefa 14: resultados
+
+1. **`.env`**: preenchido pelo usuário, que renomeou o `.env.example`; o modelo foi restaurado do git.
+   - O `TELEGRAM_CHAT_ID` continha o nome do bot. Foi trocado pelo número do chat, obtido com `getUpdates` depois do `/start` e confirmado com `getChat`.
+   - A `GMAIL_APP_PASSWORD` tinha 9 caracteres, ou seja, não é uma senha de app. A cópia por e-mail fica pendente até o usuário criar uma.
+   - A linha `SOTAWHAT_MODEL_TRIAGE` foi esvaziada.
+2. **`doctor`** passou: chave com limite de US$ 5, os 6 modelos com endpoints ZDR, embeddings em cache (copiados do benchmark, sem novo download) e bot chegando ao chat privado. A única falha é a esperada no e-mail. **`doctor --llm`**: DeepSeek e MiMo responderam JSON válido em pt-BR.
+3. **Golden set**: 60 itens rotulados (incluir 51, radar 6, excluir 3). Commit `test: triage golden set v1 labeled by the user`.
+4. **Bake-off** (4 modelos × 60 itens, US$ 0,094, cerca de 25 min), com a rubrica do plano:
+
+   | Modelo | F1 "incluir" | Precisão | Recall | Acurácia | JSON válido de 1ª | US$/item | p50 |
+   |---|---|---|---|---|---|---|---|
+   | minimax/minimax-m3.1-flash | 0,80 | 85% | 76% | 68% | 100% | 0,00048 | 4,4 s |
+   | z-ai/glm-5.3-flash | 0,71 | 88% | 59% | 55% | 100% | 0,00019 | 6,4 s |
+   | deepseek/deepseek-v4.1-flash-1017 | 0,63 | 84% | 51% | 48% | 97% | 0,00035 | 6,5 s |
+   | xiaomi/mimo-v2.6-flash | 0,62 | 86% | 49% | 48% | 77% | 0,00055 | 4,9 s |
+
+5. **Calibração** (as notas guardadas foram redecididas, sem novas chamadas ao LLM). A rubrica do plano descartava a IA aplicada típica (A3 B3 C1 = 2,8 < 3,2). Valores aplicados em `config/rubric.yaml`:
+   - `min_total` 3,2 → 2,8;
+   - `frontier_min_total` 3,6 → 3,3;
+   - `min_b` 2 → 3: no primeiro run, papers gerais com "ponte plausível" (B2) ocupavam "IA ∩ Saúde"; no golden, a métrica não muda.
+
+   Com a rubrica calibrada, e contando o texto com CJK como inválido:
+
+   | Modelo | F1 | Precisão | Recall | Acurácia | Válido de 1ª |
+   |---|---|---|---|---|---|
+   | **deepseek/deepseek-v4.1-flash-1017** | 0,89 | 90% | 88% | 80% | 97% |
+   | z-ai/glm-5.3-flash | 0,87 | 90% | 84% | 77% | 100% |
+   | minimax/minimax-m3.1-flash | 0,92 | 88% | 96% | 85% | 78% (abaixo do mínimo de 90%) |
+   | xiaomi/mimo-v2.6-flash | 0,84 | 87% | 80% | 73% | 77% |
+
+   Cadeia em `config/llm.yaml`: DeepSeek → GLM → MiniMax.
+
+   Ressalva: o golden tem só 3 "excluir" e 6 "radar", então a precisão contra ruído real ainda não foi medida. Os votos das primeiras semanas recalibram.
+6. **Primeiro run real** (`run daily --limit 5`, cerca de 2,5 min, US$ 0,033):
+   - 78 coletados, 44 novos e 84 triados (com os 40 pendentes do P0), ainda pelo MiniMax: 55 em `main`, 9 em `frontier` e 20 em `reject`;
+   - o Telegram recebeu 10 + 5 itens com botões e 4 linhas de radar;
+   - o e-mail foi recusado antes de conectar (senha de app ausente), como esperado;
+   - o Semantic Scholar devolveu 429 de novo (sem chave de API);
+   - os dois problemas desse run (texto com CJK e IA geral em "IA ∩ Saúde") levaram às correções das linhas 5 e 6 da tabela de mudanças.
+7. **Agendamento** (autorizado pelo usuário): `schedule_daily.ps1 -Vault "D:\Lucas\obsidian_vaults\ml_ai_med_vault" -Listener`.
+   - `sotawhat-daily`: pronto, próximo run em 2026-11-09 às 07:00.
+   - `sotawhat-feedback`: iniciado com `Start-ScheduledTask`; o sinal de vida aparece em `meta`.
+8. **Merge e push** (autorizados): `feature/insight-engine-p0` e `feature/insight-engine-p1` entram no `master` com `--no-ff`, como nas branches anteriores, e o `master` vai para `origin`.
+
+**Pendências do usuário:**
+- criar a senha de app do Gmail (`GMAIL_APP_PASSWORD`);
+- votar nos itens do digest;
+- opcionalmente, obter as chaves do Lens.org e do EPO OPS (usadas só na P4).

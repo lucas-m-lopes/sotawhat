@@ -2,7 +2,7 @@
 import argparse
 import sys
 
-_SUBCOMMANDS = {"search", "digest", "backfill-links"}
+_SUBCOMMANDS = {"search", "digest", "backfill-links", "run"}
 
 def parse_args(argv):
     # Backward compat: `sotawhat <keyword...> [N]` with no subcommand -> search.
@@ -25,6 +25,12 @@ def parse_args(argv):
     p_backfill = sub.add_parser("backfill-links")
     p_backfill.add_argument("--vault", required=True)
     p_backfill.add_argument("--profile", default="all")
+
+    p_run = sub.add_parser("run")
+    p_run.add_argument("kind", choices=["daily"])
+    p_run.add_argument("--limit", type=int, default=10)
+    p_run.add_argument("--vault", default=None, help="also write Obsidian notes (transition, SDD §9)")
+    p_run.add_argument("--no-notify", action="store_true")
 
     ns = parser.parse_args(argv)
     if ns.command == "search":
@@ -62,6 +68,9 @@ def main(argv=None):
     elif ns.command == "backfill-links":
         from sotawhat.backfill import run_backfill
         run_backfill(ns)
+    elif ns.command == "run":
+        from sotawhat.pipeline.daily import main_daily
+        raise SystemExit(main_daily(ns))
 
 if __name__ == "__main__":
     main()

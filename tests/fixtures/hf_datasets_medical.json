@@ -1,0 +1,67 @@
+[
+ {
+  "_id": "6af07f803b2ff60e22df6eba",
+  "id": "CristPasache/cvc-clinicdb",
+  "author": "CristPasache",
+  "likes": 0,
+  "downloads": 0,
+  "tags": [
+   "task_categories:image-segmentation",
+   "license:other",
+   "size_categories:n<1K",
+   "region:us",
+   "medical",
+   "endoscopy",
+   "colonoscopy",
+   "polyp",
+   "gastrointestinal"
+  ],
+  "createdAt": "2026-11-08T13:56:16.000Z",
+  "lastModified": "2026-11-08T13:56:17.000Z",
+  "description": "\n\t\n\t\t\n\t\n\t\n\t\tCVC-ClinicDB (file mirror)\n\t\n\n612 frames extracted from 29 colonoscopy sequences, each with a pixel-level\npolyp mask (Bernal et al., 2015). Native resolution 384x288.\nThis is a plain file mirror, not a datasets-format repo: images and masks\nare stored as files so any path-based dataloader can consume them directly\nafter snapshot_download. The dataset viewer is disabled for that reason.\n\n\t\n\t\t\n\t\n\t\n\t\tLayout\n\t\n\nCVC-ClinicDB/\n  Original/*.png          # 612 RGB frames, 384x288\n  Ground… See the full description on the dataset page: https://huggingface.co/datasets/CristPasache/cvc-clinicdb."
+ },
+ {
+  "_id": "6aefcab80f58d04736054dc7",
+  "id": "JuneYao/medical-jev-4b-data",
+  "author": "JuneYao",
+  "likes": 0,
+  "downloads": 31,
+  "tags": [
+   "task_categories:multiple-choice",
+   "language:zh",
+   "language:en",
+   "language:ja",
+   "language:ko",
+   "language:pt",
+   "language:es",
+   "language:tr",
+   "size_categories:100K<n<1M",
+   "region:us",
+   "medical",
+   "clinical-decision",
+   "multiple-choice"
+  ],
+  "createdAt": "2026-11-08T01:04:56.000Z",
+  "lastModified": "2026-11-08T01:41:25.000Z",
+  "description": "\n\t\n\t\t\n\t\n\t\n\t\tmedical-jev-4b 训练数据\n\t\n\nmedical-jev-4b 使用的医疗决策选择题：从约 77 个公开来源整理为 27 类决策任务的统一格式。\n\n\t\n\t\t\n文件\n题数\n用途\n\n\n\t\t\ntrain.jsonl\n242,921\n训练池；实际训练按配置抽样（每类任务最多 3,000 题，通用医学题 10,000 题）\n\n\ndevelopment.jsonl\n1,566\n选模用开发集，每类 60 题（分诊 6 题）\n\n\ndevelopment_v1_heldout.jsonl\n1,151\n开发集中 v1 未训练过的子集，用于和 v1 公平比较\n\n\ntest.jsonl\n1,557\n留出测试，每类约 60 题\n\n\n\t\n\n\n\t\n\t\t\n\t\n\t\n\t\t重要说明\n\t\n\n\n这不是 v1 当时的逐条训练数据。 v1 使用的原始训练文件已丢失；这里是随后用本地保留的上游版本和各轮补充重建的训练池，各任务规模与 v1 训练池基本一致。\ntest.jsonl 对用本训练池训练的模型是干净的留出集；但 v1 的训练池包含其上游来源，对 v1 不是盲测。… See the full description on the dataset page: https://huggingface.co/datasets/JuneYao/medical-jev-4b-data."
+ },
+ {
+  "_id": "6aef6c1924ee9d5022744fd6",
+  "id": "KeremTT/cmmd-mammography",
+  "author": "KeremTT",
+  "likes": 0,
+  "downloads": 94,
+  "tags": [
+   "task_categories:image-classification",
+   "license:cc-by-4.0",
+   "region:us",
+   "medical",
+   "mammography",
+   "dicom",
+   "breast-cancer"
+  ],
+  "createdAt": "2026-11-07T18:21:13.000Z",
+  "lastModified": "2026-11-07T19:50:27.000Z",
+  "description": "\n\t\n\t\t\n\t\n\t\n\t\tCMMD Mammography\n\t\n\nDigital mammograms in DICOM format from the Chinese Mammography Database (CMMD), repackaged with per-breast benign / malignant labels and patient-level train / validation / test splits.\n\n\t\n\t\t\n\t\n\t\n\t\tContents\n\t\n\n\ndata/cmmd_*.zip: DICOM files, one ZIP per batch of patients. Inside each ZIP, files are stored as <split>/<label>/<patient>_<file>.dcm.\nmetadata.csv: one row per DICOM file with file_name (path inside the ZIPs, under data/), patient_id, laterality (L/R… See the full description on the dataset page: https://huggingface.co/datasets/KeremTT/cmmd-mammography."
+ }
+]

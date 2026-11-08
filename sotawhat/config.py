@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     embeddings_model: str = "google/embeddinggemma-300m"
 
     crossref_mailto: str = ""
+    github_token: str = ""            # P2: GitHub search (30 req/min with a token, 10 without)
+    hf_token: str = ""                # P2: Hugging Face Hub (higher rate limit)
 
     sotawhat_web_port: int = 8765     # `sotawhat serve` (P3), always on 127.0.0.1
 

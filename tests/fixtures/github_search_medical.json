@@ -1,0 +1,74 @@
+{
+ "total_count": 15,
+ "incomplete_results": false,
+ "items": [
+  {
+   "full_name": "MIC-DKFZ/nninteractive-agent",
+   "html_url": "https://github.com/MIC-DKFZ/nninteractive-agent",
+   "description": "nnInteractive as a tool for AI agents: say what to segment, the agent does the rest (Claude Code, Codex, any MCP client)",
+   "stargazers_count": 80,
+   "forks_count": 4,
+   "created_at": "2026-10-19T13:59:07Z",
+   "pushed_at": "2026-10-29T07:28:43Z",
+   "topics": [
+    "3d",
+    "ai-agents",
+    "claude-code",
+    "codex",
+    "interactive-segmentation",
+    "mcp",
+    "medical-imaging",
+    "nninteractive",
+    "segmentation"
+   ],
+   "language": "Python",
+   "license": null,
+   "archived": false,
+   "fork": false
+  },
+  {
+   "full_name": "MedMLX/medmlx",
+   "html_url": "https://github.com/MedMLX/medmlx",
+   "description": "Python API, CLI and MCP server for native medical imaging models on Apple Silicon",
+   "stargazers_count": 28,
+   "forks_count": 2,
+   "created_at": "2026-10-31T18:32:30Z",
+   "pushed_at": "2026-11-08T02:09:26Z",
+   "topics": [
+    "apple-silicon",
+    "cli",
+    "mcp",
+    "medical-imaging",
+    "mlx"
+   ],
+   "language": "Python",
+   "license": null,
+   "archived": false,
+   "fork": false
+  },
+  {
+   "full_name": "shanselman/sandbox-mcp",
+   "html_url": "https://github.com/shanselman/sandbox-mcp",
+   "description": "Fresh, throwaway Windows machines for testing your apps: an MCP server and CLI that automate Windows Sandbox",
+   "stargazers_count": 314,
+   "forks_count": 15,
+   "created_at": "2026-11-06T19:02:14Z",
+   "pushed_at": "2026-11-07T09:47:07Z",
+   "topics": [
+    "ai-agents",
+    "mcp",
+    "mcp-server",
+    "testing",
+    "ui-automation",
+    "windows",
+    "windows-sandbox"
+   ],
+   "language": "JavaScript",
+   "license": {
+    "spdx_id": "MIT"
+   },
+   "archived": false,
+   "fork": false
+  }
+ ]
+}

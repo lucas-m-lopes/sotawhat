@@ -1,0 +1,79 @@
+[
+ {
+  "_id": "6af0b2cf59d0a8c37f0b5ff3",
+  "id": "crissebasbol/medec-biomedbert-detector",
+  "author": "crissebasbol",
+  "likes": 0,
+  "downloads": 0,
+  "tags": [
+   "safetensors",
+   "bert",
+   "medical",
+   "clinical-notes",
+   "error-detection",
+   "mediqa-corr",
+   "medec",
+   "text-classification",
+   "en",
+   "base_model:microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext",
+   "base_model:finetune:microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext",
+   "license:mit",
+   "region:us"
+  ],
+  "pipeline_tag": "text-classification",
+  "createdAt": "2026-11-08T17:35:11.000Z",
+  "lastModified": "2026-11-08T17:35:46.000Z"
+ },
+ {
+  "_id": "6af0ae014065ed9b3ee0307c",
+  "id": "mradermacher/Qwen3.5-2B-Medical-Reasoning-GGUF",
+  "author": "mradermacher",
+  "likes": 0,
+  "downloads": 0,
+  "tags": [
+   "transformers",
+   "gguf",
+   "medical",
+   "medical-reasoning",
+   "question-answering",
+   "text-generation",
+   "lora",
+   "qwen3_5",
+   "qwen3.5",
+   "heretic",
+   "en",
+   "dataset:FreedomIntelligence/medical-o1-reasoning-SFT",
+   "dataset:xtools-at/medical-o1-reasoning-SFT-chat",
+   "base_model:xtools-at/Qwen3.5-2B-Medical-Reasoning",
+   "base_model:adapter:xtools-at/Qwen3.5-2B-Medical-Reasoning",
+   "license:apache-2.0",
+   "endpoints_compatible",
+   "region:us",
+   "conversational"
+  ],
+  "pipeline_tag": "question-answering",
+  "library_name": "transformers",
+  "createdAt": "2026-11-08T17:14:41.000Z",
+  "lastModified": "2026-11-08T17:24:20.000Z"
+ },
+ {
+  "_id": "6af0692aa80d7c3ba0cdddec",
+  "id": "Zavi677/heart",
+  "author": "Zavi677",
+  "likes": 0,
+  "downloads": 0,
+  "tags": [
+   "medical",
+   "text-to-speech",
+   "ur",
+   "dataset:bones-studio/seed",
+   "base_model:OpenMOSS-Team/MOSS-Image-Base",
+   "base_model:finetune:OpenMOSS-Team/MOSS-Image-Base",
+   "license:apache-2.0",
+   "region:us"
+  ],
+  "pipeline_tag": "text-to-speech",
+  "createdAt": "2026-11-08T12:20:58.000Z",
+  "lastModified": "2026-11-08T12:23:18.000Z"
+ }
+]

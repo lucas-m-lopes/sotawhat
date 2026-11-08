@@ -5,8 +5,12 @@
 version: 1
 
 # 1) IA ∩ Saúde: total = 0,35·A + 0,35·B + 0,20·C + 0,10·D − penalidades ≥ min_total e B ≥ min_b.
+#    min_total 3,2 → 2,8 e frontier_min_total 3,6 → 3,3 em 2026-11-08, calibrados nas notas do bake-off
+#    (golden set v1): com o MiniMax, F1 de "incluir" 0,82 → 0,92 e acurácia 70% → 85%. O corte antigo
+#    descartava a IA aplicada típica (A3 B3 C1 = 2,8). O golden tem só 3 "excluir" e 6 "radar":
+#    recalibrar com os votos (👍/👎) depois de 2–4 semanas.
 weights: {A: 0.35, B: 0.35, C: 0.20, D: 0.10}
-min_total: 3.2
+min_total: 2.8
 min_b: 2
 
 # 2) Fronteira de IA: IA forte que não entrou na seção 1, mesmo sem ligação com saúde.
@@ -15,7 +19,7 @@ min_b: 2
 frontier_weights: {A: 0.60, C: 0.25, D: 0.15}
 frontier_min_a: 4
 frontier_min_substance: 2
-frontier_min_total: 3.6
+frontier_min_total: 3.3
 
 # Radar: IA sem ligação com saúde que não chegou à seção 2 (A ≥ radar_min_a e B ≤ radar_max_b) → 1 linha.
 # Itens de fronteira além de frontier_limit também descem para o radar.

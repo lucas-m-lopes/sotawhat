@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     crossref_mailto: str = ""
     github_token: str = ""            # P2: GitHub search (30 req/min with a token, 10 without)
     hf_token: str = ""                # P2: Hugging Face Hub (higher rate limit)
+    openalex_email: str = ""          # P4 prior art: OpenAlex polite pool (falls back to CROSSREF_MAILTO)
+    exa_api_key: str = ""             # P4 prior art: Exa market layer (empty = layer "não verificado")
 
     sotawhat_web_port: int = 8765     # `sotawhat serve` (P3), always on 127.0.0.1
 

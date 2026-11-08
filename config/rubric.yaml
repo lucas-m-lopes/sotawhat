@@ -1,0 +1,36 @@
+# config/rubric.yaml — rubrica da triagem (SDD §6.7). Toda chave é opcional; faltando, vale o padrão do código.
+# total = 0,35·A + 0,35·B + 0,20·C + 0,10·D − penalidades. Vai para "principais" se total ≥ min_total e B ≥ min_b.
+# A = fronteira de IA/ML, B = aplicabilidade médico-hospitalar, C = acionabilidade (notas do LLM, 0–5);
+# D = novidade frente ao que chegou nos últimos novelty_window_days (calculada por embeddings, sem LLM).
+version: 1
+weights: {A: 0.35, B: 0.35, C: 0.20, D: 0.10}
+min_total: 3.2
+min_b: 2
+
+# Radar de fronteira: IA forte sem ponte médica clara (A ≥ radar_min_a e B ≤ radar_max_b) → 1 linha no digest.
+radar_min_a: 4
+radar_max_b: 1
+
+# Limites do digest diário.
+main_limit: 15
+radar_limit: 10
+
+# Penalidades: só o fornecedor como fonte (sem terceiro) e fontes fracas/agregadoras.
+vendor_only_penalty: 0.5
+weak_source_penalty: 0.5
+weak_sources: []            # ex.: ["rss:marktechpost"]
+
+# Similaridade máxima (cosseno, EmbeddingGemma-300m) com os itens recentes → D.
+# Abaixo de 0,70: D = 5; acima de 0,94: D = 0. Itens distintos ficam, em média, em 0,66 (medido em 2026-11-07).
+novelty_thresholds: [0.70, 0.76, 0.82, 0.88, 0.94]
+novelty_window_days: 30
+
+# Operação da triagem por LLM.
+max_text_chars: 8000        # ~2.000 tokens do texto de cada item
+max_items_per_run: 300
+backlog_days: 3             # itens não triados (orçamento, falha) ficam para os próximos runs por até N dias
+concurrency: 6
+
+# Classificador por perfil (regressão logística sobre embeddings, treinada com os seus votos).
+classifier_min_ratings: 100 # abaixo disso o LLM vê todos os itens (arranque a frio)
+classifier_top_n: 40        # depois, o LLM vê só os N melhores por perfil e por run

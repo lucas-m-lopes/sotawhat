@@ -1,0 +1,13 @@
+# config/llm.yaml — modelos por etapa (SDD §6.6). Sobrescreve sotawhat/llm/tasks.py; a variável
+# SOTAWHAT_MODEL_<ETAPA> do .env ainda vence para o modelo primário. `sotawhat eval models --apply`
+# reescreve tasks.<etapa>.models com o vencedor do bake-off na frente.
+tasks:
+  triage:
+    models: [deepseek/deepseek-v4.1-flash-1017, xiaomi/mimo-v2.6-flash, z-ai/glm-5.3-flash]
+    reasoning: low
+    max_tokens: 1500
+
+# Candidatos do bake-off (`sotawhat eval models --task triage`). Só níveis de raciocínio aceitos por todos:
+# GLM-5.3-Flash e MiniMax-M3.1-Flash não aceitam desligar o raciocínio; DeepSeek V4.1 Flash não aceita "medium".
+bakeoff:
+  triage: [deepseek/deepseek-v4.1-flash-1017, xiaomi/mimo-v2.6-flash, z-ai/glm-5.3-flash, minimax/minimax-m3.1-flash]

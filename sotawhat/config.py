@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     sotawhat_data_dir: Path = Path("./data")
+    sotawhat_config_dir: Path = Path("./config")
     sotawhat_tz: str = "America/Sao_Paulo"
     sotawhat_log_level: str = "INFO"
 
@@ -34,12 +35,25 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+    telegram_allowed_user_id: str = ""
+
+    embeddings_backend: str = "fastembed"
+    embeddings_model: str = "google/embeddinggemma-300m"
 
     crossref_mailto: str = ""
 
     @property
     def db_path(self) -> Path:
         return self.sotawhat_data_dir / "insight.db"
+
+    @property
+    def models_dir(self) -> Path:
+        return self.sotawhat_data_dir / "models"
+
+    @property
+    def allowed_user_id(self) -> str:
+        """Only this Telegram user may vote or send links (defaults to the private chat id)."""
+        return self.telegram_allowed_user_id or self.telegram_chat_id
 
     @property
     def quantizations(self) -> list[str]:

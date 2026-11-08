@@ -1,0 +1,7 @@
+# config/mute.yaml — filtros de silêncio (SDD §6.7, estágio A). Item que casar com qualquer regra é descartado
+# antes do LLM, e o motivo fica registrado na tabela `triage`. Todas as listas começam vazias.
+terms: []          # palavra ou frase inteira no título ou no texto, sem diferenciar maiúsculas. Ex.: ["webinar", "sponsored"]
+title_terms: []    # só no título
+domains: []        # host da URL ou qualquer subdomínio dele. Ex.: ["example.com"]
+authors: []        # nome exato do autor
+sources: []        # fonte do item; "*" no fim casa prefixo. Ex.: ["rss:marktechpost"]

@@ -2,11 +2,13 @@
 # SOTAWHAT_MODEL_<ETAPA> do .env ainda vence para o modelo primário. `sotawhat eval models --apply`
 # reescreve tasks.<etapa>.models com o vencedor do bake-off na frente.
 tasks:
-  # Bake-off de 2026-11-08 (golden set v1, 60 itens; data/evals/2026-11-08-triage-bakeoff.md):
-  # MiniMax-M3.1-Flash F1 0,80 · GLM-5.3-Flash 0,71 · DeepSeek V4.1 Flash 0,63 · MiMo-V2.6-Flash 0,62.
-  # MiMo ficou fora da cadeia: só 77% de JSON válido na 1ª tentativa.
+  # Bake-off de 2026-11-08 (golden set v1, 60 itens; data/evals/2026-11-08-triage-bakeoff.md),
+  # redecidido com a rubrica calibrada e com a validação de português (sem caracteres CJK):
+  # DeepSeek V4.1 Flash F1 0,89 (JSON válido de 1ª 97%) · GLM-5.3-Flash 0,87 (100%) ·
+  # MiniMax-M3.1-Flash 0,92, mas só 78% válido: pôs caracteres chineses em 22% dos resumos em pt-BR ·
+  # MiMo-V2.6-Flash 0,84 (77%), fora da cadeia.
   triage:
-    models: [minimax/minimax-m3.1-flash, z-ai/glm-5.3-flash, deepseek/deepseek-v4.1-flash-1017]
+    models: [deepseek/deepseek-v4.1-flash-1017, z-ai/glm-5.3-flash, minimax/minimax-m3.1-flash]
     reasoning: low
     max_tokens: 1500
 

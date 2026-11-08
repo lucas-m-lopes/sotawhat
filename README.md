@@ -46,8 +46,9 @@ Phase P1 adds the triage and the real digest:
   downloaded once to `data/models/`) and a novelty score. Then the LLM rubric
   (`config/rubric.yaml`, prompt `sotawhat/llm/prompts/triage_v1.md`) scores frontier AI,
   medical applicability and actionability with strict JSON, inside the daily budget.
-- The digest goes to Telegram (up to 15 main items with 👍 👎 🧪 buttons, plus a radar of
-  frontier AI without a medical bridge) and to `data/digests/YYYY-MM-DD.md` and `.html`.
+- The digest has two ranked sections, "IA ∩ Saúde" (up to 10) and "Fronteira de IA" (up to 5:
+  strong frontier AI even without a health link), each item with 👍 👎 🧪 buttons, plus a one-line
+  radar. It goes to Telegram and to `data/digests/YYYY-MM-DD.md` and `.html`.
   Nothing relevant and nothing broken means nothing is sent.
 - With `DIGEST_EMAIL_TO` set, the same digest also goes by e-mail (SMTP; with Gmail it reuses
   `GMAIL_ADDRESS` and the app password in `GMAIL_APP_PASSWORD`, never the account password).

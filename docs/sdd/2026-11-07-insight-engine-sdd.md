@@ -2,9 +2,10 @@
 
 **Tipo:** Software Design Document (SDD) — serve também como *spec* para desenvolvimento orientado a especificação (spec-driven).
 **Data:** 2026-11-07
-**Status:** v1.2 (2026-11-08):
+**Status:** v1.3 (2026-11-08):
 - respostas do usuário de 2026-11-07 incorporadas: Instagram pessoal, Neo4j no Docker Desktop, LLMs chineses via OpenRouter;
 - medições da P1 incorporadas: modelo de embeddings e deduplicação por título (§6.3, §6.7, D3);
+- decisões de 2026-11-08 incorporadas: digest em duas seções, "IA ∩ Saúde" e "Fronteira de IA" (escolha feita a partir do golden set), e cópia do digest por e-mail (§6.7, §6.11, §16.1);
 - perguntas restantes em §16.2.
 **Documentos relacionados:**
 - Specs anteriores: `docs/superpowers/specs/2026-06-13-sotawhat-multisource-digest-design.md`, `2026-06-14-medico-ai-intersection-design.md`, `2026-06-14-obsidian-concept-links-design.md`
@@ -22,7 +23,7 @@ O `sotawhat` 2.0 é um agregador diário de papers (arXiv, Semantic Scholar, HF 
 Este SDD redefine o projeto como um **motor de insights** com cinco capacidades novas:
 
 1. **Ingestão multi-canal** — além das fontes atuais: newsletters (AlphaSignal pelo RSS oficial, The Batch pelo arquivo web, as demais via Gmail), páginas do Instagram seguidas pelo usuário, repositórios GitHub novos/em alta, registries de servidores MCP e de *agent skills*, Hugging Face Hub (modelos/datasets), medRxiv, periódicos médicos via Crossref/PubMed e listas regulatórias (FDA, ANVISA).
-2. **Filtro de ruído com critério explícito** — só entra o que é **IA/ML de fronteira com aplicabilidade médico-hospitalar plausível**; artigos puramente clínicos (sem IA) e notícias genéricas de IA sem caminho de aplicação são descartados por um classificador leve treinado com o feedback do usuário mais uma rubrica avaliada por LLM, com regras de inclusão/exclusão explícitas.
+2. **Filtro de ruído com critério explícito** — entra a **IA/ML com aplicabilidade médico-hospitalar plausível** e, numa seção própria, a **IA de fronteira forte mesmo sem ligação com saúde** (decisão de 2026-11-08, §16.1); artigos puramente clínicos (sem IA) e notícias de IA sem substância técnica são descartados por um classificador leve treinado com o feedback do usuário mais uma rubrica avaliada por LLM, com regras de inclusão/exclusão explícitas.
 3. **Grafo de conhecimento próprio** — substitui o Obsidian por um grafo (Neo4j como escolha primária; ver §6.3 e §15) com entidades extraídas por LLM (técnicas, problemas clínicos/operacionais, organizações, produtos, modelos, datasets, regulações), relações com proveniência e validade temporal, embeddings, comunidades e tendências.
 4. **Gerador de ideias** — semanal e sob demanda: combina técnicas recentes × problemas hospitalares (descoberta baseada em literatura + predição de links no grafo + agentes LLM com personas), critica, verifica novidade contra bases externas, pontua com uma rubrica específica de saúde (regulatório, dados, evidência, tempo até piloto) e registra feedback.
 5. **Entrega e consulta sem fricção** — digest diário (Telegram e/ou e-mail + Markdown/HTML local), relatório semanal de ideias, servidor MCP para perguntar ao grafo de dentro do Claude Code/Claude Desktop, visualização web local do grafo.
@@ -84,7 +85,7 @@ Tudo roda localmente (Windows 11 + Python 3.12 + Neo4j Community no Docker Deskt
 | ID | Objetivo | Métrica de aceite |
 |---|---|---|
 | G1 | Ingerir diariamente todos os canais do §5 (Tier 1 e 2) | ≥ 95% das execuções diárias concluem; falha de uma fonte nunca derruba a execução |
-| G2 | Reduzir ruído mantendo o essencial | Digest diário com ≤ 15 itens principais + ≤ 10 linhas de "radar"; precisão de relevância ≥ 80% medida por feedback (👍/👎) após 4 semanas de calibração |
+| G2 | Reduzir ruído mantendo o essencial | Digest diário com ≤ 15 itens principais (≤ 10 em "IA ∩ Saúde" + ≤ 5 em "Fronteira de IA") + ≤ 10 linhas de "radar"; precisão de relevância ≥ 80% medida por feedback (👍/👎) após 4 semanas de calibração |
 | G3 | Grafo de conhecimento próprio, consultável | Entidades extraídas com precisão ≥ 85% em amostra rotulada; consultas por técnica/problema/organização/período respondem em < 2 s; MCP server operando |
 | G4 | Gerar ideias genuinamente novas e acionáveis | 5–10 ideias/semana com rubrica preenchida e verificação de novidade; ≥ 30% marcadas pelo usuário como "vale explorar" após calibração |
 | G5 | Operação sem fricção | 1 comando/agendamento; nenhuma reautenticação manual por ≥ 60 dias (Gmail, Instagram, GitHub); alerta automático quando algo falha |
@@ -140,7 +141,7 @@ Levantamento completo em `docs/research/2026-11-07-insight-engine/plataformas_si
 
 | ID | Caso de uso | Critérios de aceite |
 |---|---|---|
-| US1 | **Digest diário** no celular (Telegram) e em Markdown/HTML local: itens ranqueados, resumo pt-BR, "por que importa para hospital/startup", link, tags | Chega todo dia no horário configurado; ≤ 15 itens + radar; cada item mostra o score e a fonte |
+| US1 | **Digest diário** no celular (Telegram), por e-mail e em Markdown/HTML local: itens ranqueados em duas seções ("IA ∩ Saúde" e "Fronteira de IA"), resumo pt-BR, "por que importa para hospital/startup", link, tags | Chega todo dia no horário configurado; ≤ 10 + 5 itens + radar; cada item mostra o score e a fonte |
 | US2 | **Explorar o grafo**: "o que apareceu sobre *ambient scribe* nos últimos 30 dias?", "quais técnicas estão sendo aplicadas a *fluxo de pacientes*?", "quem (orgs) está ativo em *patologia digital*?" | Respostas via CLI, MCP (Claude Code/Desktop) e web local, em < 2 s |
 | US3 | **Ideias semanais**: 5–10 *idea cards* com problema, solução, técnicas, evidências (itens do grafo), novidade (arte prévia encontrada), rubrica e próximos passos | Entregues no domingo à noite / segunda cedo; registradas no ledger com versão |
 | US4 | **Feedback**: 👍/👎 em itens e ideias; "testar", "arquivar", nota livre | Feedback persistido e usado na calibração; ideias rejeitadas não voltam |
@@ -468,8 +469,8 @@ Decisão do usuário (§16.1, item 12): modelos chineses comparáveis aos da Ant
 
 - **Regras de inclusão** (qualquer uma basta; mais regras → mais pontos): (1) produto/plataforma de IA em uso por hospitais, redes, laboratórios, operadoras ou SUS, com substância (clientes nomeados, nº de sítios, resultados, autorização regulatória, preço); (2) evidência sobre IA em saúde (RCT, validação externa, avaliação independente, relatos de falha/incidente/recall); (3) regulação e governança (ANVISA, CFM, ANPD, ANS, MS/RNDS, PL 2338, FDA, EU AI Act, CHAI, FHIR/TISS); (4) **capacidade de IA de fronteira com ponte plausível**, mesmo sem contexto médico (novos modelos multimodais/3D/longo contexto, ASR multilíngue, agentes com ferramentas/MCP, modelos pequenos abertos ou on-device, avaliação/calibração/detecção de alucinação/drift, privacidade, robótica, BCI, visão em vídeo) — regra: entra se mapear para ≥ 1 tipo de problema B01–B15 e ≥ 1 família C01–C21; (5) movimentos de incumbentes e capital (Epic, Oracle Health, Microsoft, Google, OpenAI, Anthropic, NVIDIA, Philips, GE, Siemens, MV/Tasy, Dasa, Einstein, Rede D'Or; rodadas/M&A de healthtechs com IA); (6) operações, ciclo de receita e operadoras quando há componente de dados/IA; (7) Brasil/LatAm em saúde digital/IA; (8) dispositivos e bioengenharia com validação ou status regulatório; (9) educação médica/força de trabalho com IA; (10) metodologia de avaliação, segurança, viés, desidentificação, dados sintéticos em saúde.
 - **Regras de exclusão (ruído):** (1) pesquisa clínica sem IA/dados (fármacos, técnica cirúrgica convencional, epidemiologia, guidelines) — salvo se tratar de ferramenta digital ou mudar um protocolo que um produto de IA implementa; (2) IA genérica sem ponte (apps de consumo, chips/datacenters, IA em finanças/varejo/jogos, disputas corporativas, "AGI"/opinião); (3) marketing sem substância (press release sem números/clientes/evidência, listicles, webinars, prêmios, vagas); (4) opinião/"thought leadership" sem fato novo, explicadores introdutórios; (5) descoberta de fármacos/bioinformática muito a montante sem ligação com hospital/IDOR (baixa prioridade, não núcleo); (6) wellness de consumo sem validação; (7) política/reembolso sem componente digital; (8) duplicatas, republicações, conteúdo > 18 meses sem caráter fundacional; (9) itens com dado de paciente identificável (descartar e não armazenar); (10) regras puramente locais de outro país sem lógica transferível.
-- **Regras duras (descartam antes da nota):** exclusões 1, 2, 3 e 9 acima; duplicata (`D = 0`) vira `SAME_STORY`. Exceção: "radar de fronteira" (`A ≥ 4`, `B ≤ 1`) entra só como linha curta na seção *Radar*.
-- **Score:** `total = 0,35·A + 0,35·B + 0,20·C + 0,10·D` (pesos em `config/rubric.yaml`, recalibrados com feedback); penalidades: fonte só do fornecedor sem terceiro (−0,5), fonte fraca/agregador (−0,5), conflito entre fontes não resolvido (sinalizar). Aprovado se `total ≥ 3,2` **e** `B ≥ 2`. Limite diário: 15 principais (ordenados por `total`, desempate por `B`), 10 no radar.
+- **Regras duras (descartam antes da nota):** exclusões 1, 2, 3 e 9 acima; duplicata (`D = 0`) vira `SAME_STORY`. A exclusão 2 vale só para notícia de IA sem substância técnica; paper, modelo, ferramenta ou resultado técnico sem ligação com saúde é avaliado normalmente (com `B` 0–1) e pode entrar em "Fronteira de IA". Notícia excluída pela regra 2 com `A ≥ 4` ainda vira linha no *Radar*.
+- **Score:** `total = 0,35·A + 0,35·B + 0,20·C + 0,10·D` (pesos em `config/rubric.yaml`, recalibrados com feedback); penalidades: fonte só do fornecedor sem terceiro (−0,5), fonte fraca/agregador (−0,5), conflito entre fontes não resolvido (sinalizar). Aprovado em **"IA ∩ Saúde"** se `total ≥ 3,2` **e** `B ≥ 2`. O que não entrou vai para **"Fronteira de IA"** se `A ≥ 4`, substância ≥ 2 e `total_fronteira = 0,60·A + 0,25·C + 0,15·D − penalidades ≥ 3,6` (decisão de 2026-11-08: no golden set, 24 dos 51 itens "incluir" eram IA de fronteira sem ligação com saúde). Sem ligação com saúde (`B ≤ 1`) e com `A ≥ 4`, o resto vira linha no *Radar*. Limite diário: 10 em "IA ∩ Saúde" (ordenados por `total`, desempate por `B`), 5 em "Fronteira de IA" (por `total_fronteira`; o excedente desce para o radar), 10 no radar. Limiares e pesos em `config/rubric.yaml`, a recalibrar com o golden set e os votos.
 - **Saídas da triagem:** `scores{A,B,C,D,total}`, `decision`, `reason` (1 frase), `summary_pt` (≤ 60 palavras), `why_it_matters_pt` (≤ 40 palavras, foco hospital/startup), `domains[] (A)`, `problem_types[] (B)`, `techniques[] (C)`, `evidence_stage (D0–D6)`, `stakeholders[] (E)`, `br_applicability (F0–F3)`, `cfm_risk (G)`, `substance (0–3)`, `audience` (clínico/gestão/engenharia/motor).
 - **Few-shot no prompt:** exemplos rotulados como "FDA libera Aidoc CARE com 14 indicações" → incluir (A03; B02, B03; C04, C05; D4; F1; G alto); "Google lança modelo aberto 4B com entrada de volumes 3D" (sem menção clínica) → incluir pela ponte (A03/A04; C04, C19; B02); "novo chip para datacenters" → excluir; "ensaio fase III de anticorpo em asma" → excluir; "ANS muda indicadores de glosa" → incluir (A14; B08, B11; F3). Lista completa em `panorama_saude_ia.md` (KQ6).
 - **Calibração:** *golden set* rotulado pelo usuário (≥ 150 itens) em `tests/evals/triage/`; métricas precision/recall; o feedback diário alimenta o set.
@@ -525,7 +526,7 @@ Ver §8.
 |---|---|---|
 | **Telegram** (principal) | digest diário (resumo + itens com botões 👍/👎/🧪), relatório semanal, alertas de falha; recebe links para captura manual | bot próprio (`telegram_bot.py`, long polling) — sem servidor público |
 | **Markdown/HTML local** | `data/digests/YYYY-MM-DD.md` + `.html` | sempre gerado |
-| **E-mail** (opcional) | mesmo digest | Gmail API (`gmail.send`) ou SMTP |
+| **E-mail** (opcional, ligado em 2026-11-08) | cópia do digest diário (as duas seções e o radar; os votos continuam no Telegram) | SMTP com STARTTLS em `smtp.gmail.com:587`, reaproveitando `GMAIL_ADDRESS` + a senha de app de `GMAIL_APP_PASSWORD` (a mesma da leitura das newsletters na P2); destinatário em `DIGEST_EMAIL_TO`. HTML só com estilos inline. Uma senha que não tem o formato de senha de app é recusada antes de conectar, para que a senha da conta nunca seja enviada |
 | **MCP server** | `search_items`, `get_entity`, `neighbors`, `trends`, `gaps`, `list_ideas`, `feedback`, `cypher_readonly` | `mcp` SDK (FastMCP) sobre SQLite + Neo4j; registrado em `.mcp.json` |
 | **Web local** | grafo interativo (sigma.js), busca, filtros por período/tipo, página do item/entidade/ideia, feedback | FastAPI em `localhost:8765` |
 | **Export Obsidian** (transição e backup sem lock-in) | uma nota por item aprovado com frontmatter tipado (`type, source, published, relevance, why_it_matters, entities, status, rating`) + notas-entidade reais (técnica/problema/organização/solução) com wikilinks + arquivos `.base` versionados (inbox por score, por fonte, kanban por status, ideias por nota) | `data/exports/obsidian/` ou o vault atual; idempotente (sobrescreve por `id`) |
@@ -912,7 +913,7 @@ Tokens de raciocínio contam como saída; nas etapas com raciocínio alto, a est
 
 As respostas mudam a implementação; onde não houver resposta, a suposição indicada vale.
 
-### 16.1 Respostas incorporadas (2026-11-07)
+### 16.1 Respostas incorporadas (2026-11-07 e 2026-11-08)
 
 | # | Pergunta | Resposta do usuário | Consequência no SDD |
 |---|---|---|---|
@@ -920,13 +921,15 @@ As respostas mudam a implementação; onde não houver resposta, a suposição i
 | 11 | Neo4j: serviço nativo, Docker Desktop ou LadybugDB? | "Docker Desktop" | `compose.yaml` na raiz, volume nomeado no WSL2, portas só em localhost; `start_graph.ps1` abre o Docker Desktop e espera o *healthcheck*; `graph_outbox` e tarefa "ao fazer logon" para quando o Docker não estiver de pé (§6.3, §6.12, §10.1, D1) |
 | 12 | Orçamento e modelo de extração | "Quero usar modelos chineses comparáveis aos da Anthropic via OpenRouter para redução drástica de custo" | Camada LLM refeita sobre o OpenRouter com DeepSeek/MiMo/GLM/Kimi, só por endpoints ZDR (§6.6, D5, D10, D14, D15). A configuração recomendada cai de ≈ US$ 45–50 para ≈ US$ 8–11/mês (§13). Limite reconhecido na ideação (Kimi K3.1 Pro 46 × Opus 5.5 59) e *bake-off* na P1. Evidência: `llm_openrouter.md` |
 | 13 | Fable 5.1 na rodada final? | sem resposta; superada pela 12 | Fable não entra. A rodada *premium* com Claude fica **opcional e desligada** (`ANTHROPIC_API_KEY` vazio) |
+| 3 | Perfil `geral` (IA pura): radar ou desligado? | No golden set (2026-11-08), 24 dos 51 itens "incluir" eram IA de fronteira sem ligação com saúde; diante disso, a escolha foi "Duas seções" | O digest ganha duas seções principais: "IA ∩ Saúde" (≤ 10) e "Fronteira de IA" (≤ 5, com botões de voto); o radar fica com o resto. Regras em §6.7; pesos e limites em `config/rubric.yaml`; o prompt deixou de pedir pontes médicas inventadas |
+| 9 | Canal: Telegram, e-mail ou ambos? | "Gostaria que o digest viesse na minha caixa de e-mail tbem" | Ambos. Telegram para ler e votar, e e-mail com a cópia do digest pelo SMTP do Gmail, usando a senha de app (§6.11, `DIGEST_EMAIL_TO`) |
 
 ### 16.2 Perguntas ainda abertas (valem as suposições)
 
 **Fontes**
 1. **"Runway AI"** — qual newsletter exatamente? Não há página de assinatura da RunwayML; há "Runway Magazine" (moda), "The Runway Ventures" (beehiiv), "Rethink the Runway" (Substack). Envie o endereço do remetente (header `From`) ou um e-mail de exemplo. *Suposição:* fica fora até confirmação.
 2. Além de AlphaSignal/The Batch/Runway, quais outras newsletters já chegam na sua caixa que devem entrar (ex.: TLDR AI, The Rundown, Import AI, Latent Space, STAT Health Tech, HTN Daily Brief)? *Suposição:* tudo o que receber a label `newsletters/ai`.
-3. O perfil `geral` (IA pura) deve continuar como **radar de fronteira** (linhas curtas, peso menor) ou ser desligado? *Suposição:* radar com ≤ 10 linhas/dia.
+3. *(Respondida em 16.1: seção "Fronteira de IA".)*
 4. Quais domínios da taxonomia (A01–A23) e stakeholders importam mais para a startup e para o seu papel na Rede D'Or? Há áreas a excluir (ex.: descoberta de fármacos, wellness de consumo)? *Suposição:* pesos iguais; exclusões conforme §6.7.
 
 **Gmail e Instagram**
@@ -936,7 +939,7 @@ As respostas mudam a implementação; onde não houver resposta, a suposição i
 8. Captura manual via **bot do Telegram** (compartilhar post → bot) é aceitável? *Suposição:* sim; alternativa: e-mail para si mesmo.
 
 **Entrega e operação**
-9. Canal principal: Telegram, e-mail, ou ambos? Horário do digest (*suposição:* 07:00) e do relatório semanal (*suposição:* domingo 20:00)? Limites diários (*suposição:* ≤ 10–15 itens + 10 no radar)? Resumos em pt-BR (*suposição:* sim).
+9. Horário do digest (*suposição:* 07:00) e do relatório semanal (*suposição:* domingo 20:00)? Resumos em pt-BR (*suposição:* sim). *(Canal e limites respondidos em 16.1.)*
 10. O PC fica ligado **e com sessão aberta** no horário? O Docker Desktop só roda com o usuário logado. Sem sessão, o run diário segue normalmente e o grafo sincroniza no próximo logon. Se a máquina costuma ficar desligada, considerar um mini-PC/NAS/VPS com o mesmo `compose.yaml`. *Suposição:* ligado, com logon diário.
 11. *(respondida — §16.1)*
 

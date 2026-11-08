@@ -42,7 +42,7 @@ def test_schema_2_database_is_upgraded_in_place(tmp_path):
             names = {r[0] for r in st.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             assert {"extractions", "entities", "entity_aliases", "entity_mentions", "entity_relations",
                     "entity_merges", "entity_embeddings"} <= names
-            assert st.meta_get("schema_version") == "3"
+            assert st.meta_get("schema_version") == "4"
             row = st.conn.execute("SELECT title, graph_synced_at FROM items WHERE id = 'pmid:1'").fetchone()
             assert tuple(row) == ("Old", None)
 

@@ -18,6 +18,7 @@ from pathlib import Path
 from sotawhat import taxonomy as tx
 from sotawhat.graph import intelligence as intel
 from sotawhat.graph.query import TYPE_LABELS
+from sotawhat.ideation.ledger import idea_card
 from sotawhat.llm.gateway import BudgetExceeded, LLMFailure
 from sotawhat.llm.openrouter import InsufficientCredits
 from sotawhat.llm.prompts import load as load_prompt
@@ -128,29 +129,12 @@ def meta_review(gateway, store, min_decisions=4, notes=None) -> list:
 
 
 # --- payload --------------------------------------------------------------------------
-def idea_payload(store, idea_id) -> dict:
-    row = store.get_idea(idea_id)
-    card = json.loads(row["card_json"])
-    scores = json.loads(row["scores_json"] or "{}")
-    novelty = json.loads(row["novelty_json"] or "{}")
-    critique = json.loads(row["critique_json"] or "{}")
-    layers = novelty.get("camadas") or {}
-    return {"id": row["id"], "title": row["title"], "lens": row["lens"], "persona": row["persona"], "niche": row["niche"],
-            "status": row["status"], "score": row["score"] or 0.0, "draft": card.get("draft", {}),
-            "dossie": card.get("dossie"), "axes": scores.get("eixos", {}), "confidence": scores.get("confianca"),
-            "facets": novelty.get("facetas", {}),
-            "neighbors": {k: v[:3] for k, v in layers.items() if not k.startswith("_") and v},
-            "unverified": layers.get("_nao_verificado", []), "pre_mortem": critique.get("pre_mortem"),
-            "kill": sorted({k for c in critique.get("criticas", []) for k in c.get("kill_criteria", [])})[:6],
-            "candidate": {k: v for k, v in json.loads(row["candidate_json"] or "{}").items() if k != "context"}}
-
-
 def build_payload(report, store) -> dict:
     ideation = report.ideation
     return {"kind": report.kind, "day": report.day, "run_id": report.run_id, "theme": report.theme,
             "trends": report.trends[:12], "communities": report.communities[:8],
             "gaps": {k: v[:5] for k, v in (report.gaps or {}).items()}, "rules": report.rules,
-            "ideas": [idea_payload(store, i) for i in (ideation.finalists if ideation else [])],
+            "ideas": [idea_card(store.get_idea(i)) for i in (ideation.finalists if ideation else [])],
             "discarded": (ideation.discarded if ideation else [])[:20],
             "stats": {"candidates": ideation.candidates if ideation else 0, "drafts": ideation.drafts if ideation else 0,
                       "kept": len(ideation.kept) if ideation else 0, "critiqued": ideation.critiqued if ideation else 0,

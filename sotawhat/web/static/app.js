@@ -1,5 +1,6 @@
 // sotawhat/web/static/app.js — the graph interface (SDD §6.11). Vanilla JS over the local API;
 // graphology + graphology-library (ForceAtlas2, Louvain) + sigma.js 3, all served from /static/vendor.
+// Three views behind the header tabs (#grafo, #ideias, #tendencias); the ideas and trends pages are P4.
 // Every piece of data goes into the page through textContent, never as HTML.
 "use strict";
 (() => {
@@ -22,7 +23,7 @@
   const ROLE = { main: "principal", used: "usado", mentioned: "citado", tag: "categoria" };
 
   const state = { days: 30, types: new Set(Object.keys(TYPES)), categories: false, min: 1, limit: 250,
-                  colorBy: "type", focus: null, selected: null, hovered: null, data: null, stats: null };
+                  colorBy: "type", focus: null, selected: null, hovered: null, data: null, stats: null, view: null };
   let renderer = null;
   let graph = null;
 
@@ -156,6 +157,7 @@
   }
 
   async function loadGraph() {
+    graphLoaded = true;
     const types = [...state.types];
     if (state.categories) types.push(...Object.keys(CATEGORIES));
     const params = new URLSearchParams({ days: String(state.days), min: String(state.min),
@@ -258,6 +260,7 @@
       labelFont: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", labelSize: 13, labelWeight: "500",
       labelColor: { color: css("--fg") }, defaultEdgeColor: css("--edge"), defaultNodeColor: CATEGORY_COLOR,
       minCameraRatio: 0.05, maxCameraRatio: 4, defaultDrawNodeHover: drawHover, nodeReducer, edgeReducer,
+      allowInvalidContainer: true,   // the graph view can be hidden while another tab is open
     });
     renderer.on("enterNode", ({ node }) => { state.hovered = node; renderer.refresh({ skipIndexation: true }); });
     renderer.on("leaveNode", () => { state.hovered = null; renderer.refresh({ skipIndexation: true }); });
@@ -452,14 +455,14 @@
     if (res.entities.length) {
       rows.push(el("div", { class: "group" }, "Entidades"));
       rows.push(...res.entities.map((e) => el("button", { type: "button", role: "option",
-        onclick: () => { hideResults(); goToEntity(e.entity_id); } },
+        onclick: () => { hideResults(); openInGraph(e.entity_id); } },
         el("span", { class: "dot", style: `display:inline-block;width:8px;height:8px;border-radius:50%;background:${typeColor(e.type)}` }),
         e.name, el("small", { class: "muted" }, ` ${typeLabel(e.type)} · ${e.mentions}`))));
     }
     if (res.items.length) {
       rows.push(el("div", { class: "group" }, "Itens"));
       rows.push(...res.items.map((i) => el("button", { type: "button", role: "option",
-        onclick: () => { hideResults(); openItem(i.id); } }, i.title,
+        onclick: () => { hideResults(); toGraph(); ensureGraph(); openItem(i.id); } }, i.title,
         el("small", { class: "muted" }, ` ${i.section} · ${fmtDate(i.fetched_at)}`))));
     }
     if (!rows.length) rows.push(el("div", { class: "group" }, "nada encontrado"));
@@ -493,6 +496,307 @@
     $("#stats").title = `${s.items} itens coletados · último run diário ${fmtDate(s.last_daily_run)}`;
   }
 
+  // --- views (P4) --------------------------------------------------------------------
+  const VIEWS = { graph: "#view-graph", ideas: "#view-ideas", trends: "#view-trends" };
+  const HASHES = { "#grafo": "graph", "#ideias": "ideas", "#tendencias": "trends" };
+  const TITLES = { graph: "sotawhat · grafo", ideas: "sotawhat · ideias", trends: "sotawhat · tendências" };
+  let graphLoaded = false;
+
+  function showView(name) {
+    for (const [key, selector] of Object.entries(VIEWS)) $(selector).hidden = key !== name;
+    document.querySelectorAll(".views a").forEach((a) => {
+      if (a.dataset.view === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    });
+    document.title = TITLES[name];
+    state.view = name;
+  }
+
+  function ensureGraph() {   // the graph loads the first time its tab is shown
+    if (!graphLoaded) loadGraph();
+    else if (renderer) { renderer.resize(); renderer.refresh(); }
+  }
+
+  function route() {
+    const name = HASHES[location.hash] || "graph";
+    showView(name);
+    if (name === "graph") ensureGraph();
+    else if (name === "ideas") loadIdeas();
+    else loadTrends();
+  }
+
+  function toGraph() {       // before opening an entity or an item from another tab
+    if (state.view === "graph") return;
+    showView("graph");
+    if (location.hash !== "#grafo") location.hash = "#grafo";
+    if (renderer) { renderer.resize(); renderer.refresh(); }
+  }
+
+  function openInGraph(entityId) {
+    if (entityId === null || entityId === undefined) return;
+    toGraph();
+    goToEntity(entityId);
+  }
+
+  function entityLink(id, name, type) {
+    return el("button", { class: "chip", type: "button", title: `${typeLabel(type)} · abrir no grafo`,
+                          onclick: () => openInGraph(id) },
+      el("span", { class: "dot", style: `background:${typeColor(type)}` }), name);
+  }
+
+  function pairs(rows) {     // [[label, value]] -> <dt>/<dd>, skipping empty values
+    return rows.filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== "")
+      .flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, v)]);
+  }
+
+  // --- ideas (P4) --------------------------------------------------------------------
+  const IDEA_FILTERS = [["", "todas"], ["nova", "novas"], ["curtida", "👍 explorar"], ["testar", "🧪 testar"],
+                        ["engavetada", "🗄️ engavetadas"], ["construida", "🛠️ construídas"], ["rejeitada", "👎 rejeitadas"],
+                        ["descartada", "descartadas"]];
+  const IDEA_STATUS = { nova: "nova", curtida: "👍 explorar", testar: "🧪 testar", engavetada: "🗄️ engavetada",
+                        construida: "🛠️ construída", rejeitada: "👎 rejeitada", descartada: "descartada" };
+  const IDEA_VOTES = [["up", "👍 explorar", "curtida"], ["test", "🧪 testar", "testar"],
+                      ["archive", "🗄️ engavetar", "engavetada"], ["built", "🛠️ construí", "construida"],
+                      ["down", "👎 não", "rejeitada"]];
+  const AXES = { valor: "valor", viabilidade_tecnica: "viab. técnica", viabilidade_negocio: "viab. negócio",
+                 novidade: "novidade", regulatorio: "regulatório", tempo_piloto: "tempo até piloto", fit: "fit",
+                 adocao: "adoção" };
+  const FACETS = { problema: "problema", tecnica: "técnica", dado: "dado", integracao: "integração",
+                   modelo_negocio: "modelo de negócio", geografia: "geografia/BR" };
+  const FACET_STATE = { nao_encontrado: "não encontrado", parcial: "parcial", igual: "igual", a_verificar: "a verificar" };
+  const ROLES = { clinico: "Clínico", operacoes: "Operações/CFO", regulatorio: "Regulatório/LGPD", dados: "Dados/integração",
+                  ml: "Cientista de ML", paciente_etica: "Paciente/ética" };
+  const LENSES = { tech_push: "tech-push", jtbd: "JTBD", scamper: "SCAMPER", triz: "TRIZ", errc: "ERRC", analogia: "analogia",
+                   cenario_2029: "cenário 2029", negativa: "contrária" };
+  const FORMS = { produto_b2b: "produto B2B", plataforma: "plataforma", dispositivo: "dispositivo",
+                  servico_corporativo: "serviço corporativo", b2b2c: "B2B2C" };
+  const SAMD = { nao_samd: "não é SaMD", I: "classe I", II: "classe II", III: "classe III", IV: "classe IV", incerto: "incerta" };
+  const ideasState = { status: "", all: false, reasons: [], loading: 0 };
+
+  async function loadIdeas() {
+    const ticket = ++ideasState.loading;
+    const params = new URLSearchParams({ finalists: String(!ideasState.all), limit: "200" });
+    if (ideasState.status) params.set("status", ideasState.status);
+    let data;
+    try { data = await api(`/api/ideas?${params}`); } catch (e) {
+      $("#ideas-summary").textContent = `Não consegui carregar as ideias (${e.message}).`;
+      return;
+    }
+    if (ticket !== ideasState.loading) return;     // a newer filter click already asked again
+    ideasState.reasons = data.reasons || [];
+    const counts = data.counts || {};
+    segmented($("#ideas-status"), IDEA_FILTERS.map(([value, label]) => [value, `${label} ${value ? counts[value] || 0 : data.total}`]),
+      ideasState.status, (value) => { ideasState.status = value; loadIdeas(); });
+    const scope = ideasState.all ? "no ledger" : "finalistas";
+    $("#ideas-summary").textContent = data.total
+      ? `${data.total} ideias ${scope} · ${counts.curtida || 0} para explorar · ${counts.testar || 0} para testar · `
+        + `${counts.engavetada || 0} engavetadas`
+      : "";
+    const list = $("#ideas-list");
+    if (!data.ideas.length) {
+      list.replaceChildren(el("p", { class: "empty-note" }, data.total
+        ? "Nenhuma ideia com esta situação."
+        : "Ainda não há ideias. Rode `sotawhat ideate --n 4` ou espere o run semanal (domingo, 20:00)."));
+      return;
+    }
+    const blocks = [];
+    let lastRun = null;
+    for (const idea of data.ideas) {
+      if (idea.run_id !== lastRun) {
+        lastRun = idea.run_id;
+        blocks.push(el("h3", {}, `Lote do run ${idea.run_id} · ${fmtDate(idea.created_at)}`));
+      }
+      blocks.push(ideaCard(idea));
+    }
+    list.replaceChildren(...blocks);
+  }
+
+  function ideaCard(idea) {
+    const d = idea.draft || {};
+    const badge = el("span", { class: `badge st-${IDEA_STATUS[idea.status] ? idea.status : "nova"}` },
+                     IDEA_STATUS[idea.status] || idea.status);
+    const card = el("article", { class: "idea" },
+      el("div", { class: "head" }, badge, el("span", { class: "badge", title: "nota da rubrica (0–10)" },
+        el("span", { class: "score" }, num(idea.score))),
+        meta(`lente ${LENSES[idea.lens] || idea.lens || "?"}`, idea.persona, `${d.setor || "?"} ${idea.sector_label || ""}`.trim(),
+             FORMS[d.forma] || d.forma, `idea:${idea.id}`)),
+      el("h2", {}, idea.title),
+      el("dl", {}, pairs([[`Problema${d.stakeholder_dono ? ` (dono: ${d.stakeholder_dono})` : ""}`, d.problema_jtbd],
+                          ["Como funciona", d.mecanismo], ["Por que agora", d.why_now], ["Hipótese nula", d.hipotese_nula],
+                          ["Descartada", idea.discard_reason]])),
+      ideaDetails(idea));
+    card.append(...ideaVotes(idea, badge));
+    return card;
+  }
+
+  function neighborLine(layer, list) {
+    const parts = [];
+    list.forEach((n, i) => {
+      if (i) parts.push("; ");
+      const url = safeUrl(n.url);
+      parts.push(url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer" }, n.title) : n.title);
+      parts.push(` (${n.year || "?"})`);
+    });
+    return el("div", { class: "critique" }, el("b", {}, `${layer}: `), ...parts);
+  }
+
+  function ideaDetails(idea) {
+    const d = idea.draft || {};
+    const c = idea.candidate || {};
+    const body = el("div", {});
+    const box = el("details", {}, el("summary", {}, "rubrica, novidade, críticas, dossiê e evidências"), body);
+    const axes = Object.entries(idea.axes || {});
+    const facets = Object.entries(idea.facets || {});
+    const dz = idea.dossie;
+    const neighbors = Object.entries(idea.neighbors || {});
+    const unverified = idea.unverified || [];
+    const critiques = idea.critiques || [];
+    const nasss = idea.nasss !== null && idea.nasss !== undefined ? ` · NASSS: ${idea.nasss} domínios complexos` : "";
+    body.append(
+      el("dl", {}, pairs([["Técnicas", (d.tecnicas || []).join(", ")], ["Capacidade", d.capacidade_intermediaria],
+                          ["Dados", (d.dado_necessario || []).join(", ")], ["Integração", d.integracao],
+                          ["Modelo de negócio", d.modelo_negocio], ["Riscos", (d.riscos || []).join("; ")]])));
+    if (c.technique) {
+      body.append(el("h3", {}, "Par do grafo que originou a ideia"),
+        el("div", { class: "chips" }, entityLink(c.technique_id, c.technique, c.technique_type || "technique"),
+          el("span", { class: "muted" }, "×"), entityLink(c.problem_id, c.problem, "problem")),
+        meta(c.sampler ? `amostrador: ${c.sampler}` : null, c.why_now));
+    }
+    if (axes.length) {
+      const gates = idea.gates && idea.gates.length ? ` · gates: ${idea.gates.join(", ")}` : "";
+      body.append(el("h3", {}, `Rubrica · confiança ${num(idea.confidence)}${gates}`),
+        el("div", { class: "axes" }, axes.flatMap(([k, v]) => [el("span", {}, AXES[k] || k),
+          el("span", { class: "bar" }, el("span", { style: `width:${Math.max(0, Math.min(10, Number(v) || 0)) * 10}%` })),
+          el("span", { class: "muted" }, num(v, 1))])));
+      if ((idea.justifications || []).length) {
+        body.append(el("ul", { class: "claims" }, idea.justifications.map((j) => el("li", {}, j))));
+      }
+    }
+    if (facets.length) {
+      body.append(el("h3", {}, `Novidade por faceta · nota ${num(idea.novelty, 1)}`), el("div", { class: "facets" },
+        facets.map(([k, f]) => el("span", { class: `facet ${FACET_STATE[f.estado] ? f.estado : ""}`,
+                                            title: (f.vizinhos || []).join("; ") || null },
+          `${FACETS[k] || k}: ${FACET_STATE[f.estado] || f.estado}`))));
+    }
+    if (neighbors.length || unverified.length) {
+      body.append(el("h3", {}, "Prior art"), ...neighbors.map(([layer, list]) => neighborLine(layer, list)));
+      if (unverified.length) body.append(el("div", { class: "critique muted" }, `não verificado: ${unverified.join("; ")}`));
+    }
+    if (critiques.length) {
+      body.append(el("h3", {}, `Críticas por papel${nasss}`), ...critiques.map((r) => el("div", { class: "critique" },
+        el("b", {}, `${ROLES[r.papel] || r.papel} · ${r.veredito}`),
+        (r.kill_criteria || []).length ? ` — kill criteria: ${r.kill_criteria.join("; ")}` : "",
+        r.o_que_mudaria ? el("div", { class: "muted" }, `o que mudaria o veredito: ${r.o_que_mudaria}`) : null)));
+      if (idea.pre_mortem) body.append(el("div", { class: "why" }, el("b", {}, "Pré-mortem: "), idea.pre_mortem));
+    }
+    if (dz) {
+      body.append(el("h3", {}, "Dossiê"), el("dl", {}, pairs([["Piloto de 90 dias", dz.piloto_90d],
+        ["Plano de evidência", dz.plano_evidencia], ["Classe SaMD", SAMD[dz.classe_samd] || dz.classe_samd],
+        ["Base legal LGPD", dz.base_legal_lgpd], ["Integração", dz.integracao_detalhe], ["Lean Canvas", dz.lean_canvas]])));
+    }
+    const extra = el("div", {});
+    body.append(extra);
+    box.addEventListener("toggle", async () => {   // the graph facts and the vote history come on demand
+      if (!box.open || extra.dataset.loaded) return;
+      extra.dataset.loaded = "1";
+      let full;
+      try { full = await api(`/api/ideas/${encodeURIComponent(idea.id)}`); } catch (e) {
+        extra.append(el("p", { class: "error" }, `não consegui carregar as evidências (${e.message})`));
+        return;
+      }
+      if (full.context.length) {
+        extra.append(el("h3", {}, "Fatos do grafo que o gerador viu"),
+          el("ul", { class: "claims" }, full.context.map((f) => el("li", {}, f))));
+      } else {
+        extra.append(el("p", { class: "muted" }, "Candidato de controle: gerado sem fatos do grafo."));
+      }
+      if (full.votes.length) {
+        extra.append(el("h3", {}, "Decisões"), el("ul", { class: "claims" }, full.votes.map((v) => el("li", {},
+          `${fmtDate(v.created_at)} · ${v.value} · ${v.channel}${v.note ? ` · ${v.note}` : ""}`))));
+      }
+    });
+    return box;
+  }
+
+  function ideaVotes(idea, badge) {
+    const box = el("div", { class: "idea-votes", role: "group", "aria-label": "Decidir sobre esta ideia" });
+    const reasons = el("div", { class: "reasons" });
+    reasons.hidden = true;
+    const buttons = [];
+    const mark = (status) => buttons.forEach(([wanted, button]) => button.setAttribute("aria-pressed", String(wanted === status)));
+
+    async function send(value, note) {
+      try {
+        const res = await api("/api/ideas/vote", { method: "POST", headers: { "content-type": "application/json" },
+                                                   body: JSON.stringify({ idea_id: idea.id, value, note: note || null }) });
+        idea.status = res.status;
+        badge.className = `badge st-${res.status}`;
+        badge.textContent = IDEA_STATUS[res.status] || res.status;
+        mark(res.status);
+        reasons.hidden = true;
+      } catch (e) {
+        box.append(el("span", { class: "error" }, ` erro ao votar (${e.message})`));
+      }
+    }
+
+    for (const [value, label, status] of IDEA_VOTES) {
+      const button = el("button", { class: "vote", type: "button", "aria-pressed": String(idea.status === status),
+        onclick: () => { if (value === "down") reasons.hidden = !reasons.hidden; else send(value); } }, label);
+      buttons.push([status, button]);
+      box.append(button);
+    }
+    reasons.append(el("span", { class: "muted" }, "por quê?"),
+      ...ideasState.reasons.map((r) => el("button", { class: "chip", type: "button", onclick: () => send("down", r) }, r)),
+      el("button", { class: "chip", type: "button", onclick: () => send("down", null) }, "sem motivo"));
+    return [box, reasons];
+  }
+
+  // --- trends (P4) -------------------------------------------------------------------
+  const GAPS = [["recent_technique", "Técnicas recentes sem ligação com problemas frequentes"],
+                ["community_bridge", "Pontes entre comunidades que quase não se tocam"],
+                ["serendipity", "Serendipidade: pares distantes"]];
+
+  function gapRows(list) {   // one row per technique: technique × every problem it never met
+    const byTechnique = new Map();
+    for (const g of list) {
+      if (!byTechnique.has(g.technique_id)) byTechnique.set(g.technique_id, { first: g, problems: [] });
+      byTechnique.get(g.technique_id).problems.push(g);
+    }
+    return [...byTechnique.values()].map(({ first, problems }) => el("div", { class: "row", title: first.why_now || null },
+      entityLink(first.technique_id, first.technique, first.technique_type || "technique"),
+      el("span", { class: "pair-to" }, el("span", { class: "muted" }, "×"),
+        ...problems.map((p) => entityLink(p.problem_id, p.problem, "problem")))));
+  }
+
+  async function loadTrends() {
+    let d;
+    try { d = await api("/api/trends"); } catch (e) {
+      $("#trends-meta").textContent = `Não consegui carregar as tendências (${e.message}).`;
+      return;
+    }
+    const w = d.weekly;
+    $("#trends-meta").textContent = w
+      ? `Último relatório semanal: ${fmtDate(w.day)} · ${w.ideas} ideias · US$ ${num((w.stats || {}).cost_usd || 0, 3)}. `
+        + "Tendências e lacunas são recalculadas agora; os rótulos do mapa vêm do último run semanal."
+      : "Ainda sem relatório semanal (sotawhat run weekly, domingo às 20:00). Tudo abaixo foi calculado agora.";
+    const trends = d.trends.map((t) => el("div", { class: "row" }, entityLink(t.entity_id, t.name, t.type),
+      el("span", { class: "muted grow" }, `${t.recent} na semana · ${t.baseline} antes`),
+      t.new ? el("span", { class: "badge main" }, "novo")
+        : el("span", { class: "muted", title: "z de Poisson contra as 4 semanas anteriores" }, `z ${num(t.z, 1)}`)));
+    $("#trends-list").replaceChildren(...(trends.length ? trends
+      : [el("p", { class: "muted" }, "Nada subiu nesta semana: uma entidade precisa de 2 itens aprovados ou mais.")]));
+    const communities = d.communities.map((c) => el("div", { class: "community" },
+      el("b", {}, c.label), el("span", { class: "muted" }, ` · ${c.size} entidades`), c.summary ? el("p", {}, c.summary) : null,
+      el("div", { class: "chips" }, c.members.map((m) => entityLink(m.entity_id, m.name, m.type)))));
+    $("#communities-list").replaceChildren(...(communities.length ? communities
+      : [el("p", { class: "muted" }, "Comunidades aparecem quando o grafo tem conexões suficientes (3 entidades ou mais por grupo).")]));
+    const groups = GAPS.filter(([key]) => (d.gaps[key] || []).length).map(([key, title]) => el("div", { class: "gap-group" },
+      el("h3", {}, title), gapRows(d.gaps[key])));
+    $("#gaps-list").replaceChildren(...(groups.length ? groups
+      : [el("p", { class: "muted" }, "Sem lacunas: faltam técnicas ou problemas na janela de 90 dias.")]));
+    $("#rules-box").hidden = !(d.rules || []).length;
+    $("#rules-list").replaceChildren(...(d.rules || []).map((r) => el("li", {}, r)));
+  }
+
   // --- start -----------------------------------------------------------------------
   function init() {
     loadFilters();
@@ -514,7 +818,11 @@
     document.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape" && state.selected && renderer) { state.selected = null; renderer.refresh({ skipIndexation: true }); }
     });
-    loadStats().then(loadGraph);
+    const all = $("#ideas-all");
+    all.addEventListener("change", () => { ideasState.all = all.checked; loadIdeas(); });
+    window.addEventListener("hashchange", route);
+    loadStats();
+    route();
   }
 
   init();

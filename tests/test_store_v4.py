@@ -42,3 +42,7 @@ def test_communities_and_weekly_report(tmp_path):
         assert [tuple(r)[:3] for r in st.latest_communities()] == [(run, 0, "IA generativa clínica"), (run, 1, "Imagem")]
         st.save_weekly_report(run, "2026-11-08", {"ideas": [1, 2]})
         assert st.latest_weekly_report()["payload"] == {"ideas": [1, 2]}
+        on_demand = st.start_run("ideate")
+        st.save_weekly_report(on_demand, "2026-11-09", {"ideas": [3]})
+        assert st.latest_weekly_report()["run_id"] == on_demand
+        assert st.latest_weekly_report(kind="weekly")["run_id"] == run and st.latest_weekly_report(kind="daily") is None

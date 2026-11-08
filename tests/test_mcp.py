@@ -54,7 +54,8 @@ class FakeDriver:
 
 def test_server_registers_the_tools(db):
     tools = asyncio.run(m.build_server(db).list_tools())
-    assert {t.name for t in tools} == {"search", "entity", "neighbors", "recent_items", "graph_stats", "cypher"}
+    assert {t.name for t in tools} == {"search", "entity", "neighbors", "recent_items", "graph_stats", "cypher",
+                                       "trends", "gaps", "list_ideas", "idea"}
     assert all(t.description for t in tools)
 
 
@@ -94,3 +95,21 @@ def test_cypher_is_read_only_and_limited(db):
 
 def test_cli_serve_mcp():
     assert parse_args(["serve-mcp"]).command == "serve-mcp"
+
+
+def test_intelligence_and_idea_tools(db):
+    from tests.test_web import _seed_ideas
+
+    first, liked, dropped = _seed_ideas(db)
+    found = m.list_ideas_tool(db)
+    assert [i["id"] for i in found["ideas"]] == [liked, first] and found["counts"] == {"nova": 1, "curtida": 1}
+    short = found["ideas"][1]
+    assert short["problem"] == "Altas atrasam 2 h." and short["novelty_facets"] == {"problema": "nao_encontrado"}
+    assert short["pilot_90d"] == "1 unidade" and "critiques" not in short and "draft" not in short
+    assert [i["id"] for i in m.list_ideas_tool(db, status="descartada", finalists_only=False)["ideas"]] == [dropped]
+    assert "error" in m.list_ideas_tool(db, status="talvez")
+    assert m.idea_tool(db, f"idea:{first}")["context"] and m.idea_tool(db, str(first))["id"] == first
+    assert "error" in m.idea_tool(db, "abc") and "error" in m.idea_tool(db, "999")
+    trends = m.trends_tool(db)
+    assert set(trends) == {"trends", "communities", "last_weekly_report"} and trends["last_weekly_report"] is None
+    assert set(m.gaps_tool(db, limit=5)) == {"recent_technique", "community_bridge", "serendipity"}

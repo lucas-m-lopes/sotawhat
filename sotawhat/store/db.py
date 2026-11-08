@@ -853,8 +853,13 @@ class Store:
                               (run_id, day, json.dumps(payload, ensure_ascii=False), utcnow()))
             self.conn.commit()
 
-    def latest_weekly_report(self):
-        row = self.conn.execute("SELECT * FROM weekly_reports ORDER BY run_id DESC LIMIT 1").fetchone()
+    def latest_weekly_report(self, kind=None):
+        """kind: "weekly" or "ideate" (the run that produced the report); None = any."""
+        if kind:
+            row = self.conn.execute("SELECT w.* FROM weekly_reports w JOIN runs r ON r.id = w.run_id WHERE r.kind = ? "
+                                    "ORDER BY w.run_id DESC LIMIT 1", (kind,)).fetchone()
+        else:
+            row = self.conn.execute("SELECT * FROM weekly_reports ORDER BY run_id DESC LIMIT 1").fetchone()
         if row is None:
             return None
         return {"run_id": row["run_id"], "day": row["day"], "payload": json.loads(row["payload_json"]),

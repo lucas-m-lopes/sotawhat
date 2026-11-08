@@ -103,7 +103,68 @@ button { font: inherit; color: inherit; }
 .vote[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .error { color: var(--danger); }
 
+/* view tabs (P4) */
+.views { display: flex; gap: 2px; background: var(--soft); border-radius: 8px; padding: 3px; }
+.views a { text-decoration: none; color: var(--muted); padding: 5px 12px; border-radius: 6px; font-size: 13px; font-weight: 550; }
+.views a:hover { color: var(--fg); }
+.views a[aria-current="page"] { background: var(--panel); color: var(--fg); box-shadow: 0 1px 2px rgba(20, 20, 20, .08); }
+
+/* ideas and trends pages (P4) */
+.page { overflow: auto; padding: 20px 24px 40px; min-height: 0; }
+.page > * { max-width: 1180px; margin-left: auto; margin-right: auto; }
+.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.page-head h1 { font-size: 22px; margin: 0 0 2px; }
+.page-head p { margin: 0; }
+.cards { display: grid; gap: 12px; margin-top: 14px; }
+.idea { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+.idea .head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.idea h2 { font-size: 16px; text-transform: none; letter-spacing: 0; color: var(--fg); margin: 8px 0 6px; font-weight: 650; }
+.idea .score { font-weight: 700; font-variant-numeric: tabular-nums; }
+.idea dl { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 4px 12px; margin: 8px 0 0; font-size: 13.5px; }
+.idea dt { color: var(--muted); }
+.idea dd { margin: 0; }
+.idea details { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.idea summary { cursor: pointer; color: var(--accent); font-size: 13px; }
+.idea h3 { margin: 14px 0 6px; }
+.badge.st-curtida, .badge.st-construida { background: var(--accent-soft); color: var(--main); }
+.badge.st-testar { color: var(--frontier); }
+.badge.st-engavetada { color: var(--radar); }
+.badge.st-rejeitada, .badge.st-descartada { color: var(--danger); }
+.axes { display: grid; grid-template-columns: 110px minmax(0, 1fr) 36px; gap: 4px 10px; align-items: center; font-size: 12.5px; max-width: 480px; }
+.bar { height: 6px; border-radius: 3px; background: var(--soft); overflow: hidden; }
+.bar span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.facets { display: flex; flex-wrap: wrap; gap: 6px; }
+.facet { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); }
+.facet.nao_encontrado { border-color: var(--accent); color: var(--main); }
+.facet.parcial { color: var(--radar); }
+.facet.igual { color: var(--danger); }
+.facet.a_verificar { border-style: dashed; color: var(--muted); }
+.critique { font-size: 13px; margin: 6px 0; }
+.critique b { font-weight: 600; }
+.idea-votes { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
+.idea-votes .vote { font-size: 13px; padding: 4px 10px; }
+.reasons { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; font-size: 12.5px; }
+.columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.column { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; min-width: 0; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.row:last-child { border-bottom: 0; }
+.row .grow { flex: 1; }
+.community { padding: 8px 0 10px; border-bottom: 1px solid var(--line); }
+.community:last-child { border-bottom: 0; }
+.community p { margin: 4px 0 6px; font-size: 13px; }
+.gap-group { margin: 4px 0 10px; }
+.pair-to { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.gap-group h3 { margin: 6px 0 4px; }
+.rules { margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+.rules ul { margin: 0; padding-left: 18px; font-size: 13.5px; }
+.empty-note { color: var(--muted); font-size: 13.5px; padding: 18px; border: 1px dashed var(--line); border-radius: var(--radius); }
+
 @media (max-width: 1000px) {
+  .columns { grid-template-columns: minmax(0, 1fr); }
+  .page { padding: 16px; }
+  .idea dl { grid-template-columns: minmax(0, 1fr); }
+  .idea dt { margin-top: 6px; }
+  .views { order: 3; }
   body { height: auto; display: block; }
   .top { flex-wrap: wrap; }
   .stats { margin-left: 0; width: 100%; white-space: normal; }

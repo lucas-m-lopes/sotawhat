@@ -2,7 +2,7 @@
 import argparse
 import sys
 
-_SUBCOMMANDS = {"search", "run", "doctor", "feedback", "eval", "serve"}
+_SUBCOMMANDS = {"search", "run", "doctor", "feedback", "eval", "serve", "graph"}
 
 def parse_args(argv):
     # Backward compat: `sotawhat <keyword...> [N]` with no subcommand -> search.
@@ -29,6 +29,12 @@ def parse_args(argv):
     p_serve = sub.add_parser("serve", help="graph interface on http://127.0.0.1:8765")
     p_serve.add_argument("--port", type=int, default=None, help="default: SOTAWHAT_WEB_PORT (8765)")
     p_serve.add_argument("--no-browser", action="store_true", help="do not open the browser")
+
+    p_graph = sub.add_parser("graph", help="entity graph: Neo4j mirror, extraction backlog, export")
+    p_graph.add_argument("graph_action", choices=["up", "extract", "sync", "status", "export"])
+    p_graph.add_argument("--rebuild", action="store_true", help="sync: empty the Neo4j mirror and send everything")
+    p_graph.add_argument("--limit", type=int, default=None, help="extract: at most N items")
+    p_graph.add_argument("--out", default=None, help="export: folder (default data/exports)")
 
     p_feedback = sub.add_parser("feedback")
     p_feedback.add_argument("action", choices=["pull", "listen"])
@@ -99,6 +105,9 @@ def main(argv=None):
     elif ns.command == "serve":
         from sotawhat.web.app import main_serve
         raise SystemExit(main_serve(ns))
+    elif ns.command == "graph":
+        from sotawhat.graph.commands import main_graph
+        raise SystemExit(main_graph(ns))
 
 if __name__ == "__main__":
     main()

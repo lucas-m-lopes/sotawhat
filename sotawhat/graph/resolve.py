@@ -203,12 +203,16 @@ class Resolver:
 
     def _candidates(self, grp, norm, vector) -> list:
         tokens, nums = frozenset(norm.split()), digits(norm)
+        # one name inside the other points to a synonym for names ("DeepMind" ⊂ "Google DeepMind"), but to a
+        # narrower concept for techniques and problems ("large language model" ⊂ "large language model agent")
+        by_containment = grp not in SINGULAR_TYPES
         found = []
         for known in self._known(grp):
             if known.nums != nums or known.norm == norm:
                 continue
             shared = tokens & known.tokens
-            contained = (tokens < known.tokens or known.tokens < tokens) and any(len(t) >= 4 for t in shared)
+            contained = by_containment and (tokens < known.tokens or known.tokens < tokens) \
+                and any(len(t) >= 4 for t in shared)
             matcher = SequenceMatcher(None, norm, known.norm)
             ratio = (matcher.ratio() if matcher.real_quick_ratio() >= SIMILAR_TEXT
                      and matcher.quick_ratio() >= SIMILAR_TEXT else 0.0)

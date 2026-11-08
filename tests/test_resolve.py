@@ -121,6 +121,16 @@ def test_the_judge_merges_or_keeps_apart_and_has_a_cap(tmp_path):
     st.close()
 
 
+def test_containment_alone_never_sends_techniques_or_problems_to_the_judge(tmp_path):
+    st = _store(tmp_path)
+    judge = Judge()
+    resolver = Resolver(st, judge=judge)
+    resolver.apply(_row(st, 1), _x(_e("large language model"), _e("sepsis", "problem")))
+    resolver.apply(_row(st, 2), _x(_e("large language model agent"), _e("sepsis early detection", "problem")))
+    assert judge.calls == []          # a narrower concept, not a synonym (2026-11-08 backfill: 40 calls, 0 merges)
+    st.close()
+
+
 def test_generic_long_and_foreign_names_are_dropped(tmp_path):
     st = _store(tmp_path)
     resolver = Resolver(st)

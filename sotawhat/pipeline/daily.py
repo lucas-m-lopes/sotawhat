@@ -70,6 +70,10 @@ def run_daily(store, sources_by_profile, limit=10, today=None, triage=None, on_s
                 results = filter_relevant(results, profile["require_any"])
             items = _dedupe([to_item(r, profile=name) for r in results])
             new_ids = set(store.upsert_items(items, report.run_id))
+            again = [it.id for it in items if it.source.startswith("manual:") and it.id not in new_ids]
+            if again:                         # sent to the bot but already known: it is yours now (P5)
+                log.info("%s: %d sent by hand were known; %d back to the triage", name, len(again),
+                         store.requeue_manual(again))
             report.collected[name] = len(items)
             report.new_items += [it for it in items if it.id in new_ids]
             _record_health(store, sources, errors, report)

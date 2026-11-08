@@ -79,3 +79,21 @@ def test_public_host_refuses_private_addresses():
 
     assert not public_host("http://127.0.0.1:8765/api/stats") and not public_host("ftp://example.org/x")
     assert not public_host("http://192.168.0.1/") and not public_host("http://[::1]/")
+
+
+def test_a_known_item_sent_by_hand_becomes_yours_and_goes_back_to_the_triage(tmp_path):
+    from sotawhat.items import Item
+
+    with Store(tmp_path / "insight.db") as st:
+        run = st.start_run("daily")
+        st.upsert_items([Item(id="ig:C1abcDEF", kind="instagram_post", source="instagram", source_id="C1abcDEF",
+                              title="@medai.br: post", url="https://www.instagram.com/p/C1abcDEF/"),
+                         Item(id="ig:APPROVED", kind="instagram_post", source="instagram", source_id="APPROVED",
+                              title="@x: aprovado", url="https://www.instagram.com/p/APPROVED/")], run)
+        st.record_triage("ig:C1abcDEF", run, "reject")
+        st.record_triage("ig:APPROVED", run, "main")
+        assert st.requeue_manual(["ig:C1abcDEF", "ig:APPROVED"]) == 1
+        rows = dict(st.conn.execute("SELECT id, source FROM items").fetchall())
+        assert rows == {"ig:C1abcDEF": "manual:telegram", "ig:APPROVED": "manual:telegram"}
+        assert [r["id"] for r in st.triage_candidates("2000-01-01")] == ["ig:C1abcDEF"]
+        assert st.requeue_manual([]) == 0

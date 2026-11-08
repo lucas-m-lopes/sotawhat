@@ -74,6 +74,20 @@ Phase P3 adds the knowledge graph and its own interface (no Obsidian):
   `entity`, `neighbors`, `recent_items`, `graph_stats` and read-only `cypher`.
 - `sotawhat graph status` prints the counts; `sotawhat graph export` writes JSON + CSV to `data/exports/`.
 
+Phase P2 adds the new sources (each one a channel fetched once a day with its own cap; the triage decides):
+
+- Health: JAMA AI, STAT AI, MONAI releases, The Lancet Digital Health, Healthcare Dive Health IT, Google News
+  (EN and PT-BR), medRxiv (API, health informatics, radiology, ICU, ED…), JAMIA, Radiology: AI and npj Health
+  Systems via Crossref, and the FDA list of AI-enabled devices (a baseline first, then every new submission).
+- Frontier AI: AlphaSignal and OpenAI News (RSS), The Batch (sitemap, one item per story), new GitHub
+  repositories by topic (with the start of the README), trending and medical Hugging Face models and datasets,
+  and the official MCP registry.
+- Newsletters from Gmail (`GMAIL_QUERY`, read only over IMAP with the app password): each e-mail is split into
+  stories by the LLM, and their links are resolved and cleaned of tracking. Create a Gmail filter that labels
+  the newsletters without RSS as `newsletters/ai`.
+- The triage prompt (v2) knows the new item kinds: repo, model, dataset, mcp_server, newsletter_item and
+  regulation. `sotawhat doctor` checks the GitHub and Hugging Face tokens and the Gmail query.
+
 To set it up, copy `.env.example` to `.env` and fill in at least `OPENROUTER_API_KEY`,
 `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Then schedule the daily run with
 `powershell -ExecutionPolicy Bypass -File scripts\schedule_daily.ps1 [-Listener] [-Web]`.

@@ -5,3 +5,13 @@ __pycache__/
 .playwright-mcp/
 *.egg-info/
 _tmp_vault/
+
+# secrets / local state (never commit)
+.env
+.env.*
+!.env.example
+credentials*.json
+token*.json
+*.session
+data/
+logs/

@@ -18,9 +18,34 @@ Original SOTAWHAT background: [blog post](https://huyenchip.com/2018/10/04/sotaw
   summarizer is now pure Python. The only runtime deps are `httpx` and
   `feedparser`. No `punkt` download, no SSL/encoding workarounds.
 
+## 3.0 (in progress): insight engine
+
+sotawhat is becoming an insight engine for AI/ML ∩ medicine. The design is in
+`docs/sdd/2026-11-07-insight-engine-sdd.md` and the phase plans are in `docs/superpowers/plans/`.
+Phase P0 adds:
+
+- `sotawhat run daily [--vault PATH] [--no-notify] [--limit N]` collects every
+  profile, normalizes and de-duplicates items into `data/insight.db` (SQLite),
+  tracks the health of every source and feed, and sends a run summary to
+  Telegram. A feed that returns an HTML anti-bot page now counts as an error
+  instead of silently yielding 0 items. `--vault` keeps writing Obsidian notes
+  during the transition.
+- `sotawhat doctor [--llm]` checks `.env`, the OpenRouter key and its spend
+  limit, and every configured model: still in the catalog, Zero-Data-Retention
+  endpoints available, reasoning level accepted, not about to expire. It also
+  checks the Telegram bot, the last run and this month's LLM spend. `--llm`
+  makes one tiny structured call per primary model, for well under one cent.
+- The LLMs are Chinese open-weight models (DeepSeek, Xiaomi MiMo, Z.ai GLM,
+  Moonshot Kimi) reached through OpenRouter, ZDR endpoints only. See
+  `sotawhat/llm/` and SDD §6.6.
+
+To set it up, copy `.env.example` to `.env` and fill in at least `OPENROUTER_API_KEY`,
+`TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Then schedule the daily run with
+`powershell -ExecutionPolicy Bypass -File scripts\schedule_daily.ps1 [-Vault PATH]`.
+
 ## Install
 
-Requires Python 3.9+.
+Requires Python 3.11+.
 
 ```bash
 git clone [HTTPS or SSH link to this repo]
@@ -94,6 +119,8 @@ Backfill scans existing notes for profile keywords (word-boundary match) and
 inserts the concept line. It is idempotent — notes already linked are skipped.
 
 ## Scheduled daily digest (Windows)
+
+> 2.0 path. For 3.0 use `scripts\schedule_daily.ps1` (see "3.0 (in progress)" above).
 
 `scripts/schedule_digest.ps1` runs both profiles into one vault:
 

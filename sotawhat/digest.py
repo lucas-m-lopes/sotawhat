@@ -3,12 +3,17 @@ import sys
 from datetime import date
 from sotawhat.textmatch import contains_any
 
-def collect(sources, keywords, limit, on_error=None):
+def collect(sources, keywords, limit, on_error=None, on_source_error=None):
     by_id = {}
     out = []
     for source in sources:
+        def handler(msg, _source=source):
+            if on_error:
+                on_error(msg)
+            if on_source_error:
+                on_source_error(_source, msg)
         for kw in keywords:
-            for r in source.safe_search(kw, limit, on_error=on_error):
+            for r in source.safe_search(kw, limit, on_error=handler):
                 if r.id in by_id:
                     concepts = by_id[r.id].extra.setdefault("concepts", [])
                     if kw not in concepts:

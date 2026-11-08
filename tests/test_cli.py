@@ -33,3 +33,13 @@ def test_parse_backfill_links():
 def test_parse_backfill_links_with_profile():
     ns = parse_args(["backfill-links", "--vault", "V", "--profile", "medico"])
     assert ns.profile == "medico"
+
+def test_parse_run_daily():
+    ns = parse_args(["run", "daily", "--vault", "V", "--no-notify", "--limit", "5"])
+    assert (ns.command, ns.kind, ns.vault, ns.no_notify, ns.limit) == ("run", "daily", "V", True, 5)
+    ns = parse_args(["run", "daily"])
+    assert ns.vault is None and ns.no_notify is False and ns.limit == 10
+
+def test_parse_doctor():
+    assert parse_args(["doctor"]).llm is False
+    assert parse_args(["doctor", "--llm"]).llm is True

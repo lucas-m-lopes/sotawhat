@@ -23,6 +23,18 @@ def test_medico_pubmed_has_ai_clause():
 def test_medical_feeds_curated():
     from sotawhat.profiles import MEDICAL_FEEDS
     labels = [name for name, _ in MEDICAL_FEEDS]
-    assert "npj-digital-medicine" in labels
     assert "jmir-medinform" in labels
     assert "radiology-ai" not in labels
+    assert "npj-digital-medicine" not in labels   # moved to Crossref (anti-bot HTML on nature.com RSS)
+
+def test_nature_journals_come_from_crossref():
+    from sotawhat.profiles import MEDICAL_JOURNALS
+    sources = build_sources("medico", crossref_mailto="me@example.org")
+    cr = [s for s in sources if s.name == "crossref"][0]
+    assert cr.feeds == MEDICAL_JOURNALS
+    assert ("npj-digital-medicine", "2398-6352") in MEDICAL_JOURNALS
+    assert cr.mailto == "me@example.org"
+
+def test_stalled_feeds_removed():
+    from sotawhat.profiles import LAB_FEEDS
+    assert "the-gradient" not in [name for name, _ in LAB_FEEDS]

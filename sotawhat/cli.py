@@ -2,7 +2,7 @@
 import argparse
 import sys
 
-_SUBCOMMANDS = {"search", "digest", "backfill-links"}
+_SUBCOMMANDS = {"search", "digest", "backfill-links", "run", "doctor"}
 
 def parse_args(argv):
     # Backward compat: `sotawhat <keyword...> [N]` with no subcommand -> search.
@@ -25,6 +25,15 @@ def parse_args(argv):
     p_backfill = sub.add_parser("backfill-links")
     p_backfill.add_argument("--vault", required=True)
     p_backfill.add_argument("--profile", default="all")
+
+    p_run = sub.add_parser("run")
+    p_run.add_argument("kind", choices=["daily"])
+    p_run.add_argument("--limit", type=int, default=10)
+    p_run.add_argument("--vault", default=None, help="also write Obsidian notes (transition, SDD §9)")
+    p_run.add_argument("--no-notify", action="store_true")
+
+    p_doctor = sub.add_parser("doctor")
+    p_doctor.add_argument("--llm", action="store_true", help="smoke-test each primary model (cents)")
 
     ns = parser.parse_args(argv)
     if ns.command == "search":
@@ -53,6 +62,10 @@ def _run_search(ns):
     print(render_grouped(results, ns.keyword))
 
 def main(argv=None):
+    import truststore
+    truststore.inject_into_ssl()   # trust the Windows store (local TLS inspection; never verify=False)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")   # cp1252 consoles/pipes must not crash on emoji
     ns = parse_args(argv if argv is not None else sys.argv[1:])
     if ns.command == "search":
         _run_search(ns)
@@ -62,6 +75,12 @@ def main(argv=None):
     elif ns.command == "backfill-links":
         from sotawhat.backfill import run_backfill
         run_backfill(ns)
+    elif ns.command == "run":
+        from sotawhat.pipeline.daily import main_daily
+        raise SystemExit(main_daily(ns))
+    elif ns.command == "doctor":
+        from sotawhat.doctor import main_doctor
+        raise SystemExit(main_doctor(ns))
 
 if __name__ == "__main__":
     main()

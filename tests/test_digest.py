@@ -34,3 +34,17 @@ def test_filter_relevant_keeps_ai_drops_others():
                   date="", url="", abstract="no method here", source="pubmed")
     out = filter_relevant([keep, drop], ["deep learning", "machine learning"])
     assert [r.id for r in out] == ["1"]
+
+def test_collect_reports_which_source_failed():
+    from sotawhat.sources.base import Source
+
+    class Down(Source):
+        name = "down"
+        def search(self, keyword, limit):
+            raise RuntimeError("503")
+
+    failures = []
+    out = collect([Down(), FakeSource("arxiv", [_r("1", "arxiv")])], ["k"], 10,
+                  on_source_error=lambda src, msg: failures.append((src.name, msg)))
+    assert [r.id for r in out] == ["1"]
+    assert failures == [("down", "[down] failed: 503")]

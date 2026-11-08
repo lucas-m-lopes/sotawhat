@@ -112,3 +112,24 @@ def test_env_override_puts_model_first():
     spec = resolve("triage", _settings(sotawhat_model_triage="z-ai/glm-5.3-flash"))
     assert spec.models[0] == "z-ai/glm-5.3-flash"
     assert spec.models.count("z-ai/glm-5.3-flash") == 1
+
+
+def test_resolve_precedence_defaults_yaml_env():
+    yaml_tasks = {"triage": {"models": ["a/x", "b/y"], "reasoning": "high", "max_tokens": 900}}
+    spec = resolve("triage", None, yaml_tasks)
+    assert (spec.models, spec.reasoning, spec.max_tokens) == (("a/x", "b/y"), "high", 900)
+    spec = resolve("triage", _settings(sotawhat_model_triage="b/y"), yaml_tasks)
+    assert spec.models == ("b/y", "a/x")                      # .env wins for the primary
+    assert resolve("extract", None, yaml_tasks) == DEFAULT_TASKS["extract"]
+
+
+def test_structured_call_reports_cost_attempts_and_validity(tmp_path):
+    with Store(tmp_path / "insight.db") as st:
+        client = FakeClient(_completion('{"title": "x"}', cost=0.001),
+                            _completion('{"title": "x", "score": 4, "note": null}', model="z-ai/glm-5.3-flash",
+                                        cost=0.002))
+        gw = LLMGateway(client, store=st, settings=_settings(), tasks={"triage": {"models": ["a/x"]}})
+        res = gw.structured_call("triage", [{"role": "user", "content": "rate"}], Verdict)
+        assert res.output.score == 4 and res.model == "z-ai/glm-5.3-flash" and res.provider == "DeepInfra"
+        assert (res.attempts, res.first_try_valid) == (2, False) and abs(res.cost_usd - 0.003) < 1e-9
+        assert client.payloads[0]["model"] == "a/x"           # config/llm.yaml chain was used

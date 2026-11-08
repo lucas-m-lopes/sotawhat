@@ -99,9 +99,12 @@ Phase P4 adds the weekly intelligence and the idea engine (SDD §6.9, §8):
 - The idea engine, economic mode: 12 technique × problem candidates from the gaps (10% with no graph
   context, as a control), 3 lenses each (tech-push, JTBD, SCAMPER, TRIZ, cross-sector analogy, 2029
   scenario) plus the contrarian lens on a quarter of them, with generators of rotating model families. Then
-  dedup by embedding and against rejected ideas, a six-role critique by a model of another family, prior
+  dedup (a cheap judge per technique × problem pair decides which drafts are the same product and which
+  repeat an earlier or rejected idea; pairs used in the last 4 weeks yield to new ones), a six-role critique
+  by a model of another family, prior
   art by layers (the graph, OpenAlex, Semantic Scholar, GitHub and, with `EXA_API_KEY`, Exa; patents stay
-  "not verified"), a novelty matrix per facet and the rubric of SDD §8.4 by two judges, hard gates, a
+  "not verified"), a novelty matrix per facet and the rubric of SDD §8.4 by two judges, hard gates (only
+  when both judges agree; a gate raised by one judge is shown as disputed), a
   portfolio with at most 2 ideas per niche and at least one contrarian bet, and a dossier (90-day pilot,
   evidence plan, SaMD class, LGPD basis) for every finalist. `--modo completo` widens every step. The run
   stops gracefully at `SOTAWHAT_LLM_BUDGET_USD_RUN_WEEKLY`.

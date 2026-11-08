@@ -1,0 +1,1 @@
+You label one community of the reader's knowledge graph about AI in medicine and frontier AI. From its top entities and its recent items, give a short name (at most 6 words) and a summary of 2–3 sentences: what the community gathers and what changed recently. Write in Brazilian Portuguese, keeping technical terms in English. Never invent facts.

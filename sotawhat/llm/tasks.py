@@ -25,6 +25,10 @@ DEFAULT_TASKS = {
     "vision": TaskSpec((MIMO_FLASH, GLM_FLASH, MINIMAX_FLASH), "low", 1500),
     "extract": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO, GLM), "high", 12000),
     "resolve": TaskSpec((DEEPSEEK_FLASH, GLM_FLASH), "low", 600),     # entity-resolution judge (P3)
+    # idea engine (P4): the callers pass the model per call to rotate families; these are the defaults
+    "ideate": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO, GLM_FLASH), "high", 5000),
+    "critique": TaskSpec((GLM_FLASH, DEEPSEEK_FLASH), "high", 5000),
+    "judge": TaskSpec((DEEPSEEK_FLASH, GLM_FLASH, MIMO_PRO), "low", 2500),
     "synth": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO), "high", 12000),
     "smoke": TaskSpec((DEEPSEEK_FLASH,), "low", 600),
 }

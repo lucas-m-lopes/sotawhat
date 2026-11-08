@@ -108,6 +108,95 @@ class NewsletterStories(BaseModel):
     stories: list[NewsletterStory] = Field(description="at most 15, in the order they appear")
 
 
+# --- idea engine (SDD §8, P4) ---------------------------------------------------------
+Form = Literal["produto_b2b", "plataforma", "dispositivo", "servico_corporativo", "b2b2c"]
+Ten = Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+
+class _Portuguese(BaseModel):
+    @field_validator("*")
+    @classmethod
+    def _no_cjk(cls, value):
+        if isinstance(value, str):
+            return no_cjk(value)
+        if isinstance(value, list):
+            return [no_cjk(v) if isinstance(v, str) else v for v in value]
+        return value
+
+
+class IdeaDraft(_Portuguese):
+    titulo: str = Field(description="até 12 palavras, pt-BR")
+    problema_jtbd: str = Field(description="a dor concreta, de quem, com que frequência")
+    stakeholder_dono: str
+    setor: Literal[tuple(tx.DOMAINS)]
+    mecanismo: str = Field(description="como funciona, em 2–4 frases")
+    tecnicas: list[str]
+    capacidade_intermediaria: str
+    dado_necessario: list[str]
+    forma: Form
+    integracao: Literal["FHIR", "PEP", "RNDS", "standalone", "outro"]
+    modelo_negocio: str
+    why_now: str
+    riscos: list[str]
+    hipotese_nula: str = Field(description="o que tornaria a ideia inútil ou errada")
+
+
+class RoleCritique(_Portuguese):
+    papel: Literal["clinico", "operacoes", "regulatorio", "dados", "ml", "paciente_etica"]
+    veredito: Literal["seguir", "ajustar", "descartar"]
+    kill_criteria: list[str]
+    o_que_mudaria: str
+
+
+class IdeaCritique(_Portuguese):
+    criticas: list[RoleCritique] = Field(description="uma por papel, os seis papéis")
+    nasss_complexos: Literal[0, 1, 2, 3, 4, 5, 6, 7]
+    pre_mortem: str
+
+
+class FacetJudgement(_Portuguese):
+    faceta: Literal["problema", "tecnica", "dado", "integracao", "modelo_negocio", "geografia"]
+    estado: Literal["igual", "parcial", "nao_encontrado"]
+    confianca: Literal["baixa", "media", "alta"]
+    vizinho: str = Field(description="título do vizinho mais próximo, ou vazio")
+
+
+class NoveltyJudgement(_Portuguese):
+    facetas: list[FacetJudgement] = Field(description="as seis facetas")
+
+
+class IdeaScores(_Portuguese):
+    valor: Ten
+    viabilidade_tecnica: Ten
+    viabilidade_negocio: Ten
+    regulatorio: Ten = Field(description="10 = carga regulatória leve")
+    tempo_piloto: Ten = Field(description="10 = piloto em 90 dias")
+    fit: Ten
+    adocao: Ten = Field(description="10 = adoção simples (poucos domínios NASSS complexos)")
+    gates: list[Literal["sem_base_lgpd", "dado_inexistente", "samd_iv_sem_plano", "viola_cfm_anvisa",
+                        "duplica_incumbente"]]
+    confianca: Literal[5, 6, 7, 8, 9, 10] = Field(description="multiplicador ×0,1: força da evidência")
+    justificativa: str
+
+
+class Dossier(_Portuguese):
+    lean_canvas: str
+    piloto_90d: str
+    plano_evidencia: str
+    classe_samd: Literal["nao_samd", "I", "II", "III", "IV", "incerto"]
+    base_legal_lgpd: str
+    integracao_detalhe: str
+
+
+class MetaReview(_Portuguese):
+    regras: list[str] = Field(description="até 10 regras curtas, imperativas, em pt-BR")
+
+
+class CommunityLabel(_Portuguese):
+    rotulo: str = Field(description="até 6 palavras, pt-BR")
+    resumo: str = Field(description="2–3 frases: o que a comunidade reúne e o que mudou")
+
+
 class SameEntity(BaseModel):
     """Entity-resolution judge (task `resolve`)."""
     same: bool

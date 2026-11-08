@@ -27,6 +27,7 @@ class DailyReport:
     ok: bool = True
     error: str | None = None
     cost_usd: float = 0.0
+    triage: object = None                           # TriageStats, when the triage stage ran
 
 
 def _dedupe(items):

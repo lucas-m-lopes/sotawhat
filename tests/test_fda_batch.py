@@ -80,3 +80,12 @@ def test_the_batch_reads_the_newest_issues_once(tmp_path):
     assert results[0].date == "2026-11-06" and results[0].extra["link"].startswith("https://blog.google/")
     log.clear()
     assert src.fetch(20) == [] and [r.url.path for r in log] == ["/sitemap.xml"]      # issues already read
+
+
+def test_stories_of_one_issue_keep_distinct_canonical_ids(tmp_path):
+    sitemap = (FIX / "batch_sitemap.xml").read_text(encoding="utf-8")
+    issue = (FIX / "batch_issue_378.html").read_text(encoding="utf-8")
+    src = TheBatchSource(tmp_path / "b.json", max_issues=1, client=_client(
+        lambda r: httpx.Response(200, text=sitemap if r.url.path.endswith("sitemap.xml") else issue), []))
+    ids = [to_item(r).id for r in src.fetch(20)]
+    assert len(set(ids)) == 4 and ids[0] == "thebatch:378#gemini-leads-the-pack-again"

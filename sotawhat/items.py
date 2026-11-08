@@ -50,8 +50,12 @@ def _clean_doi(doi: str) -> str:
 
 
 def canonical_id(result) -> tuple[str, dict]:
-    """Return (id, extra ids). Priority: DOI > arXiv > PMID > URL > content hash."""
+    """Return (id, extra ids). Priority: a source-given canonical id > DOI > arXiv > PMID > URL > content hash.
+    A source gives one when the URL alone is not unique (The Batch: every story of an issue shares the page URL,
+    and normalization drops the #fragment)."""
     extra = result.extra or {}
+    if extra.get("canonical_id"):
+        return extra["canonical_id"], {}
     rid = (result.id or "").strip()
     url = (result.url or "").strip()
 

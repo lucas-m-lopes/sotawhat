@@ -79,7 +79,8 @@ class TheBatchSource(Source):
                     results.append(Result(id=f"{url}#{story['slug']}", title=story["title"], authors=["DeepLearning.AI"],
                                           date=published, url=f"{url}#{story['slug']}", abstract=story["text"],
                                           source="the-batch", extra={"kind": "newsletter_item", "link": story["link"],
-                                                                     "issue": number}))
+                                                                     "issue": number,
+                                                                     "canonical_id": f"thebatch:{number}#{story['slug']}"}))
         finally:
             if self._client is None:
                 client.close()

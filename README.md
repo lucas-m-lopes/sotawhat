@@ -88,9 +88,36 @@ Phase P2 adds the new sources (each one a channel fetched once a day with its ow
 - The triage prompt (v2) knows the new item kinds: repo, model, dataset, mcp_server, newsletter_item and
   regulation. `sotawhat doctor` checks the GitHub and Hugging Face tokens and the Gmail query.
 
+Phase P4 adds the weekly intelligence and the idea engine (SDD §6.9, §8):
+
+- `sotawhat run weekly` (Sundays at 20:00 with `scripts\schedule_daily.ps1 -Weekly`) syncs the Neo4j mirror
+  when it answers, then computes what rose this week (7 days against the 28 before), the communities of the
+  graph (Louvain over co-mentions and relations, labeled by the LLM) and its gaps: recent techniques never
+  linked to frequent problems, bridges between communities that barely touch, and distant pairs. A
+  meta-review turns your idea decisions, with their reasons, into at most 10 rules for the generators.
+  Then it runs the idea engine and sends the report.
+- The idea engine, economic mode: 12 technique × problem candidates from the gaps (10% with no graph
+  context, as a control), 3 lenses each (tech-push, JTBD, SCAMPER, TRIZ, cross-sector analogy, 2029
+  scenario) plus the contrarian lens on a quarter of them, with generators of rotating model families. Then
+  dedup by embedding and against rejected ideas, a six-role critique by a model of another family, prior
+  art by layers (the graph, OpenAlex, Semantic Scholar, GitHub and, with `EXA_API_KEY`, Exa; patents stay
+  "not verified"), a novelty matrix per facet and the rubric of SDD §8.4 by two judges, hard gates, a
+  portfolio with at most 2 ideas per niche and at least one contrarian bet, and a dossier (90-day pilot,
+  evidence plan, SaMD class, LGPD basis) for every finalist. `--modo completo` widens every step. The run
+  stops gracefully at `SOTAWHAT_LLM_BUDGET_USD_RUN_WEEKLY`.
+- `sotawhat ideate [--tema "UTI"] [--n 4] [--modo economico|completo] [--no-notify]` runs the engine alone,
+  on demand: `--n` finalists out of `--n` candidates.
+- The report goes to `data/weekly/` (Markdown and HTML), to Telegram (one message per idea, with
+  👍 explorar · 👎 · 🧪 testar · 🗄️ engavetar) and by e-mail. Every idea, kept or discarded, stays in the
+  ledger with its reason.
+- The interface gains two tabs. Ideias shows the cards with the rubric, novelty, prior art, critiques,
+  dossier, the graph facts the generator saw and the votes (👎 asks for a reason; 🛠️ construí marks what
+  you built). Tendências shows what rose, the labeled map, the gaps and the meta-review rules. The MCP
+  server adds `trends`, `gaps`, `list_ideas` and `idea`.
+
 To set it up, copy `.env.example` to `.env` and fill in at least `OPENROUTER_API_KEY`,
-`TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Then schedule the daily run with
-`powershell -ExecutionPolicy Bypass -File scripts\schedule_daily.ps1 [-Listener] [-Web]`.
+`TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Then schedule the runs with
+`powershell -ExecutionPolicy Bypass -File scripts\schedule_daily.ps1 [-Listener] [-Web] [-Weekly]`.
 
 Obsidian is no longer used (SDD §9): nothing reads or writes a vault, and the 2.0 `digest` and
 `backfill-links` commands are gone.

@@ -2,12 +2,13 @@
 
 **Tipo:** Software Design Document (SDD) — serve também como *spec* para desenvolvimento orientado a especificação (spec-driven).
 **Data:** 2026-11-07
-**Status:** v1.5 (2026-11-08):
+**Status:** v1.6 (2026-11-08):
 - respostas do usuário de 2026-11-07 incorporadas: Instagram pessoal, Neo4j no Docker Desktop, LLMs chineses via OpenRouter;
 - medições da P1 incorporadas: modelo de embeddings e deduplicação por título (§6.3, §6.7, D3);
 - decisões de 2026-11-08 incorporadas: digest em duas seções, "IA ∩ Saúde" e "Fronteira de IA" (escolha feita a partir do golden set), e cópia do digest por e-mail (§6.7, §6.11, §16.1);
 - v1.4: o Obsidian sai do projeto, e nada lê nem escreve no vault (§9, D12). A interface própria com o grafo vem para a P3, que passa a ser executada antes da P2. O grafo de entidades fica no SQLite, e o Neo4j vira espelho (§6.3, §11, D16);
 - v1.5: P2 executada (fontes novas como canais com teto diário, triagem v2 com os tipos de item, Gmail por label; §11). A pedido do usuário ("continue a implantação segundo o plano SDD direto até o final"), as fases seguem sem pausa: P4, P5 e P6;
+- v1.6: P4 executada. Inteligência semanal no SQLite com NetworkX (§6.9), motor de ideias num modo econômico mais enxuto (§8.6), ledger com votos no Telegram e na interface, relatório semanal, abas Ideias e Tendências e ferramentas novas no MCP (§6.11);
 - perguntas restantes em §16.2.
 **Documentos relacionados:**
 - Specs anteriores: `docs/superpowers/specs/2026-06-13-sotawhat-multisource-digest-design.md`, `2026-06-14-medico-ai-intersection-design.md`, `2026-06-14-obsidian-concept-links-design.md`
@@ -17,6 +18,7 @@
 - Plano da fase P1: `docs/superpowers/plans/2026-11-08-insight-engine-p1-triage-digest.md`
 - Plano da fase P3: `docs/superpowers/plans/2026-11-08-insight-engine-p3-graph-interface.md`
 - Plano da fase P2: `docs/superpowers/plans/2026-11-08-insight-engine-p2-new-sources.md`
+- Plano da fase P4: `docs/superpowers/plans/2026-11-08-insight-engine-p4-intelligence-ideation.md`
 
 ---
 
@@ -532,6 +534,12 @@ Pessoas ficam de fora nesta versão (LGPD, §6.13); as organizações respondem 
 | Similaridade | `SIMILAR_TO` via índice vetorial (k-NN) | dedup, "relacionados", novidade |
 | Mapa semanal | LLM resume cada comunidade ativa (o que mudou, por quê, próximos sinais) | relatório semanal |
 
+**Como ficou na P4** (`sotawhat/graph/intelligence.py`): tudo roda no SQLite com NetworkX 3.7, numa projeção dos últimos 90 dias de itens aprovados. Assim o GDS do Neo4j não é necessário (D16).
+- **Comunidades:** Louvain ponderado, com semente fixa, sobre as coocorrências e as relações tipadas (estas contam em dobro). As 8 maiores ganham rótulo e resumo do LLM; as demais ficam com os três nomes principais.
+- **Tendências:** z de Poisson, (recentes − esperado) / √(esperado + 1), nos 7 dias contra os 28 anteriores, mais as entidades que surgiram na semana.
+- **Lacunas:** (b) técnicas recentes sem ligação com os problemas mais citados, (a) pontes entre comunidades de técnicas e de problemas que quase não se tocam, e serendipidade (pares a 3 ou mais saltos de distância).
+- **Ficaram para depois:** PageRank, o item (c) e os caminhos via `Capability`. A ontologia de ideação (§8.2) ainda não tem nós `Capability`.
+
 ### 6.10 Motor de ideias
 
 Ver §8.
@@ -540,11 +548,11 @@ Ver §8.
 
 | Canal | Conteúdo | Implementação |
 |---|---|---|
-| **Telegram** (principal) | digest diário (resumo + itens com botões 👍/👎/🧪), relatório semanal, alertas de falha; recebe links para captura manual | bot próprio (`telegram_bot.py`, long polling) — sem servidor público |
-| **Markdown/HTML local** | `data/digests/YYYY-MM-DD.md` + `.html` | sempre gerado |
+| **Telegram** (principal) | digest diário (resumo + itens com botões 👍/👎/🧪), relatório semanal (P4: um cabeçalho e uma mensagem por ideia com 👍 explorar · 👎 · 🧪 testar · 🗄️ engavetar), alertas de falha; recebe links para captura manual | bot próprio (`telegram_bot.py`, long polling) — sem servidor público |
+| **Markdown/HTML local** | `data/digests/YYYY-MM-DD.md` + `.html`; relatório semanal em `data/weekly/` (`AAAA-MM-DD-semana`, e `AAAA-MM-DD-ideias-<run>` para o `ideate`) | sempre gerado |
 | **E-mail** (opcional, ligado em 2026-11-08) | cópia do digest diário (as duas seções e o radar; os votos continuam no Telegram) | SMTP com STARTTLS em `smtp.gmail.com:587`, reaproveitando `GMAIL_ADDRESS` + a senha de app de `GMAIL_APP_PASSWORD` (a mesma da leitura das newsletters na P2); destinatário em `DIGEST_EMAIL_TO`. HTML só com estilos inline. Uma senha que não tem o formato de senha de app é recusada antes de conectar, para que a senha da conta nunca seja enviada |
-| **MCP server** (P3) | `search`, `entity`, `neighbors`, `recent_items`, `graph_stats` e `cypher` (só leitura, no Neo4j); `trends`, `gaps` e `list_ideas` chegam na P4 | `sotawhat serve-mcp` (stdio, `MCPServer` do SDK `mcp` 2.x) sobre o SQLite; registrado em `.mcp.json` |
-| **Interface web** (P3; antes P6) | grafo navegável das entidades (técnicas, modelos, datasets, organizações, produtos, problemas, regulações e as categorias da taxonomia); filtros por período, tipo e número de menções; busca; painel da entidade (itens, vizinhos, relações) e do item (resumo, por que importa, votos 👍/👎/🧪) | `sotawhat serve`: FastAPI em `127.0.0.1:8765`, lendo do SQLite; sigma.js 3 + graphology com os arquivos JS no próprio pacote; pode subir ao fazer logon |
+| **MCP server** (P3) | `search`, `entity`, `neighbors`, `recent_items`, `graph_stats` e `cypher` (só leitura, no Neo4j); na P4, `trends`, `gaps`, `list_ideas` e `idea` | `sotawhat serve-mcp` (stdio, `MCPServer` do SDK `mcp` 2.x) sobre o SQLite; registrado em `.mcp.json` |
+| **Interface web** (P3; antes P6) | grafo navegável das entidades (técnicas, modelos, datasets, organizações, produtos, problemas, regulações e as categorias da taxonomia); filtros por período, tipo e número de menções; busca; painel da entidade (itens, vizinhos, relações) e do item (resumo, por que importa, votos 👍/👎/🧪). Na P4, as abas **Ideias** (cards com rubrica, novidade, prior art, críticas, dossiê, fatos do grafo e votos, inclusive 👎 com motivo e 🛠️ construí) e **Tendências** (em alta, mapa rotulado, lacunas e regras do meta-review) | `sotawhat serve`: FastAPI em `127.0.0.1:8765`, lendo do SQLite; sigma.js 3 + graphology com os arquivos JS no próprio pacote; pode subir ao fazer logon |
 | **Export** (sem lock-in) | grafo (nós e arestas) e itens aprovados | `sotawhat graph export`: JSON + CSV em `data/exports/` |
 
 **Regras de cadência e formato (evidência em `plataformas_similares.md`, P8–P9):** nota diária curta (tipicamente ≤ 10 itens: 1 frase + "por que importa para você" + score + link + fonte), seção *Radar* com 1 linha por item; **"nada relevante hoje" → não envia**; síntese semanal mais longa (3–5 itens no estilo Doctor Penguin + tendências + lacunas + ideias) e *catch-up* automático após dias sem leitura; medicina tende a cadência semanal, ML a diária — o digest diário é predominantemente ML∩medicina aplicada e o semanal consolida. Cada item traz score visível e número de fontes independentes.
@@ -699,6 +707,15 @@ Relações: `Technique-[:ENABLES]->Capability`, `Capability-[:ADDRESSES]->Proble
 | 8 | **Ledger, feedback e personalização** | ações: gostei / não gostei (motivo: não interessa, já existe, inviável agora, errado clinicamente, fora do foco) / testar / engavetar / construí; edição gera nova versão (`parent_id`). Uso imediato: few-shot de curtidas, memória de rejeições por motivo, **meta-review semanal** que resume padrões das decisões e críticas em ≤ 10 regras injetadas nos prompts ("rejeita tudo que depende de wearable próprio"; "prefere operações de UTI"). Com ≥ 200–300 avaliações: modelo de interesse (features do grafo + embeddings + lente) para re-ranquear; controladores "mais novidade ↔ mais viabilidade". Resultados de conversas/pilotos entram como evidência no grafo e como rótulo de realização | `deepseek/deepseek-v4.1-flash-1017` (meta-review, raciocínio alto) |
 | 9 | **Evolução e entrega** | mensalmente, as 20% melhores passam por combinação/mutação (trocar modelo de negócio, unidade-alvo, técnica) em ilhas por nicho, com crítica e prior art repetidos; relatório semanal = dossiês + "delta do grafo que habilitou cada ideia" + lista explícita do que foi descartado e por quê | rotação de famílias (como no estágio 2) |
 
+**Como ficou na P4** (`sotawhat/ideation/`; medições em §8.6):
+- **Dedup (estágio 3).** Com o EmbeddingGemma, o cosseno não separa ideias do mesmo domínio: a mediana entre ideias diferentes do primeiro lote real foi 0,81, e um par claramente distinto chegou a 0,908. Por isso:
+  - o "dedup 2: facetas" virou um juiz barato por par técnica × problema, que decide quais rascunhos são o mesmo produto (mesmo usuário, tarefa e mecanismo) e quais repetem uma ideia anterior do par no ledger (finalista, votada ou rejeitada);
+  - o embedding só pega textos quase idênticos (≥ 0,95);
+  - os pares usados nas últimas 4 semanas só completam o lote depois dos pares novos.
+- **Gates (estágio 7).** Seguindo a regra "agregação só com ≥ 2 concordando", um gate descarta a ideia só quando todos os juízes o apontam. O gate de um juiz só fica "em disputa", com −0,1 na confiança, e aparece no card para você decidir.
+- **Prior art (estágio 6):** o grafo interno, OpenAlex, Semantic Scholar (sem chave, tolerando 429), GitHub (por relevância no nome e na descrição) e Exa (com `EXA_API_KEY`). Patentes ficam "não verificado".
+- **Ficaram para depois:** o torneio suíço, a evolução mensal (estágio 9), a métrica de Vendi e o modelo de interesse (com ≥ 200 avaliações).
+
 ### 8.4 Rubrica de pontuação (pesos iniciais — recalibrar após ~100 decisões no ledger)
 
 | Eixo | Peso | Âncoras |
@@ -732,6 +749,10 @@ IdeaCard: id, version, parent_id, titulo, problema_jtbd, stakeholder_dono, setor
 Todos os custos com os modelos chineses via OpenRouter, endpoints ZDR e tokens de raciocínio contados como saída (§13, `llm_openrouter.md`):
 
 - **Modo econômico** (padrão nas 4 primeiras semanas): 30 candidatos × 6 lentes, dossiês e críticas nos 20 melhores, 10 finalistas com 3 juízes (DeepSeek V4.1 Flash, GLM-5.3, MiMo-V2.6-Pro). Volume: ≈ 2,2 M tokens de entrada + 0,8 M de saída por semana → **≈ US$ 0,8/semana (≈ US$ 3/mês)**. Com modelos Anthropic, o mesmo modo custava ≈ US$ 20/mês.
+- **Como ficou na P4 (medido em 2026-11-08).** O modo econômico implementado é mais enxuto que o acima, porque o limite da chave do OpenRouter (US$ 5) não renova.
+  - **Configuração:** 12 candidatos × 3 lentes (em rotação pelas 6), mais a contrária em 25% do lote; dedup com um juiz por par técnica × problema; crítica, prior art e 2 juízes nos 10 melhores; 6 finalistas.
+  - **Primeiro run real** (`ideate --n 4`): 13 rascunhos e 34 chamadas, US$ 0,038, 12 min. O MiMo-V2.6-Pro custa por chamada o dobro do DeepSeek V4.1 Flash, e o GLM-5.3-Flash é o mais barato.
+  - **Projeção do `run weekly`:** ≈ US$ 0,13 por semana (≈ US$ 0,55/mês) e ≈ 30 min.
 - **Modo completo:** ~60 candidatos × 8 lentes em rotação de 3–4 famílias, dossiês e críticas em ~40 sobreviventes, prior art e torneio entre ~20 finalistas com 3 juízes (Kimi K3.1 Pro, GLM-5.3, DeepSeek V4.1 Flash). Volume: ≈ 5 M de entrada + 2,2 M de saída por semana → **≈ US$ 4–7/semana (≈ US$ 18–31/mês)**, conforme o Kimi entre ou não como juiz. Antes: ≈ US$ 90/mês.
 - **Como decidir:** depois das 4 semanas iniciais, rodar 2 semanas no modo completo e comparar no ledger a taxa de ideias marcadas "vale explorar". Ficar no completo só se a taxa subir de forma clara.
 - Sob demanda (`ideate --tema`), o usuário escolhe o modo. O teto `SOTAWHAT_LLM_BUDGET_USD_RUN_WEEKLY` (§13) interrompe a execução graciosamente.
@@ -811,7 +832,7 @@ Mínimo por fase:
 | **P1 · Triagem + digest** (semana 2) | *mute filters*, rubrica, prompt v1, saída estruturada, dedup semântico (embeddings locais), classificador por perfil (treina quando houver ≥ 100 avaliações), digest MD/HTML/Telegram com botões de feedback, golden set inicial (50 itens), **bake-off de modelos** (`sotawhat eval models`) e `config/llm.yaml`. Plano: `docs/superpowers/plans/2026-11-08-insight-engine-p1-triage-digest.md` | digest diário com ≤ 15 itens; feedback persistido; modelo de triagem escolhido por dados | 3–4 dias |
 | **P2 · Novas fontes I** (executada depois da P3; plano `docs/superpowers/plans/2026-11-08-insight-engine-p2-new-sources.md`) | Tier 1 do §5 (Crossref/PubMed `[jour]`, ScienceDirect, JAMA AI, medRxiv API, FDA CSV, Google News), AlphaSignal RSS, The Batch via sitemap, Gmail (newsletters → itens), GitHub (busca + estrelas + releases), HF Hub, MCP registry, skills | cada fonte com fixture + teste; itens aparecem no digest com proveniência | 4–5 dias |
 | **P3 · Grafo + interface** (executada antes da P2, decisão de 2026-11-08) | remoção do Obsidian; extração v1 (entidades, relações e números) dos itens aprovados; resolução de entidades com aliases e juiz LLM; categorias da taxonomia como nós; **interface web própria** (FastAPI + sigma.js, lendo do SQLite); espelho no Neo4j (`compose.yaml`, `sotawhat graph up` e `sync`); MCP server; export JSON/CSV; extração e espelho no run diário. Plano: `docs/superpowers/plans/2026-11-08-insight-engine-p3-graph-interface.md` | grafo navegável em `localhost:8765` com os itens já aprovados; consultas pelo MCP no Claude Code; Neo4j espelhado; nada do Obsidian no código | 4–6 dias |
-| **P4 · Inteligência + ideação** (semanas 6–7) | comunidades/tendências/lacunas, mapa semanal, pipeline de ideação (§8), ledger, novidade, relatório semanal, feedback de ideias | 1º relatório semanal com 5–10 idea cards e verificação de novidade | 6–8 dias |
+| **P4 · Inteligência + ideação** (executada em 2026-11-08; plano `docs/superpowers/plans/2026-11-08-insight-engine-p4-intelligence-ideation.md`) | comunidades/tendências/lacunas, mapa semanal, pipeline de ideação (§8), ledger, novidade, relatório semanal, feedback de ideias | 1º relatório semanal com 5–10 idea cards e verificação de novidade | 6–8 dias |
 | **P5 · Instagram** (semana 8) | adapter conforme §7.2 (varredura de contas públicas via Apify/HikerAPI + captura manual pelo Telegram + curadoria da lista de seguidos), extração multimodal | posts das contas configuradas no digest; custo dentro do teto | 3–5 dias |
 | **P6 · Endurecimento** (semana 9) | evals de extração/ideação, backup, documentação, calibração de pesos com 4 semanas de feedback, melhorias da interface (a primeira versão veio na P3) | métricas G2–G4 medidas e reportadas | 3–4 dias |
 

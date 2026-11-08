@@ -31,8 +31,14 @@ def test_env_overrides(monkeypatch):
     assert s.sotawhat_llm_budget_usd_day == 0.5
 
 
-def test_reads_dotenv_in_working_directory(tmp_path):
+def test_reads_dotenv_in_working_directory(tmp_path, monkeypatch):
+    monkeypatch.setitem(Settings.model_config, "env_file", ".env")      # conftest turns `.env` off for tests
     (tmp_path / ".env").write_text("OPENROUTER_API_KEY=sk-test\nTELEGRAM_CHAT_ID=42\n", encoding="utf-8")
     s = Settings()
     assert s.openrouter_api_key == "sk-test"
     assert s.telegram_chat_id == "42"
+
+
+def test_tests_never_read_a_dotenv(tmp_path):
+    (tmp_path / ".env").write_text("OPENROUTER_API_KEY=sk-leak\nGMAIL_APP_PASSWORD=abcdabcdabcdabcd\n", encoding="utf-8")
+    assert load_settings().openrouter_api_key == ""

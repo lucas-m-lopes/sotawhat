@@ -49,6 +49,8 @@ Phase P1 adds the triage and the real digest:
 - The digest goes to Telegram (up to 15 main items with 👍 👎 🧪 buttons, plus a radar of
   frontier AI without a medical bridge) and to `data/digests/YYYY-MM-DD.md` and `.html`.
   Nothing relevant and nothing broken means nothing is sent.
+- With `DIGEST_EMAIL_TO` set, the same digest also goes by e-mail (SMTP; with Gmail it reuses
+  `GMAIL_ADDRESS` and the app password in `GMAIL_APP_PASSWORD`, never the account password).
 - `sotawhat feedback pull|listen` records the votes; after 100 votes a profile gets its own
   classifier (logistic regression over the embeddings), which then decides what reaches the LLM.
 - `sotawhat eval golden draft|import` builds a golden set that you label by editing a Markdown

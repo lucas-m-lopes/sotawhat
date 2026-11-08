@@ -202,6 +202,66 @@ def render_html(d) -> str:
             f"<style>{_CSS}</style></head><body>{''.join(body)}</body></html>")
 
 
+# --- e-mail -----------------------------------------------------------------------
+_MAIL = {
+    "body": "margin:0 auto;padding:12px;max-width:640px;font-family:Arial,Helvetica,sans-serif;color:#1f2328",
+    "h1": "font-size:20px;margin:0 0 4px", "h2": "font-size:16px;margin:22px 0 8px;color:#0b6e4f",
+    "muted": "color:#5d6670;font-size:13px;margin:0 0 8px", "warn": "color:#9a3412;font-size:13px;margin:0 0 8px",
+    "card": "border:1px solid #e3e0d8;border-radius:8px;padding:10px 12px;margin:0 0 10px",
+    "title": "font-size:15px;font-weight:bold;margin:0 0 4px", "meta": "color:#5d6670;font-size:12px;margin:0 0 6px",
+    "p": "font-size:14px;line-height:1.45;margin:0 0 6px", "a": "color:#0b6e4f", "li": "font-size:14px;margin:0 0 6px",
+}
+
+
+def render_email(d) -> tuple:
+    """(subject, plain text, HTML) of the e-mail copy. Inline styles only: Gmail and other clients drop
+    <style> blocks and CSS variables. Votes stay in Telegram, the e-mail is for reading."""
+    day = "/".join(reversed(d.day.split("-")))[:5]
+    if d.main or d.frontier:
+        parts = [f"{len(d.main)} em IA ∩ Saúde", f"{len(d.frontier)} na fronteira"]
+    else:
+        parts = [f"radar com {len(d.radar)}"] if d.radar else []
+    subject = " · ".join([f"sotawhat · {day}"] + parts + (["⚠️"] if d.alerts or d.error else []))
+    s = _MAIL
+
+    def a(e):
+        return f'<a href="{esc_attr(e.url)}" style="{s["a"]}">{esc(e.title)}</a>'
+
+    body = [f'<p style="{s["h1"]}">sotawhat · {esc(day)}</p>', f'<p style="{s["muted"]}">{esc(d.stats_line)}</p>']
+    body += [f'<p style="{s["muted"]}">{esc(n)}</p>' for n in d.notes]
+    if d.error:
+        body.append(f'<p style="{s["warn"]}">❌ erro no run: {esc(d.error)}</p>')
+    if d.alerts:
+        body.append(f'<p style="{s["warn"]}">⚠️ Alertas: '
+                    + "; ".join(f"{esc(k)} ({c}ª falha seguida)" for k, c, _ in d.alerts) + "</p>")
+    for title, entries in (("IA ∩ Saúde", d.main), ("Fronteira de IA", d.frontier)):
+        if not entries:
+            continue
+        body.append(f'<p style="{s["h2"]}">{title}</p>')
+        for e in entries:
+            body.append(f'<div style="{s["card"]}"><p style="{s["title"]}">{e.position}. {a(e)}</p>'
+                        f'<p style="{s["meta"]}"><b>{num(e.total)}</b> · {esc(_scores(e))} · {esc(_sources(e))} · '
+                        f"{esc(' · '.join(_tag_labels(e)))}</p>"
+                        f'<p style="{s["p"]}">{esc(e.summary)}</p>'
+                        f'<p style="{s["p"]}"><b>Por que importa:</b> {esc(e.why)}</p></div>')
+    if d.radar:
+        body.append(f'<p style="{s["h2"]}">Radar</p><ol>' + "".join(
+            f'<li style="{s["li"]}">{a(e)} <span style="{s["meta"]}">— {esc(_sources(e))} · {esc(_scores(e))}</span></li>'
+            for e in d.radar) + "</ol>")
+    if not (d.main or d.frontier or d.radar):
+        body.append(f'<p style="{s["p"]}">Nada relevante hoje.</p>')
+    body.append(f'<p style="{s["muted"]}">Vote 👍 👎 🧪 nas mensagens do Telegram; este e-mail é uma cópia do digest.</p>')
+    html = ('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1"></head>'
+            f'<body style="{s["body"]}">' + "".join(body) + "</body></html>")
+    return subject, render_markdown(d), html
+
+
+def send_email(mailer, d, to) -> None:
+    subject, text, html = render_email(d)
+    mailer.send(to, subject, text, html)
+
+
 def write_files(d, out_dir) -> tuple:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

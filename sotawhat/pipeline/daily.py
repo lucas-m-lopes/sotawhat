@@ -131,9 +131,11 @@ def main_daily(ns) -> int:
     from sotawhat.configfiles import ConfigError, load_config
     from sotawhat.llm.gateway import LLMGateway
     from sotawhat.llm.openrouter import OpenRouterClient
+    from sotawhat.notify.email import EmailError
+    from sotawhat.notify.email import from_settings as mailer_from
     from sotawhat.notify.telegram import TelegramError, TelegramNotifier
     from sotawhat.pipeline import feedback
-    from sotawhat.pipeline.deliver import build_digest, render_markdown, send_digest, write_files
+    from sotawhat.pipeline.deliver import build_digest, render_markdown, send_digest, send_email, write_files
     from sotawhat.pipeline.triage import run_triage
     from sotawhat.profiles import build_sources
     from sotawhat.store.classifier import refresh
@@ -186,4 +188,11 @@ def main_daily(ns) -> int:
             except TelegramError as exc:
                 print(f"[telegram] {exc}", file=sys.stderr)
                 log.error("telegram: %s", exc)
+        if not ns.no_notify and settings.email_enabled and digest.worth_sending:
+            try:
+                send_email(mailer_from(settings), digest, settings.digest_email_to)
+                print(f"[e-mail] digest enviado para {settings.digest_email_to}")
+            except EmailError as exc:
+                print(f"[e-mail] {exc}", file=sys.stderr)
+                log.error("e-mail: %s", exc)
     return 0 if report.ok else 1

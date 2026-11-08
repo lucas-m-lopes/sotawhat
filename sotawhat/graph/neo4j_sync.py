@@ -57,6 +57,14 @@ class Neo4jMirror:
         records, _, _ = self.driver.execute_query(query, parameters_=params, database_=self.database)
         return records
 
+    def read(self, query, limit=200, **params) -> tuple:
+        """-> (rows as dicts, truncated). READ access mode: the server itself refuses writes."""
+        from neo4j import RoutingControl
+
+        records, _, _ = self.driver.execute_query(query, parameters_=params, database_=self.database,
+                                                  routing_=RoutingControl.READ)
+        return [r.data() for r in records[:limit]], len(records) > limit
+
     def ping(self) -> bool:
         try:
             self.driver.verify_connectivity()

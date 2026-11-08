@@ -70,6 +70,10 @@ def run_daily(store, sources_by_profile, limit=10, today=None, triage=None, on_s
                 results = filter_relevant(results, profile["require_any"])
             items = _dedupe([to_item(r, profile=name) for r in results])
             new_ids = set(store.upsert_items(items, report.run_id))
+            again = [it.id for it in items if it.source.startswith("manual:") and it.id not in new_ids]
+            if again:                         # sent to the bot but already known: it is yours now (P5)
+                log.info("%s: %d sent by hand were known; %d back to the triage", name, len(again),
+                         store.requeue_manual(again))
             report.collected[name] = len(items)
             report.new_items += [it for it in items if it.id in new_ids]
             _record_health(store, sources, errors, report)
@@ -247,8 +251,10 @@ def main_daily(ns) -> int:
     from sotawhat.notify.telegram import TelegramError, TelegramNotifier
     from sotawhat.pipeline import feedback
     from sotawhat.pipeline.deliver import build_digest, render_markdown, send_digest, send_email, write_files
+    from sotawhat.pipeline.media import Transcriber, make_describer, whisper_available
     from sotawhat.pipeline.triage import run_triage
     from sotawhat.profiles import build_sources
+    from sotawhat.sources.apify import ApifyClient
     from sotawhat.sources.gmail import make_segmenter
     from sotawhat.store.classifier import refresh
     from sotawhat.store.db import Store
@@ -277,7 +283,12 @@ def main_daily(ns) -> int:
                                       app_title=settings.openrouter_app_title)
             gateway = LLMGateway(client, store=store, settings=settings, tasks=config.llm["tasks"])
         segmenter = make_segmenter(gateway) if gateway is not None else None
-        sources = {name: build_sources(name, settings=settings, segmenter=segmenter) for name in PROFILES}
+        apify = ApifyClient(settings.apify_token)
+        describer = None
+        if gateway is not None:                  # P5: what Instagram posts show (and say, if faster-whisper is in)
+            describer = make_describer(gateway, transcriber=Transcriber(settings.models_dir) if whisper_available() else None)
+        sources = {name: build_sources(name, settings=settings, segmenter=segmenter, store=store, apify=apify,
+                                       describer=describer) for name in PROFILES}
 
         def triage(st, run_id):
             if gateway is not None:

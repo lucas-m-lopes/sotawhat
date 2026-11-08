@@ -26,6 +26,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+audio = ["faster-whisper>=1.1"]   # P5, optional: transcript of Instagram reels on the CPU
 
 [project.scripts]
 sotawhat = "sotawhat.cli:main"

@@ -30,6 +30,7 @@ DEFAULT_TASKS = {
     "critique": TaskSpec((GLM_FLASH, DEEPSEEK_FLASH), "high", 5000),
     "judge": TaskSpec((DEEPSEEK_FLASH, GLM_FLASH, MIMO_PRO), "low", 2500),
     "synth": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO), "high", 12000),
+    "accounts": TaskSpec((DEEPSEEK_FLASH, GLM_FLASH), "low", 3000),   # Instagram accounts to scan (P5)
     "smoke": TaskSpec((DEEPSEEK_FLASH,), "low", 600),
 }
 

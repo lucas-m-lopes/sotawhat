@@ -2,7 +2,7 @@
 import argparse
 import sys
 
-_SUBCOMMANDS = {"search", "run", "ideate", "doctor", "feedback", "eval", "serve", "serve-mcp", "graph"}
+_SUBCOMMANDS = {"search", "run", "ideate", "doctor", "feedback", "eval", "serve", "serve-mcp", "graph", "instagram"}
 
 def parse_args(argv):
     # Backward compat: `sotawhat <keyword...> [N]` with no subcommand -> search.
@@ -44,6 +44,13 @@ def parse_args(argv):
     p_graph.add_argument("--rebuild", action="store_true", help="sync: empty the Neo4j mirror and send everything")
     p_graph.add_argument("--limit", type=int, default=None, help="extract: at most N items")
     p_graph.add_argument("--out", default=None, help="export: folder (default data/exports)")
+
+    p_instagram = sub.add_parser("instagram", help="Instagram accounts to scan (P5)")
+    p_instagram.add_argument("instagram_action", choices=["import"])
+    p_instagram.add_argument("file", help="following.json from the Accounts Center export")
+    p_instagram.add_argument("--max", type=int, default=50, help="accounts enabled for the daily scan (default 50)")
+    p_instagram.add_argument("--limit", type=int, default=None, help="classify at most N new accounts")
+    p_instagram.add_argument("--yes", action="store_true", help="fetch the profiles on Apify (paid) and classify")
 
     p_feedback = sub.add_parser("feedback")
     p_feedback.add_argument("action", choices=["pull", "listen"])
@@ -126,6 +133,9 @@ def main(argv=None):
     elif ns.command == "graph":
         from sotawhat.graph.commands import main_graph
         raise SystemExit(main_graph(ns))
+    elif ns.command == "instagram":
+        from sotawhat.pipeline.accounts import main_instagram
+        raise SystemExit(main_instagram(ns))
 
 if __name__ == "__main__":
     main()

@@ -99,3 +99,18 @@ def test_listen_survives_conflicts_and_keeps_a_heartbeat(tmp_path):
         waits = []
         listen(st, Bot(), "42", should_stop=lambda: Bot.calls >= 2, timeout=1, sleep=waits.append)
         assert waits == [60] and listener_active(st)
+
+
+def test_links_sent_to_the_bot_are_kept_and_confirmed(tmp_path):
+    with Store(tmp_path / "insight.db") as st:
+        bot = FakeBot()
+        update = {"update_id": 1, "message": {"message_id": 9, "from": {"id": 42}, "date": 1,
+                                              "text": "olha este post https://www.instagram.com/p/C1abcDEF/ e este",
+                                              "entities": [{"type": "text_link", "offset": 50, "length": 4,
+                                                            "url": "https://example.org/artigo"}]}}
+        assert handle_update(st, bot, update, "42") == "inbox"
+        payload = json.loads(st.conn.execute("SELECT payload_json FROM inbox").fetchone()[0])
+        assert payload["urls"] == ["https://www.instagram.com/p/C1abcDEF/", "https://example.org/artigo"]
+        assert bot.sent[-1][0].startswith("📥 recebido (2 links)") and bot.sent[-1][2] is True
+        quiet = {"update_id": 2, "message": {"message_id": 10, "from": {"id": 42}, "date": 2, "text": "só texto"}}
+        assert handle_update(st, bot, quiet, "42") == "inbox" and len(bot.sent) == 1

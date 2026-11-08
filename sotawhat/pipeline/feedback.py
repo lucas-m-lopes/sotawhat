@@ -71,8 +71,17 @@ def handle_update(store, notifier, update, allowed_user) -> str:
     message = update.get("message")
     if message and str((message.get("from") or {}).get("id")) == str(allowed_user):
         text = message.get("text") or message.get("caption") or ""
+        hidden = [e.get("url") for e in (message.get("entities") or message.get("caption_entities") or [])
+                  if e.get("type") == "text_link" and e.get("url")]
+        urls = list(dict.fromkeys(_URL.findall(text) + hidden))
         store.add_inbox("telegram", {"message_id": message.get("message_id"), "date": message.get("date"),
-                                     "text": text, "urls": _URL.findall(text)})
+                                     "text": text, "urls": urls})
+        if urls:                                          # P5: the capture is confirmed in the chat
+            try:
+                notifier.send_message(f"📥 recebido ({len(urls)} link{'s' if len(urls) > 1 else ''}): entra no "
+                                      "próximo digest.", disable_notification=True)
+            except TelegramError:
+                pass
         return "inbox"
     return "ignored"
 

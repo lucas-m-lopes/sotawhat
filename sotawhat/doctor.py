@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from sotawhat.llm.tasks import resolve
 
-TASKS = ("triage", "segment", "vision", "extract", "synth", "resolve", "ideate", "critique", "judge")
+TASKS = ("triage", "segment", "vision", "extract", "synth", "resolve", "ideate", "critique", "judge", "accounts")
 _BAD_QUANT = {"fp4", "mxfp4", "nvfp4", "int4", "fp6"}
 
 
@@ -319,6 +319,44 @@ def check_gmail(settings, imap_factory=None) -> Check:
     return Check(name, "ok", f"{count} mensagens em 30 dias para `{settings.gmail_query}`")
 
 
+def check_instagram(settings, apify=None) -> list:
+    """P5: the Apify plan (usage of the cycle) and the accounts file with the last scan."""
+    from sotawhat.configfiles import ConfigError
+    from sotawhat.sources.apify import ApifyClient, ApifyError
+    from sotawhat.sources.instagram import load_accounts
+
+    checks = []
+    apify = apify or ApifyClient(settings.apify_token)
+    if not apify.configured:
+        checks.append(Check("Apify", "warn", "APIFY_TOKEN vazio: sem varredura do Instagram, e os posts mandados ao bot "
+                                             "entram só como link"))
+    else:
+        try:
+            use = apify.usage()
+            limit = use["limit"] or 0
+            status = "warn" if limit and use["used"] >= 0.8 * limit else "ok"
+            checks.append(Check("Apify", status, f"US$ {use['used']:.2f} de US$ {limit:.2f} no ciclo até {use['cycle_end']}"))
+        except ApifyError as exc:
+            checks.append(Check("Apify", "fail", str(exc)))
+    try:
+        accounts = load_accounts(settings.sotawhat_config_dir / "instagram_accounts.yaml")
+    except ConfigError as exc:
+        return checks + [Check("contas do Instagram", "fail", str(exc))]
+    if not accounts:
+        return checks + [Check("contas do Instagram", "warn", "sem config/instagram_accounts.yaml: exporte \"Seguidores e "
+                                                              "seguindo\" (JSON) e rode `sotawhat instagram import "
+                                                              "following.json`")]
+    on = [a for a in accounts if a.get("enabled")]
+    try:
+        state = json.loads((settings.sotawhat_data_dir / "state" / "instagram.json").read_text(encoding="utf-8"))
+        last = max(v for k, v in state.items() if k.startswith("since_"))[:16].replace("T", " ")
+    except (OSError, ValueError):
+        last = "nunca"
+    detail = (f"{len(on)} de {len(accounts)} na varredura (IA {sum(a['category'] == 'ia' for a in on)}, saúde "
+              f"{sum(a['category'] == 'saude' for a in on)}) · última varredura {last}")
+    return checks + [Check("contas do Instagram", "ok" if on else "warn", detail)]
+
+
 def check_neo4j(settings, store, factory=None) -> Check:
     """The Neo4j mirror (P3, D16): optional, so being off is a warning; configured but silent is a failure."""
     name = "espelho Neo4j"
@@ -450,6 +488,7 @@ def main_doctor(ns) -> int:
         checks.append(check_telegram(notifier))
     checks.append(check_email(settings))
     checks += [check_github(settings), check_hf(settings), check_gmail(settings)]
+    checks += check_instagram(settings)
     with Store(settings.db_path) as store:
         checks.append(check_last_run(store))
         checks.append(check_last_weekly(store))

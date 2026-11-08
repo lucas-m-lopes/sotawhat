@@ -133,3 +133,18 @@ def test_on_start_gets_the_run_id_before_collection(tmp_path):
         report = run_daily(st, {"geral": [Watching("arxiv", [_r("2511.00001", "arxiv")])]}, today=DAY,
                            on_start=lambda run_id: seen.append(("start", run_id)))
     assert seen[0] == ("start", report.run_id) and seen[1][0] == "search"
+
+
+def test_a_known_item_sent_by_hand_goes_back_to_the_triage(tmp_path):
+    scanned = Result(id="C1", title="@medai.br: post", authors=[], date="2026-11-07", url="https://www.instagram.com/p/C1/",
+                     abstract="machine learning", source="instagram",
+                     extra={"canonical_id": "ig:C1", "kind": "instagram_post"})
+    sent = Result(id="C1", title="@medai.br: post", authors=[], date="2026-11-07", url="https://www.instagram.com/p/C1/",
+                  abstract="machine learning", source="manual:telegram",
+                  extra={"canonical_id": "ig:C1", "kind": "instagram_post", "manual": True})
+    with Store(tmp_path / "insight.db") as st:
+        run_daily(st, {"geral": [FakeSource("instagram-ia", [scanned])]}, today=DAY)
+        st.record_triage("ig:C1", 1, "reject")
+        report = run_daily(st, {"medico": [FakeSource("manual-telegram", [sent])]}, today=DAY)
+        assert report.new_items == [] and st.conn.execute("SELECT source FROM items").fetchone()[0] == "manual:telegram"
+        assert [r["id"] for r in st.triage_candidates("2000-01-01")] == ["ig:C1"]

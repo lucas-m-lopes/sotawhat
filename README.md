@@ -118,6 +118,25 @@ Phase P4 adds the weekly intelligence and the idea engine (SDD §6.9, §8):
   you built). Tendências shows what rose, the labeled map, the gaps and the meta-review rules. The MCP
   server adds `trends`, `gaps`, `list_ideas` and `idea`.
 
+Phase P5 adds Instagram and the manual capture (SDD §7.2, §7.7), with no Meta app and no Instagram login:
+
+- Send any link to the Telegram bot (in the Instagram app: Share → Telegram → the bot). The bot confirms it,
+  and the next daily run turns it into an item: Instagram posts and reels through Apify, any other link with
+  the page title and description. What you send skips the mute filter and the classifier and is never
+  rejected (the radar at worst); a post the scan had already stored becomes yours and is triaged again.
+- Daily scan of the public accounts in `config/instagram_accounts.yaml` through the Apify Instagram scraper
+  (`APIFY_TOKEN`; the Free plan gives US$ 5/month and a post costs US$ 0.0027). Each run has a charge cap
+  (`INSTAGRAM_MAX_USD_RUN`) and starts where the last one stopped. "ia" accounts feed the general profile,
+  "saude" accounts the medical one.
+- To build the list, export "Seguidores e seguindo" as JSON in the Accounts Center and run
+  `sotawhat instagram import following.json [--max 50] [--limit N] --yes`. Without `--yes` it only shows the
+  plan and the Apify cost. It fetches the profiles, sorts them into IA, saúde or fora with a cheap model, and
+  writes the YAML for you to review; importing again keeps your choices.
+- The images of every post go to the vision model (`vision` task, ≤ 3 per carousel, 800 px) and the
+  description joins the caption. Reels are transcribed on the CPU if you install `uv pip install -e ".[audio]"`.
+- The triage prompt is v3 (it knows `instagram_post`), and `sotawhat doctor` shows the Apify usage of the
+  month and the accounts in the scan.
+
 To set it up, copy `.env.example` to `.env` and fill in at least `OPENROUTER_API_KEY`,
 `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Then schedule the runs with
 `powershell -ExecutionPolicy Bypass -File scripts\schedule_daily.ps1 [-Listener] [-Web] [-Weekly]`.

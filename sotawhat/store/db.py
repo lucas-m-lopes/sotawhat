@@ -370,6 +370,20 @@ class Store:
         self.conn.commit()
         return new_ids
 
+    def requeue_manual(self, item_ids) -> int:
+        """Items you sent to the bot that were already known (P5): they become yours (source manual:telegram)
+        and, unless already approved, go back to the triage now. Returns how many go back."""
+        ids = list(item_ids)
+        if not ids:
+            return 0
+        with self._lock:
+            self.conn.execute(f"UPDATE items SET source = 'manual:telegram', fetched_at = ? WHERE id IN ({_in(ids)})",
+                              [utcnow()] + ids)
+            cur = self.conn.execute(f"DELETE FROM triage WHERE item_id IN ({_in(ids)}) AND decision NOT IN "
+                                    f"({_in(APPROVED)})", ids + list(APPROVED))
+            self.conn.commit()
+        return cur.rowcount
+
     def count_items(self) -> int:
         return self.conn.execute("SELECT COUNT(*) FROM items").fetchone()[0]
 

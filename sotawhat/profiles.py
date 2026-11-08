@@ -1,7 +1,9 @@
 # sotawhat/profiles.py
 """Profiles and their sources (SDD §5.3, §7). Keyword sources run once per profile keyword; channel sources
 (P2) run once per day with a cap per source. Sources that keep state in `data/state/` (FDA, The Batch,
-Gmail) are only built when `settings` is given; Gmail also needs the LLM segmenter."""
+Gmail, Instagram) are only built when `settings` is given; Gmail also needs the LLM segmenter. P5: the
+Instagram scan (Apify) splits by account category (ia -> geral, saude -> medico), and the links sent to the
+Telegram bot (manual capture) enter the medical profile when the store is given."""
 from sotawhat.sources.arxiv import ArxivSource
 from sotawhat.sources.crossref import CrossrefJournalSource
 from sotawhat.sources.fda import FDAAIDevicesSource
@@ -9,6 +11,8 @@ from sotawhat.sources.github import GitHubSource
 from sotawhat.sources.gmail import GmailNewsletterSource
 from sotawhat.sources.hf_hub import HFHubSource
 from sotawhat.sources.hf_papers import HFPapersSource
+from sotawhat.sources.inbox import InboxSource
+from sotawhat.sources.instagram import InstagramSource
 from sotawhat.sources.mcp_registry import MCPRegistrySource
 from sotawhat.sources.medrxiv import MedRxivSource
 from sotawhat.sources.pubmed import PubMedSource
@@ -108,7 +112,13 @@ PROFILES = {
 }
 
 
-def build_sources(profile, crossref_mailto="", settings=None, segmenter=None):
+def _instagram(settings, apify, describer, category):
+    return InstagramSource(apify, settings.sotawhat_config_dir / "instagram_accounts.yaml",
+                           settings.sotawhat_data_dir / "state" / "instagram.json", category, describer=describer,
+                           per_account=settings.instagram_per_account, max_usd=settings.instagram_max_usd_run)
+
+
+def build_sources(profile, crossref_mailto="", settings=None, segmenter=None, store=None, apify=None, describer=None):
     github_token = getattr(settings, "github_token", "") or ""
     hf_token = getattr(settings, "hf_token", "") or ""
     state = settings.sotawhat_data_dir / "state" if settings is not None else None
@@ -126,6 +136,8 @@ def build_sources(profile, crossref_mailto="", settings=None, segmenter=None):
                     HFHubSource("hf-trending", [("trending-models", "models", {"sort": "trendingScore"})], per_query=10,
                                 max_items=10, token=hf_token),
                     MCPRegistrySource("mcp-recent", recent_days=1, per_term=30, max_items=10)]
+        if settings is not None and apify is not None and apify.configured:
+            sources.append(_instagram(settings, apify, describer, "ia"))
         return sources
     if profile == "medico":
         sources = [PubMedSource(and_clause=MEDICAL_AI_CLAUSE),
@@ -144,5 +156,9 @@ def build_sources(profile, crossref_mailto="", settings=None, segmenter=None):
                                                ("medical-datasets", "datasets", {"filter": "medical", "sort": "trendingScore"})],
                                 per_query=10, max_items=15, token=hf_token),
                     MCPRegistrySource("mcp-health", terms=MCP_HEALTH_TERMS, per_term=10, max_items=15)]
+        if settings is not None and apify is not None and apify.configured:
+            sources.append(_instagram(settings, apify, describer, "saude"))
+        if store is not None:
+            sources.append(InboxSource(store, apify=apify, describer=describer))
         return sources
     raise KeyError(f"Unknown profile: {profile}")

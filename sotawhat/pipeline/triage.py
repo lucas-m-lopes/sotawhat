@@ -25,7 +25,7 @@ from sotawhat.llm.schemas import TriageOutput
 from sotawhat.pipeline.dedup import find_duplicates
 from sotawhat.store.vectors import item_text, novelty_scores
 
-PROMPT_VERSION = "triage_v2"   # v2 (P2): explains the new item kinds; v1 stays for history
+PROMPT_VERSION = "triage_v3"   # v3 (P5): Instagram posts and items sent by hand; v1 and v2 stay for history
 HARD_REJECT = {"clinical_without_ai", "marketing_no_substance", "identifiable_patient_data"}
 DEFAULT_COST_PER_ITEM = 0.001   # US$, until the ledger has real triage calls (≈ 0.0005 expected)
 log = logging.getLogger("sotawhat.triage")
@@ -111,10 +111,15 @@ def _budget_cap(store, gateway, now):
     return max(0, int(room / per_item))
 
 
+def manual(item) -> bool:
+    """Sent by the reader (P5 manual capture): no mute filter, no classifier gate, never rejected, first in line."""
+    return (item.source or "").startswith("manual:")
+
+
 def _stage_a(store, run_id, items, rubric, mutes, embedder, gates, now, stats):
     survivors = []
     for it in items:
-        reason = mutes.match(it)
+        reason = None if manual(it) else mutes.match(it)
         if reason:
             store.record_triage(it.id, run_id, "muted", reason=reason)
             stats.muted += 1
@@ -151,7 +156,7 @@ def _stage_a(store, run_id, items, rubric, mutes, embedder, gates, now, stats):
 
     pre, gated = {}, set()
     for profile, gate in (gates or {}).items():
-        group = [it for it in survivors if it.profile == profile and it.id in vectors]
+        group = [it for it in survivors if it.profile == profile and it.id in vectors and not manual(it)]
         if not group:
             continue
         probs = gate.score(np.stack([vectors[it.id] for it in group]))
@@ -179,8 +184,8 @@ def run_triage(store, run_id, gateway, rubric, mutes, embedder=None, gates=None,
         stats.deferred = len(survivors)
         return stats
 
-    # medico first, then by classifier score, newest first
-    survivors.sort(key=lambda it: (it.profile != "medico", -(pre.get(it.id, (0.5,))[0])))
+    # sent by hand first, then medico, then by classifier score
+    survivors.sort(key=lambda it: (not manual(it), it.profile != "medico", -(pre.get(it.id, (0.5,))[0])))
     cap = _budget_cap(store, gateway, now)
     if cap is not None and cap < len(survivors):
         stats.deferred += len(survivors) - cap
@@ -210,6 +215,8 @@ def run_triage(store, run_id, gateway, rubric, mutes, embedder=None, gates=None,
                 continue
             out = res.output
             decision, total = decide(out, novelty.get(it.id, 5), rubric, it.source)
+            if decision == "reject" and manual(it):
+                decision = "radar"           # you sent it: it stays visible and goes to the graph
             p, version = pre.get(it.id, (None, None))
             store.record_triage(
                 it.id, run_id, decision, total=total, reason=out.reason_pt, summary_pt=out.summary_pt,

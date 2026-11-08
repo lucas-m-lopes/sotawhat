@@ -1,11 +1,13 @@
 # sotawhat/doctor.py
 """`sotawhat doctor [--llm]`: configuration, keys, models, last run and spend (SDD §6.12)."""
+import imaplib
 import json
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+import httpx
 from pydantic import BaseModel
 
 from sotawhat.llm.tasks import resolve
@@ -248,6 +250,72 @@ def check_email(settings, factory=None) -> Check:
     return Check(name, "ok", f"login SMTP ok em {settings.smtp_host}:{settings.smtp_port} → {settings.digest_email_to}")
 
 
+def check_github(settings, get=None) -> Check:
+    """GITHUB_TOKEN (P2): search runs with 10 requests/min without it, 30 with it."""
+    if not settings.github_token:
+        return Check("GitHub", "warn", "GITHUB_TOKEN vazio: a busca de repositórios roda com o limite anônimo (10/min)")
+    get = get or httpx.get
+    try:
+        r = get("https://api.github.com/rate_limit", headers={"Authorization": f"Bearer {settings.github_token}",
+                                                              "User-Agent": "sotawhat/3.0"}, timeout=20)
+    except httpx.HTTPError as exc:
+        return Check("GitHub", "warn", f"não respondeu: {type(exc).__name__}")
+    if r.status_code == 401:
+        return Check("GitHub", "fail", "GITHUB_TOKEN recusado (inválido ou expirado): gere outro fine-grained token")
+    res = r.json().get("resources", {})
+    search, core = res.get("search", {}), res.get("core", {})
+    return Check("GitHub", "ok", f"busca {search.get('remaining')}/{search.get('limit')} por minuto · "
+                                 f"API {core.get('remaining')}/{core.get('limit')} por hora")
+
+
+def check_hf(settings, get=None) -> Check:
+    if not settings.hf_token:
+        return Check("Hugging Face", "warn", "HF_TOKEN vazio: a Hub API roda com o limite anônimo")
+    get = get or httpx.get
+    try:
+        r = get("https://huggingface.co/api/whoami-v2", headers={"Authorization": f"Bearer {settings.hf_token}"},
+                timeout=20)
+    except httpx.HTTPError as exc:
+        return Check("Hugging Face", "warn", f"não respondeu: {type(exc).__name__}")
+    if r.status_code == 401:
+        return Check("Hugging Face", "fail", "HF_TOKEN recusado: gere outro token de leitura")
+    return Check("Hugging Face", "ok", f"conta {r.json().get('name', '?')}")
+
+
+def check_gmail(settings, imap_factory=None) -> Check:
+    """The newsletter query (P2) over 30 days: zero usually means the Gmail filter/label is missing."""
+    name = "newsletters do Gmail"
+    if not (settings.gmail_address and settings.gmail_app_password):
+        return Check(name, "warn", "desligado (GMAIL_ADDRESS/GMAIL_APP_PASSWORD vazios)")
+    from sotawhat.sources.gmail import _gmail_imap
+
+    query = re.sub(r"newer_than:\d+[dmy]", "newer_than:30d", settings.gmail_query)
+    if "newer_than:" not in query:
+        query += " newer_than:30d"
+    imap = (imap_factory or _gmail_imap)()
+    try:
+        imap.login(settings.gmail_address, "".join(settings.gmail_app_password.split()))
+        _, boxes = imap.list()
+        box = next((b.decode("utf-8", "replace").split(' "/" ')[-1] for b in boxes if b"\\All" in b), "INBOX")
+        imap.select(box, readonly=True)
+        _, data = imap.uid("SEARCH", "X-GM-RAW", f'"{query}"')
+        count = len((data[0] or b"").split()) if data else 0
+    except imaplib.IMAP4.error as exc:
+        detail = str(exc).replace(settings.gmail_app_password, "***")
+        return Check(name, "fail", f"login IMAP recusado ({detail}); confira a senha de app em GMAIL_APP_PASSWORD")
+    except OSError as exc:
+        return Check(name, "warn", f"IMAP não respondeu: {type(exc).__name__}")
+    finally:
+        try:
+            imap.logout()
+        except Exception:  # noqa: BLE001
+            pass
+    if not count:
+        return Check(name, "warn", f"`{settings.gmail_query}` não achou nada em 30 dias: crie no Gmail um filtro que "
+                                   "aplique a label newsletters/ai às newsletters sem RSS (ou ajuste GMAIL_QUERY)")
+    return Check(name, "ok", f"{count} mensagens em 30 dias para `{settings.gmail_query}`")
+
+
 def check_neo4j(settings, store, factory=None) -> Check:
     """The Neo4j mirror (P3, D16): optional, so being off is a warning; configured but silent is a failure."""
     name = "espelho Neo4j"
@@ -360,6 +428,7 @@ def main_doctor(ns) -> int:
     if notifier.configured:
         checks.append(check_telegram(notifier))
     checks.append(check_email(settings))
+    checks += [check_github(settings), check_hf(settings), check_gmail(settings)]
     with Store(settings.db_path) as store:
         checks.append(check_last_run(store))
         checks.append(check_month_cost(store, settings.sotawhat_llm_budget_usd_month))

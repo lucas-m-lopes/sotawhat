@@ -132,6 +132,15 @@ def create_app(db_path, static_dir=STATIC) -> FastAPI:
         st.add_feedback("item", vote.item_id, vote.value, channel="web")
         return {"item_id": vote.item_id, "vote": st.item_votes(ids=[vote.item_id]).get(vote.item_id)}
 
+    # --- today and runs (P6) ----------------------------------------------------------
+    @app.get("/api/today")
+    def api_today(request: Request):
+        return q.today(store(request))
+
+    @app.get("/api/runs")
+    def api_runs(request: Request, limit: int = Query(15, ge=1, le=100)):
+        return q.runs(store(request), limit=limit)
+
     # --- ideas and trends (P4) ---------------------------------------------------------
     @app.get("/api/ideas")
     def api_ideas(request: Request, status: str = "", finalists: bool = True, limit: int = Query(100, ge=1, le=500)):

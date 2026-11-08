@@ -157,6 +157,10 @@ button { font: inherit; color: inherit; }
 .gap-group h3 { margin: 6px 0 4px; }
 .rules { margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
 .rules ul { margin: 0; padding-left: 18px; font-size: 13.5px; }
+.today-section { margin: 18px 0 6px; }
+.runs { display: grid; gap: 2px; font-size: 13px; }
+.runs .row { border-bottom: 1px solid var(--line); }
+.runs .fail { color: var(--danger); }
 .empty-note { color: var(--muted); font-size: 13.5px; padding: 18px; border: 1px dashed var(--line); border-radius: var(--radius); }
 
 @media (max-width: 1000px) {

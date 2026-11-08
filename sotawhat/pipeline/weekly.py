@@ -448,6 +448,27 @@ def deliver_report(settings, store, report, notify=True, notifier=None, mailer=N
     return done
 
 
+def goals_step(settings, store, send=False, notifier=None) -> str:
+    """Writes the goals report; on the first weekly run of a month (`send`) the table also goes to Telegram."""
+    from sotawhat.evals.commands import send_goals, write_goals
+    from sotawhat.notify.telegram import TelegramError, TelegramNotifier
+
+    try:
+        text, path = write_goals(settings, store)
+    except Exception as exc:  # noqa: BLE001 - a report must never fail the weekly run
+        log.warning("goals report: %s", exc)
+        return f"erro: {exc}"
+    if send:
+        notifier = notifier or TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id)
+        if notifier.configured:
+            try:
+                send_goals(notifier, text)
+                return f"{path} (enviado)"
+            except TelegramError as exc:
+                return f"{path} (Telegram: {exc})"
+    return str(path)
+
+
 def _main(ns, kind) -> int:
     from sotawhat.config import load_settings
     from sotawhat.configfiles import ConfigError, load_config
@@ -494,11 +515,21 @@ def _main(ns, kind) -> int:
             if mirror is not None:
                 mirror.close()
         log.info("%s run %s: %.0f s, US$ %.4f", kind, report.run_id, time.monotonic() - started, report.cost_usd)
-        done = deliver_report(settings, store, report, notify=not getattr(ns, "no_notify", False))
+        notify = not getattr(ns, "no_notify", False)
+        done = deliver_report(settings, store, report, notify=notify)
+        if kind == "weekly":                  # P6: the SDD goals, in a file every week and on Telegram monthly
+            done["goals"] = goals_step(settings, store, send=notify and date.today().day <= 7)
+    if kind == "weekly":                      # P6: one copy of the store per week, the newest 8 kept
+        from sotawhat.store.backup import BackupError, backup
+
+        try:
+            done["backup"] = backup(settings.db_path, settings.sotawhat_data_dir / "backups")
+        except (BackupError, OSError) as exc:
+            done["backup"] = f"erro: {exc}"
     print(render_markdown(report.payload))
     print(f"\n[relatório] {done['files'][0]}")
-    for channel in ("telegram", "email"):
-        if done[channel] is not None:
+    for channel in ("telegram", "email", "backup", "goals"):
+        if done.get(channel) is not None:
             print(f"[{channel}] {done[channel]}")
     return 0 if report.ok else 1
 

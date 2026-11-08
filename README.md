@@ -16,7 +16,7 @@ Original SOTAWHAT background: [blog post](https://huyenchip.com/2018/10/04/sotaw
   summarizer is now pure Python. The only runtime deps are `httpx` and
   `feedparser`. No `punkt` download, no SSL/encoding workarounds.
 
-## 3.0 (in progress): insight engine
+## 3.0: insight engine
 
 sotawhat is becoming an insight engine for AI/ML ∩ medicine. The design is in
 `docs/sdd/2026-11-07-insight-engine-sdd.md` and the phase plans are in `docs/superpowers/plans/`.
@@ -136,6 +136,25 @@ Phase P5 adds Instagram and the manual capture (SDD §7.2, §7.7), with no Meta 
   description joins the caption. Reels are transcribed on the CPU if you install `uv pip install -e ".[audio]"`.
 - The triage prompt is v3 (it knows `instagram_post`), and `sotawhat doctor` shows the Apify usage of the
   month and the accounts in the scan.
+
+Phase P6 hardens it and measures the SDD goals:
+
+- `sotawhat backup` copies `data/insight.db` to `data/backups/` (one consistent file, integrity checked, the
+  newest 8 kept); `run weekly` makes one every Sunday. `sotawhat backup --restore FILE --yes` restores a copy
+  and keeps the current database next to it. The Neo4j mirror needs no dump: `sotawhat graph sync --rebuild`.
+- `sotawhat eval report [--send]` writes `data/reports/AAAA-MM-DD-metas.md` with the goals G1–G4 (daily
+  runs, digest sizes and precision by your votes, extraction precision and query latency, ideas per week
+  and the share you want to explore), each rate with its count. `run weekly` writes it every week and sends
+  the table to Telegram on the first Sunday of the month. `sotawhat eval triage` and `sotawhat eval ideas`
+  show the parts.
+- `sotawhat eval extract draft` writes a sample of 40 extracted items to `tests/evals/extract/`; uncheck the
+  wrong entities and relations and run `sotawhat eval extract import` to get the precision.
+- `sotawhat calibrate [--apply]` proposes the triage cut-offs (from 100 votes; they can only go up, since
+  only delivered items have votes) and the idea rubric weights (from 30 decided finalists). Nothing changes
+  without `--apply`.
+- `sotawhat repair cjk` rewrites old triage texts that still had Chinese characters (from the model used
+  before the P1 bake-off), keeping every decision.
+- The interface gains the Hoje tab: the latest digest with its votes and the recent runs.
 
 To set it up, copy `.env.example` to `.env` and fill in at least `OPENROUTER_API_KEY`,
 `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Then schedule the runs with

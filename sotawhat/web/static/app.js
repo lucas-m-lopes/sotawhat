@@ -497,9 +497,10 @@
   }
 
   // --- views (P4) --------------------------------------------------------------------
-  const VIEWS = { graph: "#view-graph", ideas: "#view-ideas", trends: "#view-trends" };
-  const HASHES = { "#grafo": "graph", "#ideias": "ideas", "#tendencias": "trends" };
-  const TITLES = { graph: "sotawhat · grafo", ideas: "sotawhat · ideias", trends: "sotawhat · tendências" };
+  const VIEWS = { graph: "#view-graph", today: "#view-today", ideas: "#view-ideas", trends: "#view-trends" };
+  const HASHES = { "#grafo": "graph", "#hoje": "today", "#ideias": "ideas", "#tendencias": "trends" };
+  const TITLES = { graph: "sotawhat · grafo", today: "sotawhat · hoje", ideas: "sotawhat · ideias",
+                   trends: "sotawhat · tendências" };
   let graphLoaded = false;
 
   function showView(name) {
@@ -520,6 +521,7 @@
     const name = HASHES[location.hash] || "graph";
     showView(name);
     if (name === "graph") ensureGraph();
+    else if (name === "today") loadToday();
     else if (name === "ideas") loadIdeas();
     else loadTrends();
   }
@@ -796,6 +798,58 @@
       : [el("p", { class: "muted" }, "Sem lacunas: faltam técnicas ou problemas na janela de 90 dias.")]));
     $("#rules-box").hidden = !(d.rules || []).length;
     $("#rules-list").replaceChildren(...(d.rules || []).map((r) => el("li", {}, r)));
+  }
+
+  // --- today (P6) --------------------------------------------------------------------
+  const TODAY_SECTIONS = [["main", "IA ∩ Saúde"], ["frontier", "Fronteira de IA"], ["radar", "Radar"]];
+  const RUN_KINDS = { daily: "diário", weekly: "semanal", ideate: "ideação", eval: "avaliação", graph: "grafo" };
+
+  function todayCard(item) {
+    const url = safeUrl(item.url);
+    return el("div", { class: "item" },
+      el("div", { class: "head" }, sectionBadge(item),
+        el("span", { class: "meta" }, `${item.total !== null && item.total !== undefined ? `nota ${num(item.total)} · ` : ""}`
+          + `${item.source}`,
+          url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", title: "abrir a fonte" }, " ↗") : null)),
+      el("button", { class: "title", type: "button", title: "abrir no grafo",
+                     onclick: () => { toGraph(); ensureGraph(); openItem(item.id); } }, item.title),
+      item.summary_pt ? el("p", {}, item.summary_pt) : null,
+      item.why_it_matters_pt ? el("div", { class: "why" }, el("b", {}, "Por que importa: "), item.why_it_matters_pt) : null,
+      voteButtons(item.id, item.vote));
+  }
+
+  async function loadToday() {
+    let d;
+    let recent = [];
+    try {
+      [d, recent] = await Promise.all([api("/api/today"), api("/api/runs?limit=12")]);
+    } catch (e) {
+      $("#today-meta").textContent = `Não consegui carregar o digest (${e.message}).`;
+      return;
+    }
+    const run = d.run;
+    if (!run) {
+      $("#today-meta").textContent = "Ainda não houve run diário (sotawhat run daily, todo dia às 07:00).";
+      $("#today-list").replaceChildren();
+    } else {
+      $("#today-meta").textContent = `run diário de ${fmtDate(run.finished_at)}`
+        + (run.collected !== undefined && run.collected !== null ? ` · ${run.collected} coletados, ${run.new ?? 0} novos` : "")
+        + ` · US$ ${num(run.cost_usd || 0, 3)}` + (run.ok ? "" : ` · falhou: ${run.error || "?"}`)
+        + (run.latest_id && run.latest_id !== run.id ? ` · o run diário mais recente (#${run.latest_id}) não teve digest` : "");
+      const blocks = [];
+      for (const [key, title] of TODAY_SECTIONS) {
+        const items = d.sections[key] || [];
+        if (!items.length) continue;
+        blocks.push(el("h2", { class: "today-section" }, `${title} · ${items.length}`), ...items.map(todayCard));
+      }
+      $("#today-list").replaceChildren(...(blocks.length ? blocks
+        : [el("p", { class: "empty-note" }, "Nada relevante no último digest.")]));
+    }
+    $("#runs-list").replaceChildren(...recent.map((r) => el("div", { class: `row${r.ok === false ? " fail" : ""}` },
+      el("span", {}, `${RUN_KINDS[r.kind] || r.kind} #${r.id}`),
+      el("span", { class: "muted grow" }, `${fmtDate(r.started_at)}${r.seconds !== null ? ` · ${Math.round(r.seconds / 60)} min` : " · rodando"}`),
+      el("span", { class: "muted" }, `US$ ${num(r.cost_usd || 0, 3)}`),
+      r.ok === false ? el("span", { title: r.error }, "falhou") : el("span", {}, r.ok ? "ok" : "…"))));
   }
 
   // --- start -----------------------------------------------------------------------

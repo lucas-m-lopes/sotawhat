@@ -336,3 +336,57 @@ def export(store, out_dir, day=None) -> tuple:
         writer.writeheader()
         writer.writerows(view["edges"])
     return json_path, nodes_csv, edges_csv
+
+
+# --- today and runs (P6: the "Hoje" tab) -------------------------------------------------
+LIMITS = {"main": 10, "frontier": 5, "radar": 10}
+
+
+def today(store) -> dict:
+    """The last daily digest: what the Telegram deliveries carried, in their order; without deliveries (no
+    Telegram, or --no-notify), the approved items of that run, best first, up to the digest limits."""
+    run = store.conn.execute(               # the latest digest: a run without triage (--no-llm) has none
+        "SELECT r.* FROM runs r WHERE r.kind = 'daily' AND r.finished_at IS NOT NULL AND (EXISTS (SELECT 1 FROM "
+        "deliveries d WHERE d.run_id = r.id) OR EXISTS (SELECT 1 FROM triage t WHERE t.run_id = r.id AND t.decision IN "
+        f"({','.join('?' * len(APPROVED))}))) ORDER BY r.id DESC LIMIT 1", list(APPROVED)).fetchone()
+    run = run or store.last_run("daily")
+    if run is None:
+        return {"run": None, "sections": {}}
+    latest = store.last_run("daily")
+    picked = store.conn.execute("SELECT section, item_id FROM deliveries WHERE run_id = ? AND section IN "
+                                "('main', 'frontier', 'radar') ORDER BY section, position", (run["id"],)).fetchall()
+    if not picked:
+        rows = sorted(store.triage_rows(run["id"]), key=lambda r: -(r["total"] or 0))
+        picked = [(r["decision"], r["item_id"]) for r in rows]
+    votes = store.item_votes(ids=[item_id for _, item_id in picked])
+    sections = {"main": [], "frontier": [], "radar": []}
+    for section, item_id in picked:
+        if len(sections[section]) >= LIMITS[section]:
+            continue
+        row = store.conn.execute("SELECT i.id, i.title, i.canonical_url, i.source, i.fetched_at, t.decision, t.total, "
+                                 "t.summary_pt, t.why_it_matters_pt FROM items i LEFT JOIN triage t ON t.item_id = i.id "
+                                 "WHERE i.id = ?", (item_id,)).fetchone()
+        if row is not None:
+            sections[section].append({"id": row["id"], "title": row["title"], "url": row["canonical_url"],
+                                      "source": row["source"], "fetched_at": row["fetched_at"],
+                                      "decision": row["decision"], "section": SECTIONS.get(row["decision"], row["decision"]),
+                                      "total": row["total"], "summary_pt": row["summary_pt"],
+                                      "why_it_matters_pt": row["why_it_matters_pt"], "vote": votes.get(item_id)})
+    stats = json.loads(run["stats_json"] or "{}")
+    return {"run": {"id": run["id"], "finished_at": run["finished_at"], "ok": bool(run["ok"]), "error": run["error"],
+                    "cost_usd": run["cost_usd"], "collected": sum((stats.get("collected") or {}).values()),
+                    "new": stats.get("new"), "latest_id": latest["id"] if latest else None},
+            "sections": sections}
+
+
+def runs(store, limit=15) -> list:
+    out = []
+    for r in store.conn.execute("SELECT * FROM runs ORDER BY id DESC LIMIT ?", (limit,)):
+        seconds = None
+        if r["finished_at"]:
+            seconds = round((datetime.fromisoformat(r["finished_at"]) - datetime.fromisoformat(r["started_at"]))
+                            .total_seconds())
+        out.append({"id": r["id"], "kind": r["kind"], "started_at": r["started_at"], "seconds": seconds,
+                    "ok": None if r["finished_at"] is None else bool(r["ok"]), "cost_usd": r["cost_usd"],
+                    "error": (r["error"] or "")[:200]})
+    return out

@@ -185,3 +185,31 @@ def test_page_has_the_three_views():
     page = (STATIC / "index.html").read_text(encoding="utf-8")
     for anchor in ('href="#grafo"', 'href="#ideias"', 'href="#tendencias"', 'id="view-ideas"', 'id="view-trends"'):
         assert anchor in page
+
+
+def test_today_and_runs(client):
+    c, ids, db = client
+    with Store(db) as st:
+        run = st.conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]          # the fixture's run, still open
+        st.finish_run(run, ok=True, stats={"collected": {"medico": 2}, "new": 2})
+        st.record_delivery(run, "2026-11-08", NEWS_ID, "k1", "main", 2)
+        st.record_delivery(run, "2026-11-08", "pmid:1", "k2", "main", 1)
+        st.add_feedback("item", "pmid:1", "up", "web")
+    data = c.get("/api/today").json()
+    assert data["run"]["collected"] == 2 and data["run"]["new"] == 2
+    assert [i["id"] for i in data["sections"]["main"]] == ["pmid:1", NEWS_ID]          # the delivery order
+    assert data["sections"]["main"][0]["vote"] == "up" and data["sections"]["main"][0]["summary_pt"] == "Resumo"
+    runs = c.get("/api/runs", params={"limit": 5}).json()
+    assert runs[0]["kind"] == "daily" and runs[0]["ok"] is True and runs[0]["seconds"] is not None
+
+
+def test_today_skips_runs_without_a_digest(client):
+    c, ids, db = client
+    with Store(db) as st:
+        first = st.conn.execute("SELECT MAX(id) FROM runs").fetchone()[0]
+        st.finish_run(first, ok=True, stats={})
+        st.record_delivery(first, "2026-11-08", "pmid:1", "k1", "main", 1)
+        later = st.start_run("daily")                                         # --no-llm: nothing approved
+        st.finish_run(later, ok=True, stats={"collected": {"geral": 5}, "new": 5})
+    run = c.get("/api/today").json()["run"]
+    assert run["id"] == first and run["latest_id"] == later

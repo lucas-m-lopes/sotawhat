@@ -2,7 +2,8 @@
 import argparse
 import sys
 
-_SUBCOMMANDS = {"search", "run", "ideate", "doctor", "feedback", "eval", "serve", "serve-mcp", "graph", "instagram"}
+_SUBCOMMANDS = {"search", "run", "ideate", "doctor", "feedback", "eval", "serve", "serve-mcp", "graph", "instagram",
+                "backup", "calibrate", "repair"}
 
 def parse_args(argv):
     # Backward compat: `sotawhat <keyword...> [N]` with no subcommand -> search.
@@ -52,6 +53,11 @@ def parse_args(argv):
     p_instagram.add_argument("--limit", type=int, default=None, help="classify at most N new accounts")
     p_instagram.add_argument("--yes", action="store_true", help="fetch the profiles on Apify (paid) and classify")
 
+    p_backup = sub.add_parser("backup", help="copy data/insight.db to data/backups (P6)")
+    p_backup.add_argument("--keep", type=int, default=8, help="copies to keep (default 8)")
+    p_backup.add_argument("--restore", default=None, help="restore this copy over data/insight.db")
+    p_backup.add_argument("--yes", action="store_true", help="confirm the restore")
+
     p_feedback = sub.add_parser("feedback")
     p_feedback.add_argument("action", choices=["pull", "listen"])
 
@@ -71,6 +77,20 @@ def parse_args(argv):
     p_models.add_argument("--limit", type=int, default=0)
     p_models.add_argument("--concurrency", type=int, default=4)
     p_models.add_argument("--apply", action="store_true", help="put the winner first in config/llm.yaml")
+    eval_sub.add_parser("triage", help="precision of the triage by your votes (G2)")
+    eval_sub.add_parser("ideas", help="the idea ledger: finalists and the share you want to explore (G4)")
+    p_report = eval_sub.add_parser("report", help="the SDD goals G1-G4 in data/reports (P6)")
+    p_report.add_argument("--send", action="store_true", help="also send the goals table to Telegram")
+    p_extract = eval_sub.add_parser("extract", help="precision of the extraction on an annotated sample (G3)")
+    p_extract.add_argument("action", choices=["draft", "import"])
+    p_extract.add_argument("--n", type=int, default=40)
+    p_extract.add_argument("--force", action="store_true", help="overwrite an existing draft")
+
+    p_repair = sub.add_parser("repair", help="fix stored texts (P6)")
+    p_repair.add_argument("repair_action", choices=["cjk"], help="cjk: triage texts with Chinese/Japanese/Korean characters")
+
+    p_calibrate = sub.add_parser("calibrate", help="proposals for the triage cut-offs and the idea weights (P6)")
+    p_calibrate.add_argument("--apply", action="store_true", help="write the proposal to config/")
 
     ns = parser.parse_args(argv)
     if ns.command == "search":
@@ -133,6 +153,15 @@ def main(argv=None):
     elif ns.command == "graph":
         from sotawhat.graph.commands import main_graph
         raise SystemExit(main_graph(ns))
+    elif ns.command == "repair":
+        from sotawhat.pipeline.repair import main_repair
+        raise SystemExit(main_repair(ns))
+    elif ns.command == "calibrate":
+        from sotawhat.evals.calibrate import main_calibrate
+        raise SystemExit(main_calibrate(ns))
+    elif ns.command == "backup":
+        from sotawhat.store.backup import main_backup
+        raise SystemExit(main_backup(ns))
     elif ns.command == "instagram":
         from sotawhat.pipeline.accounts import main_instagram
         raise SystemExit(main_instagram(ns))

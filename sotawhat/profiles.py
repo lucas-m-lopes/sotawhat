@@ -4,6 +4,7 @@ from sotawhat.sources.semantic_scholar import SemanticScholarSource
 from sotawhat.sources.hf_papers import HFPapersSource
 from sotawhat.sources.pubmed import PubMedSource
 from sotawhat.sources.rss import RSSSource
+from sotawhat.sources.crossref import CrossrefJournalSource
 
 # Lab/blog feeds (general). URLs pinned here; unreachable feeds are skipped at runtime.
 LAB_FEEDS = [
@@ -11,7 +12,6 @@ LAB_FEEDS = [
     ("deepmind", "https://deepmind.google/blog/rss.xml"),
     ("bair", "https://bair.berkeley.edu/blog/feed.xml"),
     ("huggingface", "https://huggingface.co/blog/feed.xml"),
-    ("the-gradient", "https://thegradient.pub/rss/"),
     ("ahead-of-ai", "https://magazine.sebastianraschka.com/feed"),
     ("simon-willison", "https://simonwillison.net/atom/everything/"),
     ("marktechpost", "https://www.marktechpost.com/feed/"),
@@ -19,10 +19,17 @@ LAB_FEEDS = [
 
 # Medical journal feeds (verified to return entries via httpx + User-Agent).
 MEDICAL_FEEDS = [
-    ("nature-machine-intelligence", "https://www.nature.com/natmachintell.rss"),
-    ("npj-digital-medicine", "https://www.nature.com/npjdigitalmed.rss"),
     ("jmir-ai", "https://ai.jmir.org/feed/atom"),
     ("jmir-medinform", "https://medinform.jmir.org/feed/atom"),
+]
+
+# Nature/npj RSS serve an anti-bot HTML page to non-browser clients (SDD §5.1),
+# so these journals come from Crossref by ISSN (verified 2026-11-07).
+MEDICAL_JOURNALS = [
+    ("nature-machine-intelligence", "2522-5839"),
+    ("npj-digital-medicine", "2398-6352"),
+    ("nature-medicine", "1546-170X"),
+    ("nejm-ai", "2836-9386"),
 ]
 
 # AND-ed into every medico PubMed query to force the AI/medicine intersection.
@@ -56,7 +63,7 @@ PROFILES = {
     },
 }
 
-def build_sources(profile):
+def build_sources(profile, crossref_mailto=""):
     if profile == "geral":
         return [ArxivSource(("cs.LG", "cs.CL", "cs.AI")),
                 SemanticScholarSource(), HFPapersSource(),
@@ -64,5 +71,6 @@ def build_sources(profile):
     if profile == "medico":
         return [PubMedSource(and_clause=MEDICAL_AI_CLAUSE),
                 ArxivSource(("q-bio.QM", "cs.LG", "cs.CV")),
-                RSSSource("medical", MEDICAL_FEEDS)]
+                RSSSource("medical", MEDICAL_FEEDS),
+                CrossrefJournalSource(MEDICAL_JOURNALS, mailto=crossref_mailto)]
     raise KeyError(f"Unknown profile: {profile}")

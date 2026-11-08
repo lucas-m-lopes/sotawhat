@@ -1,0 +1,14 @@
+{"status": "ok", "message-type": "work-list", "message": {"total-results": 2, "items": [
+ {"DOI": "10.1000/EXAMPLE.SEPSIS.1", "type": "journal-article",
+  "title": ["Deep learning for early sepsis prediction in the ICU"],
+  "abstract": "<jats:title>Abstract</jats:title>\n  <jats:p>We trained a transformer on 40,000 ICU stays and validated it externally.</jats:p>",
+  "author": [{"given": "Ana", "family": "Souza"}, {"family": "Lima"}],
+  "published": {"date-parts": [[2026, 11, 7]]},
+  "container-title": ["npj Digital Medicine"], "URL": "https://doi.org/10.1000/example.sepsis.1"},
+ {"DOI": "10.1000/example.ppg.2", "type": "journal-article",
+  "title": ["Wrist photoplethysmography encodes dietary information"],
+  "author": [{"given": "Bruno", "family": "Costa"}],
+  "published": {"date-parts": [[2026, 11]]},
+  "container-title": ["npj Digital Medicine"], "URL": "https://doi.org/10.1000/example.ppg.2"},
+ {"type": "journal-article", "title": ["Item without DOI is skipped"]}
+]}}

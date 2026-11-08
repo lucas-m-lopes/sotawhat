@@ -1,13 +1,17 @@
 # sotawhat/llm/schemas.py
 """Structured outputs (SDD §6.6, §6.7). Every constraint is an enum, which strict JSON schema supports
-on every provider; free text is limited by the prompt, not by the schema."""
+on every provider; free text is limited by the prompt, not by the schema. Validators that the JSON
+schema cannot express (Portuguese text with no CJK slips) run locally: a failure makes the gateway ask
+again, like invalid JSON, and then move to the next model."""
+import re
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from sotawhat import taxonomy as tx
 
 Score = Literal[0, 1, 2, 3, 4, 5]
+_CJK = re.compile(r"[぀-ヿ㐀-䶿一-鿿가-힯豈-﫿]")
 Exclusion = Literal["none", "clinical_without_ai", "generic_ai_no_bridge", "marketing_no_substance",
                     "identifiable_patient_data"]
 
@@ -31,6 +35,14 @@ class TriageOutput(BaseModel):
     vendor_only: bool
     reason_pt: str = Field(description="1 frase justificando as notas")
     why_it_matters_pt: str = Field(description="até 40 palavras para hospital/startup; vazio se excluído")
+
+    @field_validator("summary_pt", "reason_pt", "why_it_matters_pt")
+    @classmethod
+    def _portuguese_only(cls, value):
+        # MiniMax-M3.1-Flash slipped Chinese tokens into 13 of 60 summaries in the 2026-11-08 bake-off
+        if _CJK.search(value):
+            raise ValueError("contains Chinese, Japanese or Korean characters; write it in Brazilian Portuguese only")
+        return value
 
     def tags(self) -> dict:
         return {"domains": self.domains, "problem_types": self.problem_types, "techniques": self.techniques,

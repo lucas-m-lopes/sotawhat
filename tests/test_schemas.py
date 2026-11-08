@@ -40,3 +40,11 @@ def test_taxonomy_matches_the_sdd_and_prompt_placeholders():
     template = load("triage_v1")
     assert set(re.findall(r"\{\{(\w+)\}\}", template)) == {"DOMAINS", "PROBLEMS", "TECHNIQUES", "EVIDENCE",
                                                           "STAKEHOLDERS", "BR", "CFM", "AUDIENCE"}
+
+
+def test_portuguese_fields_reject_cjk_slips():
+    # MiniMax-M3.1-Flash slipped Chinese tokens into 13 of 60 pt-BR summaries in the 2026-11-08 bake-off
+    for field in ("summary_pt", "reason_pt", "why_it_matters_pt"):
+        with pytest.raises(ValidationError, match="Portuguese"):
+            TriageOutput(**{**VALID, field: "Aplicável a robótica (incluindo潜在的 cirúrgica)."})
+    assert TriageOutput(**{**VALID, "summary_pt": "Medicina tradicional chinesa (TCM), diagnóstico pela língua."})

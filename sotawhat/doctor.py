@@ -437,6 +437,16 @@ def check_last_weekly(store, now=None, max_age_days=8) -> Check:
     return Check("último run semanal", "warn" if ideation.get("stopped") else "ok", detail)
 
 
+def check_cjk(store) -> Check:
+    from sotawhat.pipeline.repair import cjk_rows
+
+    found = len(cjk_rows(store))
+    if found:
+        return Check("textos da triagem", "warn", f"{found} itens com caracteres chineses/japoneses/coreanos no resumo "
+                                                  "(de antes do validador): rode `sotawhat repair cjk`")
+    return Check("textos da triagem", "ok", "sem caracteres CJK")
+
+
 def check_backup(backups_dir, now=None, max_age_days=8) -> Check:
     from sotawhat.store.backup import last_backup
 
@@ -506,6 +516,7 @@ def main_doctor(ns) -> int:
         checks.append(check_last_run(store))
         checks.append(check_last_weekly(store))
         checks.append(check_backup(settings.sotawhat_data_dir / "backups"))
+        checks.append(check_cjk(store))
         checks.append(check_month_cost(store, settings.sotawhat_llm_budget_usd_month))
         min_ratings = config.rubric.classifier_min_ratings if config else 100
         checks += check_classifiers(store, settings.embeddings_model, min_ratings, list(PROFILES))

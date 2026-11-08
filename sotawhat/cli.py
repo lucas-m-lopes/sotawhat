@@ -3,7 +3,7 @@ import argparse
 import sys
 
 _SUBCOMMANDS = {"search", "run", "ideate", "doctor", "feedback", "eval", "serve", "serve-mcp", "graph", "instagram",
-                "backup", "calibrate"}
+                "backup", "calibrate", "repair"}
 
 def parse_args(argv):
     # Backward compat: `sotawhat <keyword...> [N]` with no subcommand -> search.
@@ -86,6 +86,9 @@ def parse_args(argv):
     p_extract.add_argument("--n", type=int, default=40)
     p_extract.add_argument("--force", action="store_true", help="overwrite an existing draft")
 
+    p_repair = sub.add_parser("repair", help="fix stored texts (P6)")
+    p_repair.add_argument("repair_action", choices=["cjk"], help="cjk: triage texts with Chinese/Japanese/Korean characters")
+
     p_calibrate = sub.add_parser("calibrate", help="proposals for the triage cut-offs and the idea weights (P6)")
     p_calibrate.add_argument("--apply", action="store_true", help="write the proposal to config/")
 
@@ -150,6 +153,9 @@ def main(argv=None):
     elif ns.command == "graph":
         from sotawhat.graph.commands import main_graph
         raise SystemExit(main_graph(ns))
+    elif ns.command == "repair":
+        from sotawhat.pipeline.repair import main_repair
+        raise SystemExit(main_repair(ns))
     elif ns.command == "calibrate":
         from sotawhat.evals.calibrate import main_calibrate
         raise SystemExit(main_calibrate(ns))

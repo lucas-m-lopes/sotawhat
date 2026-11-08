@@ -2,7 +2,7 @@
 import argparse
 import sys
 
-_SUBCOMMANDS = {"search", "digest", "backfill-links", "run", "doctor", "feedback"}
+_SUBCOMMANDS = {"search", "digest", "backfill-links", "run", "doctor", "feedback", "eval"}
 
 def parse_args(argv):
     # Backward compat: `sotawhat <keyword...> [N]` with no subcommand -> search.
@@ -38,6 +38,24 @@ def parse_args(argv):
 
     p_feedback = sub.add_parser("feedback")
     p_feedback.add_argument("action", choices=["pull", "listen"])
+
+    p_eval = sub.add_parser("eval")
+    eval_sub = p_eval.add_subparsers(dest="eval_command", required=True)
+    p_golden = eval_sub.add_parser("golden")
+    p_golden.add_argument("action", choices=["draft", "import"])
+    p_golden.add_argument("--n", type=int, default=60)
+    p_golden.add_argument("--vault", default=None, help="also sample notes from the old Obsidian vault")
+    p_golden.add_argument("--dir", default="tests/evals/triage")
+    p_golden.add_argument("--name", default="golden_v1")
+    p_golden.add_argument("--seed", type=int, default=13)
+    p_golden.add_argument("--force", action="store_true", help="overwrite an existing draft")
+    p_models = eval_sub.add_parser("models")
+    p_models.add_argument("--task", default="triage", choices=["triage"])
+    p_models.add_argument("--models", default=None, help="comma-separated OpenRouter ids (default: llm.yaml bakeoff)")
+    p_models.add_argument("--golden", default="tests/evals/triage/golden_v1.jsonl")
+    p_models.add_argument("--limit", type=int, default=0)
+    p_models.add_argument("--concurrency", type=int, default=4)
+    p_models.add_argument("--apply", action="store_true", help="put the winner first in config/llm.yaml")
 
     ns = parser.parse_args(argv)
     if ns.command == "search":
@@ -88,6 +106,9 @@ def main(argv=None):
     elif ns.command == "feedback":
         from sotawhat.pipeline.feedback import main_feedback
         raise SystemExit(main_feedback(ns))
+    elif ns.command == "eval":
+        from sotawhat.evals.commands import main_eval
+        raise SystemExit(main_eval(ns))
 
 if __name__ == "__main__":
     main()

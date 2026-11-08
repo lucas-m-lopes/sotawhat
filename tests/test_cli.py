@@ -49,3 +49,9 @@ def test_parse_run_no_llm_and_feedback():
     assert parse_args(["run", "daily"]).no_llm is False
     assert parse_args(["feedback", "listen"]).action == "listen"
     assert parse_args(["feedback", "pull"]).command == "feedback"
+
+def test_parse_eval_commands():
+    ns = parse_args(["eval", "golden", "draft", "--vault", "V", "--n", "40"])
+    assert (ns.eval_command, ns.action, ns.vault, ns.n, ns.dir) == ("golden", "draft", "V", 40, "tests/evals/triage")
+    ns = parse_args(["eval", "models", "--models", "a/b,c/d", "--apply"])
+    assert (ns.eval_command, ns.task, ns.models, ns.apply, ns.limit) == ("models", "triage", "a/b,c/d", True, 0)

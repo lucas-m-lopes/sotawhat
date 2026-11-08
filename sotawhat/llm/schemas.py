@@ -128,7 +128,8 @@ class IdeaDraft(_Portuguese):
     titulo: str = Field(description="até 12 palavras, pt-BR")
     problema_jtbd: str = Field(description="a dor concreta, de quem, com que frequência")
     stakeholder_dono: str
-    setor: Literal[tuple(tx.DOMAINS)]
+    setor: Literal[tuple(tx.DOMAINS)] = Field(description="domínio onde a ideia gera valor: "
+                                                      + "; ".join(f"{k} {v}" for k, v in tx.DOMAINS.items()))
     mecanismo: str = Field(description="como funciona, em 2–4 frases")
     tecnicas: list[str]
     capacidade_intermediaria: str

@@ -51,6 +51,7 @@ LENS_TEXT = {
 SCAMPER = ("substituir", "combinar", "adaptar", "modificar", "dar outro uso", "eliminar", "inverter")
 FACET_SCORE = {"nao_encontrado": 1.0, "parcial": 0.5, "igual": 0.0, "a_verificar": 0.25}
 AXES = ("valor", "viabilidade_tecnica", "viabilidade_negocio", "regulatorio", "tempo_piloto", "fit", "adocao")
+IDEATE_PROMPT = "ideate_v2"   # v2: the domain list with its labels (v1 showed only the codes, and the sector was guessed)
 
 
 class Stop(Exception):
@@ -110,7 +111,8 @@ def system_for_lens(lens, persona, rules=(), liked=(), rejected=(), rng=None) ->
               if liked else "",
               "{{REJECTED}}": ("\n## Ideas the reader rejected, with the reason (avoid what they share)\n"
                                + "".join(f"- {t} — {why}\n" for t, why in rejected)) if rejected else ""}
-    prompt = load_prompt("ideate_v1")
+    domains = "\n".join(f"- {k} {v}" for k, v in tx.DOMAINS.items())
+    prompt = load_prompt(IDEATE_PROMPT).replace("{{DOMAINS}}", domains)
     for token, value in blocks.items():
         prompt = prompt.replace(token, value)
     return prompt
@@ -293,7 +295,8 @@ def dedup_and_store(store, embedder, run_id, drafts, config, report, gateway=Non
                 reason = f"parecida com a rejeitada {hit[0]} ({hit[1][:60]})"
             elif hit := _closest(vector, earlier, config.dedup_cosine):
                 reason = f"já proposta antes: ideia {hit[0]} ({hit[1][:60]})"
-        idea_id = store.add_idea(run_id, idea.titulo, card={"draft": idea.model_dump(), "model": draft["model"]},
+        idea_id = store.add_idea(run_id, idea.titulo, card={"draft": idea.model_dump(), "model": draft["model"],
+                                                          "prompt": IDEATE_PROMPT},
                                  lens=draft["lens"], persona=draft["persona"], niche=niche_of(store, draft),
                                  candidate={k: v for k, v in draft["candidate"].items() if k != "context"}
                                  | {"context": draft["candidate"].get("context", [])[:12]},
@@ -397,7 +400,8 @@ def rubric(gateway, store, idea_id, novelty_score, config, report):
     raised = [set(s.gates) for s in scores]
     gates = sorted(set.intersection(*raised))              # every judge raised it: the idea is out
     disputed = sorted(set.union(*raised) - set(gates))     # one judge only: the reader decides
-    confidence = max(0.5, min(s.confianca for s in scores) / 10 - 0.1 * len(disputed))
+    confidences = [s.confianca for s in scores]           # the mean: one judge always at 5 pinned the minimum at 0.5
+    confidence = max(0.5, sum(confidences) / len(confidences) / 10 - 0.1 * len(disputed))
     vetoes = sum(1 for c in critique_json.get("criticas", []) if c.get("veredito") == "descartar")
     if critique_json.get("nasss_complexos", 0) >= 3:
         confidence = max(0.5, confidence - 0.1)          # NASSS gate: three or more complex domains demote
@@ -406,7 +410,7 @@ def rubric(gateway, store, idea_id, novelty_score, config, report):
         total *= 0.8
     final = 0.0 if gates else round(total, 2)
     store.update_idea(idea_id, scores={"eixos": axes, "gates": gates, "gates_em_disputa": disputed,
-                                       "confianca": round(confidence, 2), "vetos": vetoes,
+                                       "confianca": round(confidence, 2), "confiancas": confidences, "vetos": vetoes,
                                        "justificativas": [s.justificativa for s in scores]}, score=final)
     if gates:
         store.update_idea(idea_id, status="descartada", discard_reason="gate: " + ", ".join(gates))

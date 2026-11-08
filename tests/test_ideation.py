@@ -279,3 +279,17 @@ def test_github_prior_art_is_best_match_on_name_and_description():
 
     PriorArt(client=httpx.Client(transport=httpx.MockTransport(handler))).search("ambient scribe")
     assert seen["q"] == "ambient scribe in:name,description" and "sort" not in seen
+
+
+def test_prompt_v2_lists_the_domains_and_the_card_records_it(g):  # noqa: F811
+    st, ids = g
+    text = engine.system_for_lens("jtbd", "gestor de leitos", rules=["prefere UTI"])
+    assert "{{" not in text and "- A14 ciclo de receita/glosas/autorização" in text and "- prefere UTI" in text
+    assert "A03 radiologia/imagem" in IdeaDraft.model_json_schema()["properties"]["setor"]["description"]
+    run = st.start_run("weekly")
+    config = IdeationConfig(candidates=2, lenses_per_candidate=1, top_k=2, finalists=1, judges=2)
+    report = engine.run_ideation(st, FakeGateway(), HashEmbedder(), config, sample_candidates(st, config, now=NOW), run,
+                                 workers=1)
+    card = json.loads(st.get_idea(report.finalists[0])["card_json"])
+    scores = json.loads(st.get_idea(report.finalists[0])["scores_json"])
+    assert card["prompt"] == "ideate_v2" and scores["confiancas"] == [8, 8] and scores["confianca"] == 0.8

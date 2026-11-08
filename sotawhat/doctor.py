@@ -1,7 +1,9 @@
 # sotawhat/doctor.py
 """`sotawhat doctor [--llm]`: configuration, keys, models, last run and spend (SDD §6.12)."""
+import json
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 from pydantic import BaseModel
 
@@ -23,16 +25,94 @@ class Smoke(BaseModel):
     idioma: str
 
 
-def model_requirements(settings=None) -> dict:
-    """model -> set of reasoning efforts it must accept, over every task chain."""
+def model_requirements(settings=None, llm_config=None) -> dict:
+    """model -> set of reasoning efforts it must accept, over every task chain and bake-off candidate."""
+    overrides = (llm_config or {}).get("tasks")
+    chains = [(task, resolve(task, settings, overrides).models) for task in TASKS]
+    chains += [(task, tuple(models)) for task, models in ((llm_config or {}).get("bakeoff") or {}).items()]
     needs = {}
-    for task in TASKS:
-        spec = resolve(task, settings)
-        for model in spec.models:
+    for task, models in chains:
+        reasoning = resolve(task, settings, overrides).reasoning
+        for model in models:
             needs.setdefault(model, set())
-            if spec.reasoning:
-                needs[model].add(spec.reasoning)
+            if reasoning:
+                needs[model].add(reasoning)
     return needs
+
+
+def check_config(config_dir):
+    from sotawhat.configfiles import ConfigError, load_config
+
+    try:
+        config = load_config(config_dir)
+    except ConfigError as exc:
+        return Check("config/*.yaml", "fail", str(exc)), None
+    present = [n for n in ("rubric.yaml", "mute.yaml", "llm.yaml") if (Path(config_dir) / n).exists()]
+    status = "ok" if len(present) == 3 else "warn"
+    return Check("config/*.yaml", status, f"{', '.join(present) or 'nenhum arquivo'} (padrões do código no resto)"), config
+
+
+def check_embeddings(settings) -> Check:
+    if settings.embeddings_backend == "hash":
+        return Check("embeddings", "warn", "backend hash (só para testes): novidade e classificador fracos")
+    cache = settings.models_dir / "fastembed"
+    try:
+        from fastembed import TextEmbedding
+
+        hf = next(m["sources"]["hf"] for m in TextEmbedding.list_supported_models()
+                  if m["model"] == settings.embeddings_model)
+    except StopIteration:
+        return Check("embeddings", "fail", f"{settings.embeddings_model} não é suportado pelo fastembed")
+    except Exception as exc:  # noqa: BLE001
+        return Check("embeddings", "fail", f"fastembed indisponível: {exc}")
+    if (cache / f"models--{hf.replace('/', '--')}").exists():
+        return Check("embeddings", "ok", f"{settings.embeddings_model} em cache")
+    return Check("embeddings", "warn", f"{settings.embeddings_model} ainda não baixado: o próximo run baixa ~1,2 GB "
+                                       f"para {cache}")
+
+
+def check_classifiers(store, embed_model, min_ratings, profiles) -> list:
+    from sotawhat.store.classifier import NEGATIVE, POSITIVE
+
+    checks = []
+    for profile in profiles:
+        votes = sum(1 for v in store.item_votes(profile=profile).values() if v in POSITIVE | NEGATIVE)
+        row = store.latest_classifier(profile, embed_model)
+        if row is None:
+            checks.append(Check(f"classificador {profile}", "ok",
+                                f"{votes}/{min_ratings} votos; até lá o LLM vê todos os itens"))
+            continue
+        m = json.loads(row["metrics_json"] or "{}")
+        checks.append(Check(f"classificador {profile}", "ok",
+                            f"{row['version']}: {m.get('n')} votos · F1 {m.get('f1', '?')} · AUC {m.get('auc', '?')}"))
+    return checks
+
+
+def check_feedback(store, now=None) -> Check:
+    from sotawhat.pipeline.feedback import LAST_PULL_KEY, listener_active
+
+    now = now or datetime.now(timezone.utc)
+    if listener_active(store, now):
+        return Check("votos do Telegram", "ok", "`feedback listen` ativo")
+    last = store.meta_get(LAST_PULL_KEY)
+    if not last:
+        return Check("votos do Telegram", "warn", "nenhuma coleta de votos ainda")
+    age = (now - datetime.fromisoformat(last)).total_seconds() / 3600
+    if age > 20:
+        return Check("votos do Telegram", "warn", f"última coleta há {age:.0f} h; o Telegram descarta votos após "
+                                                  "24 h (rode o run diário ou `sotawhat feedback listen`)")
+    return Check("votos do Telegram", "ok", f"última coleta há {age:.0f} h")
+
+
+def check_golden(path) -> Check:
+    from sotawhat.evals.golden import load_golden
+
+    labeled = len(load_golden(path))
+    if labeled >= 50:
+        return Check("golden set", "ok", f"{labeled} itens rotulados")
+    if labeled:
+        return Check("golden set", "warn", f"{labeled} itens rotulados (meta ≥ 50 para o bake-off)")
+    return Check("golden set", "warn", "nenhum item rotulado: `sotawhat eval golden draft --vault <vault>`")
 
 
 def check_settings(settings) -> list:
@@ -155,22 +235,34 @@ def main_doctor(ns) -> int:
     from sotawhat.notify.telegram import TelegramNotifier
     from sotawhat.store.db import Store
 
+    from sotawhat.profiles import PROFILES
+
     settings = load_settings()
     checks = check_settings(settings)
+    config_check, config = check_config(settings.sotawhat_config_dir)
+    checks.append(config_check)
+    llm_config = config.llm if config else None
     client = OpenRouterClient(settings.openrouter_api_key, base_url=settings.openrouter_base_url)
     if settings.openrouter_api_key:
         checks.append(check_openrouter_key(client))
-    checks += check_models(client, model_requirements(settings))
+    checks += check_models(client, model_requirements(settings, llm_config))
+    checks.append(check_embeddings(settings))
     notifier = TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id)
     if notifier.configured:
         checks.append(check_telegram(notifier))
     with Store(settings.db_path) as store:
         checks.append(check_last_run(store))
         checks.append(check_month_cost(store, settings.sotawhat_llm_budget_usd_month))
+        min_ratings = config.rubric.classifier_min_ratings if config else 100
+        checks += check_classifiers(store, settings.embeddings_model, min_ratings, list(PROFILES))
+        if notifier.configured:
+            checks.append(check_feedback(store))
+        checks.append(check_golden("tests/evals/triage/golden_v1.jsonl"))
         if ns.llm:
             if settings.openrouter_api_key:
-                primaries = list(dict.fromkeys(resolve(t, settings).models[0] for t in TASKS))
-                checks += llm_smoke(LLMGateway(client, store=store, settings=settings), primaries)
+                overrides = llm_config["tasks"] if llm_config else None
+                primaries = list(dict.fromkeys(resolve(t, settings, overrides).models[0] for t in TASKS))
+                checks += llm_smoke(LLMGateway(client, store=store, settings=settings, tasks=overrides), primaries)
             else:
                 checks.append(Check("fumaça LLM", "fail", "sem OPENROUTER_API_KEY"))
     print(render(checks))

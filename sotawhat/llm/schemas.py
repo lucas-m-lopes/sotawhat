@@ -188,6 +188,17 @@ class Dossier(_Portuguese):
     integracao_detalhe: str
 
 
+class DraftRepeat(BaseModel):
+    n: int = Field(description="número do rascunho novo")
+    repete: str = Field(description='"" se é uma ideia nova; "N" se repete o rascunho N desta lista (N menor); '
+                                    '"#ID" se repete a ideia anterior #ID do ledger')
+
+
+class DedupJudgement(BaseModel):
+    """Which drafts of one technique × problem pair are the same idea (P4, SDD §8.3 stage 3, dedup by facets)."""
+    rascunhos: list[DraftRepeat] = Field(description="um por rascunho novo")
+
+
 class MetaReview(_Portuguese):
     regras: list[str] = Field(description="até 10 regras curtas, imperativas, em pt-BR")
 

@@ -195,6 +195,8 @@ def _rows(idea) -> list:
             ("Hipótese nula", d.get("hipotese_nula", ""))]
     if idea["axes"]:
         rows.append(("Eixos", f"{_axes(idea)} · confiança {num(idea['confidence'] or 0, 2)}"))
+    if idea.get("disputed_gates"):
+        rows.append(("Gates em disputa (só um juiz; confira)", ", ".join(idea["disputed_gates"])))
     if idea["facets"]:
         rows.append(("Novidade por faceta", _facets(idea)))
     for layer, neighbors in idea["neighbors"].items():

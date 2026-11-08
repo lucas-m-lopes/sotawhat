@@ -662,7 +662,9 @@
         meta(c.sampler ? `amostrador: ${c.sampler}` : null, c.why_now));
     }
     if (axes.length) {
-      const gates = idea.gates && idea.gates.length ? ` · gates: ${idea.gates.join(", ")}` : "";
+      const gates = (idea.gates && idea.gates.length ? ` · gates: ${idea.gates.join(", ")}` : "")
+        + (idea.disputed_gates && idea.disputed_gates.length
+          ? ` · gates em disputa (só um juiz; confira): ${idea.disputed_gates.join(", ")}` : "");
       body.append(el("h3", {}, `Rubrica · confiança ${num(idea.confidence)}${gates}`),
         el("div", { class: "axes" }, axes.flatMap(([k, v]) => [el("span", {}, AXES[k] || k),
           el("span", { class: "bar" }, el("span", { style: `width:${Math.max(0, Math.min(10, Number(v) || 0)) * 10}%` })),

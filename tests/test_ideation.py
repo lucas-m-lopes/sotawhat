@@ -2,6 +2,7 @@
 """Idea engine (SDD §8.3) with a fake gateway: candidates, lenses, dedup, critique, novelty, rubric, portfolio."""
 import json
 import random
+import re
 from datetime import datetime, timezone
 
 import pytest
@@ -10,7 +11,7 @@ from sotawhat.ideation import engine
 from sotawhat.ideation.candidates import sample_candidates
 from sotawhat.ideation.config import NEGATIVE, IdeationConfig, load_ideation
 from sotawhat.llm.gateway import BudgetExceeded, StructuredResult
-from sotawhat.llm.schemas import Dossier, IdeaCritique, IdeaDraft, IdeaScores, NoveltyJudgement
+from sotawhat.llm.schemas import DedupJudgement, Dossier, IdeaCritique, IdeaDraft, IdeaScores, NoveltyJudgement
 from sotawhat.store.vectors import HashEmbedder
 from tests.test_intelligence import NOW, g  # noqa: F401  (the synthetic graph fixture)
 
@@ -50,6 +51,15 @@ class FakeGateway:
             state = "igual" if (self.disagree and judge_no % 2 == 0) else "nao_encontrado"
             out = NoveltyJudgement.model_validate({"facetas": [{"faceta": f, "estado": state, "confianca": "media",
                                                                 "vizinho": ""} for f in FACETS]})
+        elif model_cls is DedupJudgement:      # same title = same idea; an earlier ledger idea wins
+            head, _, tail = user.partition("New drafts:")
+            earlier = re.findall(r"^#(\d+) \[[^\]]+\] (.+?) — ", head, re.M)
+            seen, verdicts = {}, []
+            for n, title in re.findall(r"^(\d+)\. (.+?) — dono:", tail, re.M):
+                repeat = next((f"#{i}" for i, t in earlier if t == title), "") or seen.get(title, "")
+                seen.setdefault(title, n)
+                verdicts.append({"n": int(n), "repete": repeat})
+            out = DedupJudgement.model_validate({"rascunhos": verdicts})
         elif model_cls is IdeaScores:
             gate = next((g for title, g in self.gates.items() if title in user), [])
             out = IdeaScores.model_validate({"valor": 8, "viabilidade_tecnica": 7, "viabilidade_negocio": 6,
@@ -194,3 +204,78 @@ def test_recent_pairs_lose_priority_and_earlier_ideas_are_not_repeated(g):  # no
                "idea": IdeaDraft.model_validate(draft("Escriba de alta no PS"))}]
     assert engine.dedup_and_store(st, HashEmbedder(), run + 1, drafts, IdeationConfig(), report) == []
     assert report.discarded[0]["reason"].startswith(f"já proposta antes: ideia {old}")
+
+
+def test_gates_need_every_judge_and_one_judge_only_disputes(g):  # noqa: F811
+    st, ids = g
+    run = st.start_run("weekly")
+    card = {"draft": draft("Painel de leitos"), "model": "deepseek/deepseek-v4.1-flash-1017"}
+    disputed = st.add_idea(run, "Painel de leitos", card=card, candidate={"technique": "t", "problem": "p"})
+    agreed = st.add_idea(run, "Auditoria de glosas", card=card | {"draft": draft("Auditoria de glosas")},
+                         candidate={"technique": "t", "problem": "p"})
+
+    class OneJudgeGates(FakeGateway):
+        def structured_call(self, task, messages, model_cls, models=None):
+            res = super().structured_call(task, messages, model_cls, models)
+            if model_cls is IdeaScores:
+                first = len([c for c in self.calls if c[2] == "IdeaScores"]) % 2 == 1
+                if "Auditoria de glosas" in messages[1]["content"] or first:
+                    res.output.gates = ["viola_cfm_anvisa"]
+            return res
+
+    config, report = IdeationConfig(judges=2), engine.IdeationReport(run_id=run)
+    gateway = OneJudgeGates()
+    assert engine.rubric(gateway, st, disputed, 8.0, config, report) > 0
+    scores = json.loads(st.get_idea(disputed)["scores_json"])
+    assert scores["gates"] == [] and scores["gates_em_disputa"] == ["viola_cfm_anvisa"] and scores["confianca"] == 0.7
+    assert engine.rubric(gateway, st, agreed, 8.0, config, report) == 0.0
+    assert st.get_idea(agreed)["status"] == "descartada" and report.discarded[-1]["reason"] == "gate: viola_cfm_anvisa"
+
+
+def test_judge_finds_repeats_of_the_ledger_and_a_failed_call_keeps_the_drafts(g):  # noqa: F811
+    from sotawhat.llm.gateway import LLMFailure
+
+    st, ids = g
+    old_run = st.start_run("weekly")
+    pair = {"technique_id": 1, "technique": "speech recognition", "problem_id": 2, "problem": "documentation burden"}
+    rejected = st.add_idea(old_run, "Escriba de alta", card={"draft": draft("Escriba de alta")}, candidate=pair,
+                           status="rejeitada")
+    finalist = st.add_idea(old_run, "Resumo de passagem de plantão", card={"draft": draft("Resumo de passagem")},
+                           candidate=pair)
+    st.update_idea(finalist, selected=True)
+    run = st.start_run("weekly")
+    drafts = [{"candidate": pair, "lens": lens, "persona": "p", "model": "x/y", "idea": IdeaDraft.model_validate(draft(t))}
+              for lens, t in (("jtbd", "Escriba de alta"), ("triz", "Resumo de passagem de plantão"),
+                              ("scamper", "Coach de documentação"), ("analogia", "Coach de documentação"))]
+    report = engine.IdeationReport(run_id=run)
+    kept = engine.dedup_and_store(st, None, run, drafts, IdeationConfig(), report, gateway=FakeGateway(), workers=1)
+    reasons = [d["reason"] for d in report.discarded]
+    assert len(kept) == 1 and reasons[0].startswith(f"parecida com a rejeitada {rejected}")
+    assert reasons[1].startswith(f"já proposta antes: ideia {finalist}") and reasons[2] == f"duplicada da ideia {kept[0]}"
+
+    class Broken(FakeGateway):
+        def structured_call(self, task, messages, model_cls, models=None):
+            if model_cls is DedupJudgement:
+                raise LLMFailure("JSON inválido")
+            return super().structured_call(task, messages, model_cls, models)
+
+    report = engine.IdeationReport(run_id=run)
+    assert len(engine.dedup_and_store(st, None, run, drafts, IdeationConfig(), report, gateway=Broken(), workers=1)) == 4
+    assert report.warnings and report.warnings[0].startswith("judge:")
+
+
+def test_github_prior_art_is_best_match_on_name_and_description():
+    import httpx
+
+    from sotawhat.ideation.prior_art import PriorArt
+
+    seen = {}
+
+    def handler(request):
+        if request.url.host == "api.github.com":
+            seen.update(request.url.params)
+            return httpx.Response(200, json={"items": []})
+        return httpx.Response(200, json={"results": [], "data": []})
+
+    PriorArt(client=httpx.Client(transport=httpx.MockTransport(handler))).search("ambient scribe")
+    assert seen["q"] == "ambient scribe in:name,description" and "sort" not in seen

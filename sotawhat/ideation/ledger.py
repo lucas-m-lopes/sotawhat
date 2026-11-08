@@ -32,7 +32,8 @@ def idea_card(row, neighbors_per_layer=3) -> dict:
             "score": row["score"] or 0.0, "discard_reason": row["discard_reason"], "draft": card.get("draft", {}),
             "sector_label": tx.label(card.get("draft", {}).get("setor", "")),
             "model": card.get("model"), "dossie": card.get("dossie"), "axes": scores.get("eixos", {}),
-            "gates": scores.get("gates", []), "confidence": scores.get("confianca"),
+            "gates": scores.get("gates", []), "disputed_gates": scores.get("gates_em_disputa", []),
+            "confidence": scores.get("confianca"),
             "justifications": scores.get("justificativas", []), "facets": novelty.get("facetas", {}),
             "novelty": novelty.get("nota"),
             "neighbors": {k: v[:neighbors_per_layer] for k, v in layers.items() if not k.startswith("_") and v},
@@ -93,7 +94,8 @@ def compact(card) -> dict:
             "why_now": d.get("why_now"), "null_hypothesis": d.get("hipotese_nula"),
             "technique": card["candidate"].get("technique"), "target_problem": card["candidate"].get("problem"),
             "novelty_facets": {k: v.get("estado") for k, v in card["facets"].items()},
-            "pilot_90d": (card["dossie"] or {}).get("piloto_90d"), "discard_reason": card["discard_reason"]}
+            "pilot_90d": (card["dossie"] or {}).get("piloto_90d"), "discard_reason": card["discard_reason"],
+            "disputed_gates": card["disputed_gates"]}
 
 
 def trends_view(store, now=None, gaps_limit=8) -> dict:

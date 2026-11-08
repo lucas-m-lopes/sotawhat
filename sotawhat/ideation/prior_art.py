@@ -67,8 +67,9 @@ class PriorArt:
         headers = {"Accept": "application/vnd.github+json"}
         if self.github_token:
             headers["Authorization"] = f"Bearer {self.github_token}"
+        # best match on name and description: sorting by stars or matching the README brings generic lists
         data = self._get(client, "https://api.github.com/search/repositories", headers=headers,
-                         params={"q": f"{query} in:name,description,readme", "sort": "stars", "per_page": self.per_layer})
+                         params={"q": f"{query} in:name,description", "per_page": self.per_layer})
         return [{"title": f"{r['full_name']} — {(r.get('description') or '')[:120]}", "year": (r.get("created_at") or "")[:4],
                  "url": r["html_url"]} for r in data.get("items", [])]
 

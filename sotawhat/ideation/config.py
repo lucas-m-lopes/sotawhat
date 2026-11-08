@@ -31,8 +31,8 @@ class IdeationConfig:
     control_share: float = 0.1            # candidates with no graph context (SDD §8.1)
     context_triples: int = 30
     recent_pair_days: int = 28            # pairs behind ideas of the last 4 weeks lose their priority
-    dedup_cosine: float = 0.80
-    rejected_cosine: float = 0.85
+    dedup_cosine: float = 0.95            # local embeddings: near-identical texts only (the judge does the rest)
+    rejected_cosine: float = 0.95
     weights: dict = field(default_factory=lambda: dict(WEIGHTS))
     generators: tuple = (DEEPSEEK_FLASH, MIMO_PRO, GLM_FLASH)
     judge_models: tuple = (DEEPSEEK_FLASH, GLM_FLASH, MIMO_PRO)

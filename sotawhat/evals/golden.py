@@ -95,9 +95,10 @@ def write_draft(entries, folder=FOLDER, name="golden_v1") -> tuple:
     jsonl.write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries), encoding="utf-8")
     lines = [f"# Golden set da triagem — {name} ({len(entries)} itens)", "",
              'Como rotular: depois de "Rótulo:", escreva uma destas palavras:',
-             "- **incluir**: vai para os principais do digest (IA/ML com aplicação médico-hospitalar plausível);",
-             "- **radar**: IA de fronteira sem ponte médica clara (vira 1 linha no radar);",
-             "- **excluir**: ruído (pesquisa clínica sem IA, IA genérica, marketing, opinião).",
+             "- **incluir**: vai para uma das seções principais do digest: IA ∩ Saúde (aplicação "
+             "médico-hospitalar plausível) ou Fronteira de IA (avanço técnico forte, mesmo sem ligação com saúde);",
+             "- **radar**: IA de nicho ou menos importante (vira 1 linha no radar);",
+             "- **excluir**: ruído (pesquisa clínica sem IA, notícia de IA sem substância, marketing, opinião).",
              "Nota opcional depois de \" — \". Ex.: `Rótulo: excluir — só epidemiologia`. "
              "Itens sem rótulo ficam fora da avaliação.",
              f"Quando terminar: `sotawhat eval golden import` (atualiza `{name}.jsonl`).", ""]

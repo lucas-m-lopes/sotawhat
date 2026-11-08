@@ -1,18 +1,30 @@
 # config/rubric.yaml — rubrica da triagem (SDD §6.7). Toda chave é opcional; faltando, vale o padrão do código.
-# total = 0,35·A + 0,35·B + 0,20·C + 0,10·D − penalidades. Vai para "principais" se total ≥ min_total e B ≥ min_b.
 # A = fronteira de IA/ML, B = aplicabilidade médico-hospitalar, C = acionabilidade (notas do LLM, 0–5);
 # D = novidade frente ao que chegou nos últimos novelty_window_days (calculada por embeddings, sem LLM).
+# O digest tem duas seções principais (decisão de 2026-11-08, a partir do golden set):
 version: 1
+
+# 1) IA ∩ Saúde: total = 0,35·A + 0,35·B + 0,20·C + 0,10·D − penalidades ≥ min_total e B ≥ min_b.
 weights: {A: 0.35, B: 0.35, C: 0.20, D: 0.10}
 min_total: 3.2
 min_b: 2
 
-# Radar de fronteira: IA forte sem ponte médica clara (A ≥ radar_min_a e B ≤ radar_max_b) → 1 linha no digest.
+# 2) Fronteira de IA: IA forte que não entrou na seção 1, mesmo sem ligação com saúde.
+#    total de fronteira = 0,60·A + 0,25·C + 0,15·D − penalidades ≥ frontier_min_total,
+#    com A ≥ frontier_min_a e substância (0–3, nota do LLM) ≥ frontier_min_substance.
+frontier_weights: {A: 0.60, C: 0.25, D: 0.15}
+frontier_min_a: 4
+frontier_min_substance: 2
+frontier_min_total: 3.6
+
+# Radar: IA sem ligação com saúde que não chegou à seção 2 (A ≥ radar_min_a e B ≤ radar_max_b) → 1 linha.
+# Itens de fronteira além de frontier_limit também descem para o radar.
 radar_min_a: 4
 radar_max_b: 1
 
-# Limites do digest diário.
-main_limit: 15
+# Limites do digest diário (o que passa de main_limit fica só nos arquivos do dia).
+main_limit: 10
+frontier_limit: 5
 radar_limit: 10
 
 # Penalidades: só o fornecedor como fonte (sem terceiro) e fontes fracas/agregadoras.

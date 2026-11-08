@@ -31,6 +31,9 @@ def main_golden(ns) -> int:
 
 
 def main_models(ns) -> int:
+    import json
+    from dataclasses import asdict
+
     from sotawhat.config import load_settings
     from sotawhat.configfiles import load_config
     from sotawhat.evals.bakeoff import (apply_winner, evaluate_model, metrics, model_costs, pick_winner, ranking,
@@ -80,6 +83,9 @@ def main_models(ns) -> int:
     folder.mkdir(parents=True, exist_ok=True)
     out = folder / f"{date.today().isoformat()}-{ns.task}-bakeoff.md"
     out.write_text(render_report(ns.task, date.today().isoformat(), results, outcomes, golden, winner), encoding="utf-8")
+    rows = [{"model": m, **asdict(o)} for m, items in outcomes.items() for o in items]
+    (folder / f"{date.today().isoformat()}-{ns.task}-outcomes.jsonl").write_text(
+        "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")   # for calibration
     print(f"[relatório] {out}\nvencedor: {winner or 'nenhum'}")
     if ns.apply and winner:
         apply_winner(settings.sotawhat_config_dir / "llm.yaml", ns.task, ranking(results, winner),

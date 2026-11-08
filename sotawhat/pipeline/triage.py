@@ -5,6 +5,8 @@ Stage A, no LLM: mute filters, same-story dedup (near-identical titles), local e
 and, once a profile has enough votes, the classifier gate. Stage B: the LLM rubric with strict JSON for
 the survivors, concurrently, within 80% of what is left of the daily budget. Items that do not fit stay
 undecided and are retried by the next runs for `backlog_days`.
+
+Decisions: main ("IA ∩ Saúde"), frontier ("Fronteira de IA"), radar, reject (+ muted, duplicate, gated, error).
 """
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -38,6 +40,7 @@ class TriageStats:
     deferred: int = 0      # left for the next run (budget cap, stop, no LLM)
     triaged: int = 0
     main: int = 0
+    frontier: int = 0
     radar: int = 0
     rejected: int = 0
     errors: int = 0
@@ -73,24 +76,30 @@ def messages_for(item, rubric, system=None) -> list:
 
 
 def decide(out, novelty, rubric, source) -> tuple:
-    """-> (decision, total). Score and thresholds from the rubric; hard exclusions first; frontier AI
-    without a medical bridge (A ≥ radar_min_a, B ≤ radar_max_b) goes to the radar."""
+    """-> (decision, total), the total being what the item is ranked by in its section.
+
+    Hard exclusions first. "main" (IA ∩ Saúde): total ≥ min_total and B ≥ min_b. "frontier" (Fronteira de
+    IA): strong frontier AI that did not make "main" (A ≥ frontier_min_a, substance ≥ frontier_min_substance,
+    frontier total ≥ frontier_min_total). "radar": A ≥ radar_min_a with B ≤ radar_max_b. Otherwise "reject".
+    AI news without substance (generic_ai_no_bridge) can reach the radar, never a main section."""
     a, b, c = out.frontier_ai, out.medical_applicability, out.actionability
-    w = rubric.weights
-    total = w["A"] * a + w["B"] * b + w["C"] * c + w["D"] * novelty
-    if out.vendor_only:
-        total -= rubric.vendor_only_penalty
+    penalty = rubric.vendor_only_penalty if out.vendor_only else 0.0
     if any(source == s or (s.endswith("*") and source.startswith(s[:-1])) for s in rubric.weak_sources):
-        total -= rubric.weak_source_penalty
-    total = round(max(total, 0.0), 2)
+        penalty += rubric.weak_source_penalty
+    w, f = rubric.weights, rubric.frontier_weights
+    total = round(max(w["A"] * a + w["B"] * b + w["C"] * c + w["D"] * novelty - penalty, 0.0), 2)
+    frontier = round(max(f["A"] * a + f["C"] * c + f["D"] * novelty - penalty, 0.0), 2)
     radar = a >= rubric.radar_min_a and b <= rubric.radar_max_b
     if out.hard_exclusion in HARD_REJECT:
         return "reject", total
     if out.hard_exclusion == "generic_ai_no_bridge":
-        return ("radar" if radar else "reject"), total
+        return ("radar", frontier) if radar else ("reject", total)
     if total >= rubric.min_total and b >= rubric.min_b:
         return "main", total
-    return ("radar" if radar else "reject"), total
+    if (a >= rubric.frontier_min_a and out.substance >= rubric.frontier_min_substance
+            and frontier >= rubric.frontier_min_total):
+        return "frontier", frontier
+    return ("radar", frontier) if radar else ("reject", total)
 
 
 def _budget_cap(store, gateway, now):
@@ -206,7 +215,7 @@ def run_triage(store, run_id, gateway, rubric, mutes, embedder=None, gates=None,
                 it.id, run_id, decision, total=total, reason=out.reason_pt, summary_pt=out.summary_pt,
                 why_it_matters_pt=out.why_it_matters_pt if decision != "reject" else "",
                 scores={"A": out.frontier_ai, "B": out.medical_applicability, "C": out.actionability,
-                        "D": novelty.get(it.id, 5)},
+                        "D": novelty.get(it.id, 5), "S": out.substance},
                 tags=out.tags(), pre_score=p, classifier_version=version, model=res.model,
                 prompt_version=PROMPT_VERSION, cost_usd=res.cost_usd)
             if out.hard_exclusion == "identifiable_patient_data":
@@ -215,6 +224,8 @@ def run_triage(store, run_id, gateway, rubric, mutes, embedder=None, gates=None,
             stats.cost_usd += res.cost_usd
             if decision == "main":
                 stats.main += 1
+            elif decision == "frontier":
+                stats.frontier += 1
             elif decision == "radar":
                 stats.radar += 1
             else:

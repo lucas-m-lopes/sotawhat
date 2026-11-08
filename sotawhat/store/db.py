@@ -76,7 +76,7 @@ _SCHEMA_V2 = """
 CREATE TABLE IF NOT EXISTS triage(
     item_id TEXT PRIMARY KEY,
     run_id INTEGER,
-    decision TEXT NOT NULL,          -- main | radar | reject | muted | duplicate | gated | error
+    decision TEXT NOT NULL,          -- main | frontier | radar | reject | muted | duplicate | gated | error
     reason TEXT,
     total REAL,
     scores_json TEXT,                -- {"A":..,"B":..,"C":..,"D":..}
@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS deliveries(
     day TEXT NOT NULL,
     item_id TEXT NOT NULL,
     key TEXT NOT NULL,               -- short id carried by the Telegram buttons
-    section TEXT NOT NULL,           -- main | radar
+    section TEXT NOT NULL,           -- main | frontier | radar
     position INTEGER NOT NULL,
     chat_id TEXT,
     message_id INTEGER,
@@ -359,7 +359,7 @@ class Store:
                 f"{updates}, attempts = triage.attempts + 1", vals)
             self.conn.commit()
 
-    def triage_rows(self, run_id, decisions=("main", "radar")):
+    def triage_rows(self, run_id, decisions=("main", "frontier", "radar")):
         decisions = list(decisions)
         return self.conn.execute(
             "SELECT t.*, i.title, i.canonical_url, i.source, i.profile, i.published_at FROM triage t"

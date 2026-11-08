@@ -4,7 +4,7 @@ at a time and without fallbacks, against your labels. Compares agreement (F1 of 
 the 3 labels), valid JSON on the first try, failures, latency and real cost; writes a report to
 data/evals/ and, with --apply, puts the winner first in config/llm.yaml."""
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -21,12 +21,14 @@ LABEL_PT = {"main": "incluir", "radar": "radar", "reject": "excluir"}
 class Outcome:
     item_id: str
     label: str
-    predicted: str | None      # None = the model failed on this item
+    predicted: str | None      # in label space (main = incluir: "IA ∩ Saúde" or "Fronteira de IA"); None = failed
     first_try_valid: bool
     latency_ms: int
     summary: str = ""
     why: str = ""
     error: str | None = None
+    decision: str | None = None                      # the triage decision itself: main | frontier | radar | reject
+    scores: dict = field(default_factory=dict)       # A, B, C, S (substance), X (hard exclusion): for calibration
 
 
 def evaluate_model(gateway, golden, rubric, model, concurrency=4) -> list:
@@ -38,9 +40,13 @@ def evaluate_model(gateway, golden, rubric, model, concurrency=4) -> list:
             res = gateway.structured_call("triage", messages_for(item, rubric, system), TriageOutput, models=(model,))
         except LLMFailure as exc:
             return Outcome(entry["id"], entry["label"], None, False, 0, error=str(exc)[:200])
-        decision, _ = decide(res.output, 5, rubric, item.source)   # golden items are judged as new (D = 5)
-        return Outcome(entry["id"], entry["label"], decision, res.first_try_valid, res.latency_ms,
-                       res.output.summary_pt, res.output.why_it_matters_pt)
+        out = res.output
+        decision, _ = decide(out, 5, rubric, item.source)   # golden items are judged as new (D = 5)
+        scores = {"A": out.frontier_ai, "B": out.medical_applicability, "C": out.actionability,
+                  "S": out.substance, "X": out.hard_exclusion}
+        return Outcome(entry["id"], entry["label"], "main" if decision == "frontier" else decision,
+                       res.first_try_valid, res.latency_ms, out.summary_pt, out.why_it_matters_pt,
+                       decision=decision, scores=scores)
 
     with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
         return list(pool.map(one, golden))
@@ -125,7 +131,8 @@ def render_report(task, day, results, outcomes, golden, winner) -> str:
         for m, items in outcomes.items():
             o = next((x for x in items if x.item_id == g["id"]), None)
             if o and o.predicted:
-                out += [f"- **{m}** ({LABEL_PT[o.predicted]}): {o.summary} — *{o.why}*"]
+                where = LABEL_PT[o.predicted] + (" · fronteira" if o.decision == "frontier" else "")
+                out += [f"- **{m}** ({where}): {o.summary} — *{o.why}*"]
         out.append("")
     return "\n".join(out)
 

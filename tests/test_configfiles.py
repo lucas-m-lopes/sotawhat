@@ -24,7 +24,7 @@ def test_missing_files_mean_defaults(tmp_path):
 
 def test_repository_config_files_are_valid():
     config = load_config(REPO_CONFIG)
-    assert config.rubric.main_limit == 15 and config.rubric.novelty_thresholds == (0.70, 0.76, 0.82, 0.88, 0.94)
+    assert (config.rubric.main_limit, config.rubric.frontier_limit) == (10, 5) and config.rubric.novelty_thresholds == (0.70, 0.76, 0.82, 0.88, 0.94)
     assert config.llm["tasks"]["triage"]["reasoning"] == "low"
     assert len(config.llm["bakeoff"]["triage"]) == 4
 
@@ -79,3 +79,15 @@ def test_settings_paths_and_allowed_user(tmp_path):
     assert s.models_dir == tmp_path / "models" and s.allowed_user_id == "42"
     assert s.embeddings_backend == "fastembed" and s.embeddings_model == "google/embeddinggemma-300m"
     assert Settings(_env_file=None, telegram_chat_id="42", telegram_allowed_user_id="7").allowed_user_id == "7"
+
+
+def test_rubric_frontier_section_settings(tmp_path):
+    from sotawhat.configfiles import Rubric
+    default = Rubric()
+    assert default.frontier_weights == {"A": 0.6, "C": 0.25, "D": 0.15} and default.frontier_min_total == 3.6
+    assert (default.main_limit, default.frontier_limit, default.radar_limit) == (10, 5, 10)
+    ok = load_rubric(_write(tmp_path, "r.yaml", "frontier_weights: {A: 0.5, C: 0.3, D: 0.2}\nfrontier_limit: 3\n"))
+    assert ok.frontier_weights == {"A": 0.5, "C": 0.3, "D": 0.2} and ok.frontier_limit == 3
+    for bad in ("frontier_weights: {A: 0.6, B: 0.4}\n", "frontier_weights: {A: 0.5, C: 0.3}\n"):
+        with pytest.raises(ConfigError, match="frontier_weights"):
+            load_rubric(_write(tmp_path, "r.yaml", bad))

@@ -33,14 +33,21 @@ def read_yaml(path) -> dict:
 
 @dataclass(frozen=True)
 class Rubric:
-    """SDD §6.7. total = wA·A + wB·B + wC·C + wD·D − penalties; main if total ≥ min_total and B ≥ min_b."""
+    """SDD §6.7. "IA ∩ Saúde" (main): total = wA·A + wB·B + wC·C + wD·D − penalties ≥ min_total and
+    B ≥ min_b. "Fronteira de IA" (frontier): A ≥ frontier_min_a, substance ≥ frontier_min_substance and
+    frontier total = fA·A + fC·C + fD·D − penalties ≥ frontier_min_total. Radar: A ≥ radar_min_a, B ≤ radar_max_b."""
     version: int = 1
     weights: dict = field(default_factory=lambda: {"A": 0.35, "B": 0.35, "C": 0.20, "D": 0.10})
     min_total: float = 3.2
     min_b: int = 2
+    frontier_weights: dict = field(default_factory=lambda: {"A": 0.6, "C": 0.25, "D": 0.15})
+    frontier_min_a: int = 4
+    frontier_min_substance: int = 2
+    frontier_min_total: float = 3.6
     radar_min_a: int = 4
     radar_max_b: int = 1
-    main_limit: int = 15
+    main_limit: int = 10
+    frontier_limit: int = 5
     radar_limit: int = 10
     vendor_only_penalty: float = 0.5
     weak_source_penalty: float = 0.5
@@ -66,10 +73,14 @@ def load_rubric(path) -> Rubric:
     weights.update(values.pop("weights", None) or {})
     if set(weights) != {"A", "B", "C", "D"} or abs(sum(weights.values()) - 1.0) > 1e-6:
         raise ConfigError(f"rubric.yaml: weights precisa de A, B, C e D somando 1 (recebido {weights})")
+    frontier = dict(Rubric().frontier_weights)
+    frontier.update(values.pop("frontier_weights", None) or {})
+    if set(frontier) != {"A", "C", "D"} or abs(sum(frontier.values()) - 1.0) > 1e-6:
+        raise ConfigError(f"rubric.yaml: frontier_weights precisa de A, C e D somando 1 (recebido {frontier})")
     thresholds = values.get("novelty_thresholds", Rubric().novelty_thresholds)
     if len(thresholds) != 5 or list(thresholds) != sorted(thresholds):
         raise ConfigError("rubric.yaml: novelty_thresholds precisa de 5 limiares crescentes")
-    return replace(Rubric(), weights=weights, **values)
+    return replace(Rubric(), weights=weights, frontier_weights=frontier, **values)
 
 
 @dataclass(frozen=True)

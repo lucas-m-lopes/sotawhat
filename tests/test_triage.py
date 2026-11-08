@@ -66,19 +66,36 @@ def _store(tmp_path, items):
 
 def test_decide_follows_the_rubric():
     assert decide(out(frontier_ai=4, medical_applicability=5, actionability=3), 4, RUBRIC, "pubmed") == ("main", 4.15)
-    assert decide(out(frontier_ai=5, medical_applicability=1, actionability=4), 5, RUBRIC, "arxiv")[0] == "radar"
     assert decide(out(frontier_ai=5, medical_applicability=0, hard_exclusion="generic_ai_no_bridge"), 5,
                   RUBRIC, "rss:x")[0] == "radar"
     assert decide(out(frontier_ai=3, medical_applicability=0, hard_exclusion="generic_ai_no_bridge"), 5,
                   RUBRIC, "rss:x")[0] == "reject"
     assert decide(out(frontier_ai=0, medical_applicability=5, hard_exclusion="clinical_without_ai"), 5,
                   RUBRIC, "pubmed")[0] == "reject"
-    assert decide(out(frontier_ai=4, medical_applicability=1, actionability=5), 5, RUBRIC, "arxiv")[0] == "radar"
     # B below min_b never reaches "main", whatever the total
     assert decide(out(frontier_ai=5, medical_applicability=1, actionability=5), 5,
-                  Rubric(radar_min_a=6), "x") == ("reject", 3.6)
+                  Rubric(radar_min_a=6, frontier_min_a=6), "x") == ("reject", 3.6)
     weak = Rubric(weak_sources=("rss:*",))
     assert decide(out(vendor_only=True), 5, weak, "rss:vendor")[1] == round(3 * 0.9 + 0.5 - 1.0, 2)
+
+
+def test_decide_sends_strong_frontier_ai_to_its_own_section():
+    # frontier total = 0.6·A + 0.25·C + 0.15·D − penalties; needs A ≥ 4, substance ≥ 2 and total ≥ 3.6
+    assert decide(out(frontier_ai=5, medical_applicability=1, actionability=4), 5, RUBRIC, "arxiv") == ("frontier", 4.75)
+    assert decide(out(frontier_ai=4, medical_applicability=0, actionability=2), 5, RUBRIC, "hf_papers") == (
+        "frontier", 3.65)
+    # too little substance or a weak frontier total: the radar (no health link) or nothing (weak health link)
+    assert decide(out(frontier_ai=5, medical_applicability=0, actionability=4, substance=1), 5, RUBRIC, "x")[0] == "radar"
+    assert decide(out(frontier_ai=4, medical_applicability=0, actionability=0), 2, RUBRIC, "x") == ("radar", 2.7)
+    assert decide(out(frontier_ai=4, medical_applicability=2, actionability=0), 0, RUBRIC, "x")[0] == "reject"
+    # health first: an item that qualifies for both sections goes to "IA ∩ Saúde"
+    assert decide(out(frontier_ai=5, medical_applicability=3, actionability=4), 5, RUBRIC, "x")[0] == "main"
+    # AI news without substance (generic_ai_no_bridge) never reaches the frontier section
+    assert decide(out(frontier_ai=5, medical_applicability=0, actionability=5, hard_exclusion="generic_ai_no_bridge"),
+                  5, RUBRIC, "x")[0] == "radar"
+    # penalties apply to the frontier total too
+    assert decide(out(frontier_ai=4, medical_applicability=0, actionability=2, vendor_only=True), 5, RUBRIC, "x") == (
+        "radar", 3.15)
 
 
 def test_prompt_is_fully_rendered_and_item_message_is_bounded():
@@ -104,7 +121,7 @@ def test_run_triage_end_to_end(tmp_path):
     gw = FakeGateway(answers)
     stats = run_triage(st, run, gw, RUBRIC, Mutes(title_terms=("webinar",)), HashEmbedder(64), now=NOW)
     assert (stats.candidates, stats.muted, stats.duplicates, stats.triaged) == (6, 1, 1, 4)
-    assert (stats.main, stats.radar, stats.rejected, stats.errors) == (1, 1, 2, 0)
+    assert (stats.main, stats.frontier, stats.radar, stats.rejected, stats.errors) == (1, 1, 0, 2, 0)
     assert abs(stats.cost_usd - 0.002) < 1e-9
     rows = {r["item_id"]: r for r in st.conn.execute("SELECT * FROM triage")}
     assert rows["pmid:5"]["decision"] == "muted" and "webinar" in rows["pmid:5"]["reason"]
@@ -112,6 +129,7 @@ def test_run_triage_end_to_end(tmp_path):
     main = rows["pmid:1"]
     assert main["decision"] == "main" and main["prompt_version"] == "triage_v1" and main["model"].startswith("deepseek")
     assert main["why_it_matters_pt"] == "Importa para o hospital." and '"A03"' in main["tags_json"]
+    assert rows["pmid:3"]["decision"] == "frontier" and '"S": 2' in rows["pmid:3"]["scores_json"]
     assert rows["pmid:4"]["why_it_matters_pt"] == ""            # excluded items carry no "why it matters"
     assert st.get_items(["pmid:6"])[0]["text"] is None            # patient data is not kept
     assert len(gw.calls) == 4 and st.embedded_ids("hash-64", ["pmid:1", "pmid:3"]) == {"pmid:1", "pmid:3"}

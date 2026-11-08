@@ -1,6 +1,7 @@
 # sotawhat/pipeline/deliver.py
-"""Daily digest (SDD §6.11): ranked selection, Markdown + HTML files (always) and Telegram messages
-with 👍/👎/🧪 buttons. When nothing was approved and nothing broke, nothing is sent."""
+"""Daily digest (SDD §6.11): two ranked sections ("IA ∩ Saúde" and "Fronteira de IA") plus a one-line
+radar, as Markdown + HTML files (always) and Telegram messages with 👍/👎/🧪 buttons. When nothing was
+approved and nothing broke, nothing is sent."""
 import hashlib
 import json
 import time
@@ -57,6 +58,7 @@ class Digest:
     failing: list                                # [(source key, consecutive failures, error)]
     error: str | None = None
     notes: list = field(default_factory=list)
+    frontier: list = field(default_factory=list)  # "Fronteira de IA": strong frontier AI, even without a health link
 
     @property
     def alerts(self) -> list:
@@ -64,7 +66,7 @@ class Digest:
 
     @property
     def worth_sending(self) -> bool:
-        return bool(self.main or self.radar or self.alerts or self.error)
+        return bool(self.main or self.frontier or self.radar or self.alerts or self.error)
 
 
 def _entry(store, row) -> Entry:
@@ -79,17 +81,22 @@ def build_digest(store, report, rubric) -> Digest:
     entries = [_entry(store, row) for row in store.triage_rows(report.run_id)]
     main = sorted((e for e in entries if e.section == "main"),
                   key=lambda e: (-e.total, -e.scores.get("B", 0), e.title))
-    radar = sorted((e for e in entries if e.section == "radar"),
-                   key=lambda e: (-e.scores.get("A", 0), -e.total, e.title))
-    extra, main, radar = main[rubric.main_limit:], main[:rubric.main_limit], radar[:rubric.radar_limit]
-    for position, e in enumerate(main, 1):
+    frontier = sorted((e for e in entries if e.section == "frontier"),
+                      key=lambda e: (-e.total, -e.scores.get("A", 0), e.title))
+    extra, main = main[rubric.main_limit:], main[:rubric.main_limit]
+    overflow, frontier = frontier[rubric.frontier_limit:], frontier[:rubric.frontier_limit]
+    for e in overflow:                      # frontier items beyond the limit become the first radar lines
+        e.section = "radar"
+    radar = sorted(overflow + [e for e in entries if e.section == "radar" and e not in overflow],
+                   key=lambda e: (-e.total, -e.scores.get("A", 0), e.title))[:rubric.radar_limit]
+    for position, e in enumerate(main + frontier, 1):   # one numbering across both main sections
         e.position = position
     for position, e in enumerate(radar, 1):
         e.position = position
     t = report.triage
     triaged = t.triaged if t else 0
     stats_line = (f"coletados {sum(report.collected.values())} · novos {len(report.new_items)} · "
-                  f"triados {triaged} · principais {len(main)} · radar {len(radar)} · "
+                  f"triados {triaged} · saúde {len(main)} · fronteira {len(frontier)} · radar {len(radar)} · "
                   f"custo US$ {num(report.cost_usd)}")
     notes = []
     if t is None or not t.llm:
@@ -105,7 +112,7 @@ def build_digest(store, report, rubric) -> Digest:
         notes.append(f"+{len(extra)} aprovados além do limite diário (só no arquivo do dia)")
     failing = [(key, count, err) for key, (count, err) in sorted(report.failing.items())]
     return Digest(day=report.day, stats_line=stats_line, main=main, radar=radar, extra=extra,
-                  failing=failing, error=report.error, notes=notes)
+                  failing=failing, error=report.error, notes=notes, frontier=frontier)
 
 
 def _tag_labels(e, limit=3) -> list:
@@ -130,14 +137,16 @@ def render_markdown(d) -> str:
     out += [f"> {n}" for n in d.notes] + ([""] if d.notes else [])
     if d.error:
         out += [f"> ❌ erro no run: {d.error}", ""]
-    if d.main:
-        out += ["## Principais", ""]
-        for e in d.main:
+    for title, entries in (("IA ∩ Saúde", d.main), ("Fronteira de IA", d.frontier)):
+        if not entries:
+            continue
+        out += [f"## {title}", ""]
+        for e in entries:
             out += [f"### {e.position}. [{e.title}]({e.url})",
                     f"**{num(e.total)}** · {_scores(e)} · {_sources(e)} · {' · '.join(_tag_labels(e))}", "",
                     e.summary, "", f"**Por que importa:** {e.why}", "", f"`{e.item_id}`", ""]
     if d.radar:
-        out += ["## Radar de fronteira", ""]
+        out += ["## Radar", ""]
         out += [f"{e.position}. [{e.title}]({e.url}) — {_sources(e)} · {_scores(e)}" for e in d.radar] + [""]
     if d.extra:
         out += ["## Também aprovados (além do limite diário)", ""]
@@ -146,7 +155,7 @@ def render_markdown(d) -> str:
         out += ["## Fontes com falha", ""]
         out += [f"- {key}: {err[:160]}" + (f" — **{count}ª falha seguida**" if count >= ALERT_AFTER else "")
                 for key, count, err in d.failing] + [""]
-    if not (d.main or d.radar):
+    if not (d.main or d.frontier or d.radar):
         out += ["Nada relevante hoje.", ""]
     return "\n".join(out)
 
@@ -167,14 +176,16 @@ def render_html(d) -> str:
     body += [f'<p class="muted">{esc(n)}</p>' for n in d.notes]
     if d.error:
         body.append(f"<p>❌ erro no run: {esc(d.error)}</p>")
-    if d.main:
-        body.append("<h2>Principais</h2>")
-        for e in d.main:
+    for title, entries in (("IA ∩ Saúde", d.main), ("Fronteira de IA", d.frontier)):
+        if not entries:
+            continue
+        body.append(f"<h2>{title}</h2>")
+        for e in entries:
             body.append(f'<article><h3>{e.position}. {a(e)}</h3><p class="meta"><b>{num(e.total)}</b> · '
                         f"{esc(_scores(e))} · {esc(_sources(e))} · {esc(' · '.join(_tag_labels(e)))}</p>"
                         f"<p>{esc(e.summary)}</p><p><b>Por que importa:</b> {esc(e.why)}</p></article>")
     if d.radar:
-        body.append("<h2>Radar de fronteira</h2><ol>" + "".join(
+        body.append("<h2>Radar</h2><ol>" + "".join(
             f"<li>{a(e)} <span class=\"meta\">— {esc(_sources(e))} · {esc(_scores(e))}</span></li>" for e in d.radar)
             + "</ol>")
     if d.extra:
@@ -184,7 +195,7 @@ def render_html(d) -> str:
         body.append("<h2>Fontes com falha</h2><ul>" + "".join(
             f"<li>{esc(k)}: {esc(err[:160])}" + (f" — <b>{c}ª falha seguida</b>" if c >= ALERT_AFTER else "") + "</li>"
             for k, c, err in d.failing) + "</ul>")
-    if not (d.main or d.radar):
+    if not (d.main or d.frontier or d.radar):
         body.append("<p>Nada relevante hoje.</p>")
     return (f'<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width, initial-scale=1"><title>sotawhat {esc(d.day)}</title>'
@@ -232,14 +243,15 @@ def telegram_messages(d) -> list:
     if others:
         header.append(f"⚠️ falha hoje: {esc(', '.join(others))}")
     messages = [{"text": "\n".join(header), "rows": [], "silent": False}]
-    for e in d.main:
-        text = (f'<b>{e.position}.</b> <a href="{esc_attr(e.url)}">{esc(_clip(e.title, 300))}</a>\n'
-                f"⭐ <b>{num(e.total)}</b> · {_scores(e)} · {esc(_sources(e))}\n"
-                f"🏷️ {esc(' · '.join(_tag_labels(e)))}\n{esc(_clip(e.summary, 700))}\n"
-                f"💡 <i>{esc(_clip(e.why, 450))}</i>")
-        messages.append({"text": text[:LIMIT], "rows": [e.row()], "silent": True})
+    for prefix, entries in (("", d.main), ("🔭 ", d.frontier)):
+        for e in entries:
+            text = (f'{prefix}<b>{e.position}.</b> <a href="{esc_attr(e.url)}">{esc(_clip(e.title, 300))}</a>\n'
+                    f"⭐ <b>{num(e.total)}</b> · {_scores(e)} · {esc(_sources(e))}\n"
+                    f"🏷️ {esc(' · '.join(_tag_labels(e)))}\n{esc(_clip(e.summary, 700))}\n"
+                    f"💡 <i>{esc(_clip(e.why, 450))}</i>")
+            messages.append({"text": text[:LIMIT], "rows": [e.row()], "silent": True})
     if d.radar:
-        lines = ["📡 <b>Radar de fronteira</b> (IA forte, sem ponte médica clara)"]
+        lines = ["📡 <b>Radar</b> (mais IA, uma linha cada)"]
         lines += [f'{e.position}. <a href="{esc_attr(e.url)}">{esc(_clip(e.title, 200))}</a> — {esc(_sources(e))} '
                   f"· A{e.scores.get('A', '?')}" for e in d.radar]
         messages.append({"text": "\n".join(lines)[:LIMIT], "rows": [e.row() for e in d.radar], "silent": True})
@@ -247,8 +259,8 @@ def telegram_messages(d) -> list:
 
 
 def send_digest(notifier, store, d, run_id, pause=0.4, sleep=time.sleep) -> int:
-    """Send the header, one message per main item and the radar; record every delivery so the
-    buttons can be traced back to their items."""
+    """Send the header, one message per item of both main sections (🔭 marks "Fronteira de IA") and the
+    radar; record every delivery so the buttons can be traced back to their items."""
     sent = 0
     for message in telegram_messages(d):
         ids = [store.record_delivery(run_id, d.day, r["item_id"], r["key"], r["section"], r["position"])

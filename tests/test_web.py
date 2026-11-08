@@ -73,6 +73,26 @@ def test_host_check_page_and_static_files(client):
     assert c.get("/static/app.js").text == "console.log('ok')"
 
 
+def test_packaged_page_loads_only_local_files():
+    import hashlib
+    import re
+
+    from sotawhat.web.app import STATIC
+
+    page = (STATIC / "index.html").read_text(encoding="utf-8")
+    scripts = re.findall(r'<script src="([^"]+)"', page)
+    assert scripts == ["/static/vendor/graphology.umd.min.js", "/static/vendor/graphology-library.min.js",
+                       "/static/vendor/sigma.min.js", "/static/app.js"]
+    assert '<link rel="stylesheet" href="/static/style.css">' in page
+    assert not re.search(r'(src|href)="(https?:)?//', page)                 # no CDN, nothing external
+    licenses = (STATIC / "vendor" / "LICENSES.md").read_text(encoding="utf-8")
+    for name in ("sigma.min.js", "graphology.umd.min.js", "graphology-library.min.js"):
+        digest = hashlib.sha256((STATIC / "vendor" / name).read_bytes()).hexdigest()
+        assert digest in licenses, name
+    app_js = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert "fetch(" in app_js and "innerHTML" not in app_js                 # data goes in with textContent
+
+
 def test_cli_serve():
     ns = parse_args(["serve"])
     assert (ns.command, ns.port, ns.no_browser) == ("serve", None, False)

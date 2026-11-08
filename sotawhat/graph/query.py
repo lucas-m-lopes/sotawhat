@@ -196,7 +196,7 @@ def entity_detail(store, entity_id, items_limit=40) -> dict | None:
                           "label": RELATION_LABELS.get(r["predicate"], r["predicate"]), "items": r["n"],
                           "other": {"id": f"e{other['id']}", "entity_id": other["id"], "name": other["name"],
                                     "type": other["type"]}})
-    claims = []
+    claims, seen_claims = [], set()
     for item in items:
         if item["role"] != "main":
             continue
@@ -204,7 +204,9 @@ def entity_detail(store, entity_id, items_limit=40) -> dict | None:
         if extraction is None or extraction["status"] != "ok" or not extraction["payload_json"]:
             continue
         for claim in json.loads(extraction["payload_json"]).get("claims", []):
-            claims.append({**claim, "item_id": item["id"]})
+            if claim.get("text_pt") not in seen_claims:
+                seen_claims.add(claim.get("text_pt"))
+                claims.append({**claim, "item_id": item["id"]})
     return {"id": f"e{row['id']}", "entity_id": row["id"], "name": row["name"], "type": row["type"],
             "type_label": TYPE_LABELS.get(row["type"], row["type"]), "category": row["category"],
             "category_label": _category_label(row["category"]), "mention_count": row["mention_count"],

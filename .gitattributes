@@ -1,0 +1,2 @@
+# Vendored, minified JavaScript is checked by SHA-256 (tests/test_web.py): never convert its line endings.
+sotawhat/web/static/vendor/*.js -text

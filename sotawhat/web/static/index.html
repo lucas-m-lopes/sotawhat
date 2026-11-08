@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>sotawhat · grafo</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="mark" aria-hidden="true"></span>sotawhat <span class="muted">· grafo</span></div>
+  <div class="search">
+    <input id="search" type="search" placeholder="Buscar entidade ou item…" autocomplete="off" aria-label="Buscar entidade ou item" aria-controls="results">
+    <div id="results" class="results" role="listbox" hidden></div>
+  </div>
+  <div id="stats" class="stats muted"></div>
+</header>
+<main class="layout">
+  <aside id="filters" class="filters" aria-label="Filtros">
+    <section>
+      <h2>Período</h2>
+      <div id="days" class="segmented" role="radiogroup" aria-label="Período"></div>
+    </section>
+    <section>
+      <h2>Tipos</h2>
+      <div id="types" class="types"></div>
+      <label class="check"><input id="categories" type="checkbox"> mostrar categorias da triagem</label>
+    </section>
+    <section>
+      <h2>Densidade</h2>
+      <label class="range">menções ≥ <output id="min-out">1</output>
+        <input id="min" type="range" min="1" max="10" value="1"></label>
+      <label class="range">nós ≤ <output id="limit-out">250</output>
+        <input id="limit" type="range" min="50" max="1000" step="50" value="250"></label>
+    </section>
+    <section>
+      <h2>Cores</h2>
+      <div id="color-by" class="segmented" role="radiogroup" aria-label="Colorir por"></div>
+    </section>
+    <p class="hint muted">Passe o mouse para ver as conexões, clique para abrir a entidade e dê duplo clique para focar na vizinhança.</p>
+  </aside>
+  <section class="stage" aria-label="Grafo">
+    <div id="graph" class="graph"></div>
+    <div id="overlay" class="overlay" hidden></div>
+    <div class="stage-bar">
+      <button id="unfocus" class="chip" type="button" hidden>← grafo completo</button>
+      <span id="status" class="muted"></span>
+    </div>
+  </section>
+  <aside id="panel" class="panel" aria-live="polite">
+    <div class="empty">
+      <h2>Comece pelo grafo</h2>
+      <p class="muted">Cada nó é uma entidade (técnica, modelo, dataset, organização, produto, problema ou regulação) extraída dos itens que a triagem aprovou. As arestas ligam entidades citadas no mesmo item; as coloridas são relações explícitas, como "desenvolvido por" ou "aborda".</p>
+    </div>
+  </aside>
+</main>
+<script src="/static/vendor/graphology.umd.min.js"></script>
+<script src="/static/vendor/graphology-library.min.js"></script>
+<script src="/static/vendor/sigma.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

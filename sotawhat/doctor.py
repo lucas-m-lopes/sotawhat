@@ -1,6 +1,7 @@
 # sotawhat/doctor.py
 """`sotawhat doctor [--llm]`: configuration, keys, models, last run and spend (SDD §6.12)."""
 import json
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -121,9 +122,13 @@ def check_settings(settings) -> list:
     private = settings.openrouter_zdr and settings.openrouter_data_collection == "deny"
     checks.append(Check("privacidade LLM", "ok" if private else "warn",
                         f"zdr={settings.openrouter_zdr} data_collection={settings.openrouter_data_collection}"))
-    telegram = bool(settings.telegram_bot_token and settings.telegram_chat_id)
-    checks.append(Check("Telegram", "ok" if telegram else "warn",
-                        "configurado" if telegram else "TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID ausentes"))
+    if not (settings.telegram_bot_token and settings.telegram_chat_id):
+        checks.append(Check("Telegram", "warn", "TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID ausentes"))
+    elif not re.fullmatch(r"-?\d+", settings.telegram_chat_id.strip()):
+        checks.append(Check("Telegram", "fail", "TELEGRAM_CHAT_ID precisa ser o número do chat, não um nome: "
+                                                "mande /start ao bot e veja o número sugerido abaixo"))
+    else:
+        checks.append(Check("Telegram", "ok", "configurado"))
     return checks
 
 
@@ -181,12 +186,53 @@ def check_models(client, requirements, today=None) -> list:
     return checks
 
 
+def _private_chats(notifier) -> list:
+    """Private chats that wrote to the bot in the last 24 h, as 'id (name)'. No offset: nothing is consumed."""
+    try:
+        updates = notifier.get_updates(timeout=0)
+    except Exception:  # noqa: BLE001 - e.g. the vote listener holds getUpdates (409)
+        return []
+    found = {}
+    for update in updates:
+        chat = (update.get("message") or {}).get("chat") or {}
+        if chat.get("type") == "private":
+            found[chat["id"]] = f"{chat['id']} ({chat.get('first_name', '?')})"
+    return list(found.values())
+
+
 def check_telegram(notifier) -> Check:
     try:
         me = notifier.get_me()
     except Exception as exc:  # noqa: BLE001
         return Check("bot do Telegram", "fail", str(exc))
-    return Check("bot do Telegram", "ok", f"@{me.get('username', '?')}")
+    bot = f"@{me.get('username', '?')}"
+    try:
+        chat = notifier.get_chat()
+    except Exception as exc:  # noqa: BLE001
+        found = _private_chats(notifier)
+        hint = (f"use TELEGRAM_CHAT_ID={found[0]}" if found else
+                "abra o bot no Telegram, toque em Iniciar e rode `sotawhat doctor` de novo")
+        return Check("bot do Telegram", "fail", f"{bot}: o chat {notifier.chat_id} não responde ({exc}); {hint}")
+    name = f" ({chat['first_name']})" if chat.get("first_name") else ""
+    return Check("bot do Telegram", "ok", f"{bot} → chat {chat.get('type', '?')}{name}")
+
+
+def check_email(settings, factory=None) -> Check:
+    """Optional e-mail copy: off without DIGEST_EMAIL_TO; otherwise a real SMTP login that sends nothing."""
+    from sotawhat.notify.email import EmailError, EmailNotifier
+    name = "e-mail do digest"
+    if not settings.digest_email_to:
+        return Check(name, "ok", "desligado (DIGEST_EMAIL_TO vazio)")
+    if not (settings.smtp_login and settings.smtp_secret):
+        return Check(name, "fail", "DIGEST_EMAIL_TO definido, mas faltam GMAIL_ADDRESS e GMAIL_APP_PASSWORD "
+                                   "(ou SMTP_USER e SMTP_PASSWORD)")
+    mailer = (factory or EmailNotifier)(settings.smtp_host, settings.smtp_port, settings.smtp_login,
+                                        settings.smtp_secret)
+    try:
+        mailer.check_login()
+    except EmailError as exc:
+        return Check(name, "fail", str(exc))
+    return Check(name, "ok", f"login SMTP ok em {settings.smtp_host}:{settings.smtp_port} → {settings.digest_email_to}")
 
 
 def check_last_run(store, now=None, max_age_hours=36) -> Check:
@@ -250,6 +296,7 @@ def main_doctor(ns) -> int:
     notifier = TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id)
     if notifier.configured:
         checks.append(check_telegram(notifier))
+    checks.append(check_email(settings))
     with Store(settings.db_path) as store:
         checks.append(check_last_run(store))
         checks.append(check_month_cost(store, settings.sotawhat_llm_budget_usd_month))

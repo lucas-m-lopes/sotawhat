@@ -106,3 +106,6 @@ class TelegramNotifier:
 
     def get_me(self) -> dict:
         return self._call("getMe") or {}
+
+    def get_chat(self) -> dict:
+        return self._call("getChat", {"chat_id": self.chat_id}) or {}

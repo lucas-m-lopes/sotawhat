@@ -616,6 +616,12 @@ class Store:
             self.conn.commit()
             return cur.rowcount == 1
 
+    def entity_context(self, entity_id) -> str:
+        """Title of the latest item that mentions the entity (context for the resolution judge)."""
+        row = self.conn.execute("SELECT i.title FROM entity_mentions m JOIN items i ON i.id = m.item_id"
+                                " WHERE m.entity_id = ? ORDER BY i.fetched_at DESC LIMIT 1", (entity_id,)).fetchone()
+        return row[0] if row else ""
+
     def entity_by_alias(self, grp, alias_norm):
         return self.conn.execute("SELECT e.* FROM entity_aliases a JOIN entities e ON e.id = a.entity_id"
                                  " WHERE a.grp = ? AND a.alias_norm = ?", (grp, alias_norm)).fetchone()

@@ -1,0 +1,55 @@
+# config/aliases.yaml — aliases iniciais da resolução de entidades (SDD §6.8).
+#
+# Formato: tipo → nome canônico → outros nomes que levam a ele. Tipos: technique, model, dataset,
+# organization, product, problem, regulation (model e product são procurados juntos).
+# A comparação ignora maiúsculas, acentos, pontuação e o plural de técnicas e problemas.
+# A resolução também aprende sozinha: acrônimos entre parênteses ("retrieval-augmented generation (RAG)")
+# e as fusões aprovadas pelo juiz ficam no SQLite (tabelas entity_aliases e entity_merges).
+# Para técnicas, o nome canônico é por extenso; para órgãos e normas conhecidos, a sigla.
+
+technique:
+  large language model: [LLM, large language models]
+  vision-language model: [VLM, vision language model]
+  multimodal large language model: [MLLM, multimodal LLM]
+  small language model: [SLM]
+  retrieval-augmented generation: [RAG, retrieval augmented generation]
+  natural language processing: [NLP]
+  reinforcement learning from human feedback: [RLHF]
+  reinforcement learning: [RL]
+  convolutional neural network: [CNN]
+  graph neural network: [GNN]
+  vision transformer: [ViT]
+  federated learning: [FL]
+  automatic speech recognition: [ASR, speech recognition, speech-to-text]
+  optical character recognition: [OCR]
+  chain-of-thought prompting: [chain of thought, chain-of-thought, CoT]
+  mixture of experts: [MoE, mixture-of-experts]
+  low-rank adaptation: [LoRA]
+  knowledge graph: [KG]
+  foundation model: [foundation models]
+  diffusion model: [diffusion models]
+
+organization:
+  Google DeepMind: [DeepMind]
+  Meta: [Meta AI, Facebook AI Research, FAIR]
+  FDA: [Food and Drug Administration, US FDA, U.S. Food and Drug Administration]
+  ANVISA: [Agência Nacional de Vigilância Sanitária]
+  CFM: [Conselho Federal de Medicina]
+  ANS: [Agência Nacional de Saúde Suplementar]
+  ANPD: [Autoridade Nacional de Proteção de Dados]
+  EMA: [European Medicines Agency]
+  WHO: [World Health Organization, OMS, Organização Mundial da Saúde]
+  NIH: [National Institutes of Health]
+  Ministério da Saúde: [Brazilian Ministry of Health, Ministry of Health of Brazil]
+
+regulation:
+  EU AI Act: [AI Act, European AI Act, Artificial Intelligence Act]
+  FHIR: [HL7 FHIR, Fast Healthcare Interoperability Resources]
+  GDPR: [General Data Protection Regulation]
+  LGPD: [Lei Geral de Proteção de Dados]
+  HIPAA: [Health Insurance Portability and Accountability Act]
+  PL 2338/2023: [PL 2338, Projeto de Lei 2338]
+
+dataset:
+  MIMIC-IV: [MIMIC IV]
+  MIMIC-III: [MIMIC III]

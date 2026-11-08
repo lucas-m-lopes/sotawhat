@@ -1,8 +1,8 @@
 # sotawhat/llm/schemas.py
-"""Structured outputs (SDD §6.6–§6.8: triage, extraction, resolution judge). Every constraint is an enum, which strict JSON schema supports
-on every provider; free text is limited by the prompt, not by the schema. Validators that the JSON
-schema cannot express (Portuguese text with no CJK slips) run locally: a failure makes the gateway ask
-again, like invalid JSON, and then move to the next model."""
+"""Structured outputs (SDD §6.6–§6.8: triage, extraction, resolution judge). Every constraint is an enum,
+which strict JSON schema supports on every provider; free text is limited by the prompt, not by the
+schema. Validators that the JSON schema cannot express (Portuguese text with no CJK slips) run locally:
+a failure makes the gateway ask again, like invalid JSON, and then move to the next model."""
 import re
 from typing import Literal
 

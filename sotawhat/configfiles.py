@@ -154,6 +154,28 @@ def load_llm_config(path) -> dict:
     return {"tasks": tasks, "bakeoff": bakeoff}
 
 
+ALIAS_TYPES = ("technique", "model", "dataset", "organization", "product", "problem", "regulation")
+
+
+def load_aliases(path) -> dict:
+    """config/aliases.yaml: {type: {canonical name: [alias, ...]}} seeding entity resolution (SDD §6.8)."""
+    data = read_yaml(path)
+    unknown = sorted(set(data) - set(ALIAS_TYPES))
+    if unknown:
+        raise ConfigError(f"aliases.yaml: tipos desconhecidos {unknown} (use {', '.join(ALIAS_TYPES)})")
+    out = {}
+    for type_, table in data.items():
+        if table is None:
+            continue
+        if not isinstance(table, dict):
+            raise ConfigError(f"aliases.yaml: {type_} precisa mapear nome canônico → lista de aliases")
+        for canonical, aliases in table.items():
+            if not isinstance(aliases, list) or not all(isinstance(a, str) and a.strip() for a in aliases):
+                raise ConfigError(f"aliases.yaml: {type_}.{canonical} precisa ser uma lista de nomes")
+        out[type_] = {str(k): [str(a) for a in v] for k, v in table.items()}
+    return out
+
+
 @dataclass(frozen=True)
 class AppConfig:
     rubric: Rubric

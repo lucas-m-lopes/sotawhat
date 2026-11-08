@@ -2,12 +2,13 @@
 
 **Tipo:** Software Design Document (SDD) — serve também como *spec* para desenvolvimento orientado a especificação (spec-driven).
 **Data:** 2026-11-07
-**Status:** v1.6 (2026-11-08):
+**Status:** v1.7 (2026-11-08):
 - respostas do usuário de 2026-11-07 incorporadas: Instagram pessoal, Neo4j no Docker Desktop, LLMs chineses via OpenRouter;
 - medições da P1 incorporadas: modelo de embeddings e deduplicação por título (§6.3, §6.7, D3);
 - decisões de 2026-11-08 incorporadas: digest em duas seções, "IA ∩ Saúde" e "Fronteira de IA" (escolha feita a partir do golden set), e cópia do digest por e-mail (§6.7, §6.11, §16.1);
 - v1.4: o Obsidian sai do projeto, e nada lê nem escreve no vault (§9, D12). A interface própria com o grafo vem para a P3, que passa a ser executada antes da P2. O grafo de entidades fica no SQLite, e o Neo4j vira espelho (§6.3, §11, D16);
 - v1.5: P2 executada (fontes novas como canais com teto diário, triagem v2 com os tipos de item, Gmail por label; §11). A pedido do usuário ("continue a implantação segundo o plano SDD direto até o final"), as fases seguem sem pausa: P4, P5 e P6;
+- v1.7: P5 executada. Captura manual pelo Telegram, varredura do Instagram pelo Apify, curadoria das contas, visão e triagem v3 (§7.2, §11);
 - v1.6: P4 executada. Inteligência semanal no SQLite com NetworkX (§6.9), motor de ideias num modo econômico mais enxuto (§8.6), ledger com votos no Telegram e na interface, relatório semanal, abas Ideias e Tendências e ferramentas novas no MCP (§6.11);
 - perguntas restantes em §16.2.
 **Documentos relacionados:**
@@ -19,6 +20,7 @@
 - Plano da fase P3: `docs/superpowers/plans/2026-11-08-insight-engine-p3-graph-interface.md`
 - Plano da fase P2: `docs/superpowers/plans/2026-11-08-insight-engine-p2-new-sources.md`
 - Plano da fase P4: `docs/superpowers/plans/2026-11-08-insight-engine-p4-intelligence-ideation.md`
+- Plano da fase P5: `docs/superpowers/plans/2026-11-08-insight-engine-p5-instagram.md`
 
 ---
 
@@ -623,6 +625,22 @@ Detalhes, limites e fontes primárias em `docs/research/2026-11-07-insight-engin
 - **Setup (uma vez):** criar conta Apify no plano Free → `APIFY_TOKEN` (ou HikerAPI → `HIKERAPI_TOKEN`) e exportar "Seguidores e seguindo" em JSON. A captura manual usa o bot do Telegram (§7.7). Nada a configurar na Meta.
 - **Falhas:** fornecedor fora do ar ou mudança no Instagram → camada de adaptação (Apify ↔ HikerAPI) + alerta; perfil que virou privado → sai da varredura e é sinalizado; nunca retentar em loop.
 
+**Como ficou na P5** (`sotawhat/sources/{apify,instagram,inbox}.py`, `sotawhat/pipeline/{media,accounts}.py`; medições no adendo do plano da P5):
+- **T2, captura manual.** O ouvinte guarda todo link mandado ao bot (inclusive os embutidos no texto) e confirma no chat. No run diário:
+  - posts e reels são resolvidos pelo Apify (`directUrls` do post), de qualquer conta pública;
+  - os demais links viram item com o título e a descrição da página. Só http(s), e cada salto de redirecionamento precisa resolver para endereço público;
+  - na triagem, esses itens (fonte `manual:telegram`) não passam pelo silêncio nem pelo classificador, vêm primeiro e nunca são rejeitados (no pior caso, radar). Um item que a varredura já tinha guardado vira seu e volta para a triagem.
+- **T3, varredura.** O ator `apify/instagram-scraper` é chamado com o token no cabeçalho, `maxTotalChargeUsd` por run (padrão US$ 0,15) e `resultsLimit` por conta.
+  - A janela começa numa marca d'água (no máximo 3 dias atrás), e os shortcodes vistos não voltam.
+  - Contas "ia" entram no perfil geral e "saude" no médico.
+  - Plano Free medido em 2026-11-08: US$ 5/mês e US$ 0,0027 por post.
+  - O HikerAPI fica como alternativa ainda não implementada.
+- **Curadoria.** `sotawhat instagram import following.json --yes` busca os perfis (Apify `details`) e classifica em lotes de 20 (tarefa `accounts`). O YAML resultante preserva as suas escolhas a cada nova importação.
+- **Multimodal.**
+  - Imagens só das CDNs do Instagram, até 3 por carrossel, reduzidas a 800 px e enviadas à tarefa `vision` (prompt `vision_v1`, schema `PostVision`).
+  - A transcrição dos reels usa `faster-whisper` em CPU e só liga com o extra opcional `[audio]` (dispensa o `ffmpeg`, porque o PyAV decodifica).
+  - Estourar o orçamento desliga só a visão pelo resto do run.
+
 ### 7.3 GitHub (repositórios novos e em alta)
 
 - **Busca** (`GET /search/repositories`, 30 req/min autenticado, ≤ 1.000 resultados, `per_page=100`): uma query por tópico com `created:>{D-7} stars:>3 sort=stars` (novos) e `pushed:>{D-1} stars:>1000 sort=updated` (ativos), mais queries por termo (`"medical" "LLM" in:name,description created:>{D-7}`). Tópicos: `medical-imaging` (7.085 repos), `healthcare-ai`, `fhir`, `medical-ai`, `ehr`, `medical-image-analysis`, `radiology`, `biomedical`, `pathology`, `clinical-nlp`, `digital-pathology`, `monai`; para agentes/MCP/skills: `mcp-server` (41 k), `model-context-protocol`, `agent-skills` (40 k), `claude-skills`, `claude-code-plugin` — volume de centenas/dia exige piso de estrelas/forks e dedupe contra os registries (§7.4–7.5). Chamadas em série, `ETag`/`If-None-Match` (304 não conta na quota), `X-GitHub-Api-Version: 2026-03-10`, `retry-after` respeitado.
@@ -834,7 +852,7 @@ Mínimo por fase:
 | **P2 · Novas fontes I** (executada depois da P3; plano `docs/superpowers/plans/2026-11-08-insight-engine-p2-new-sources.md`) | Tier 1 do §5 (Crossref/PubMed `[jour]`, ScienceDirect, JAMA AI, medRxiv API, FDA CSV, Google News), AlphaSignal RSS, The Batch via sitemap, Gmail (newsletters → itens), GitHub (busca + estrelas + releases), HF Hub, MCP registry, skills | cada fonte com fixture + teste; itens aparecem no digest com proveniência | 4–5 dias |
 | **P3 · Grafo + interface** (executada antes da P2, decisão de 2026-11-08) | remoção do Obsidian; extração v1 (entidades, relações e números) dos itens aprovados; resolução de entidades com aliases e juiz LLM; categorias da taxonomia como nós; **interface web própria** (FastAPI + sigma.js, lendo do SQLite); espelho no Neo4j (`compose.yaml`, `sotawhat graph up` e `sync`); MCP server; export JSON/CSV; extração e espelho no run diário. Plano: `docs/superpowers/plans/2026-11-08-insight-engine-p3-graph-interface.md` | grafo navegável em `localhost:8765` com os itens já aprovados; consultas pelo MCP no Claude Code; Neo4j espelhado; nada do Obsidian no código | 4–6 dias |
 | **P4 · Inteligência + ideação** (executada em 2026-11-08; plano `docs/superpowers/plans/2026-11-08-insight-engine-p4-intelligence-ideation.md`) | comunidades/tendências/lacunas, mapa semanal, pipeline de ideação (§8), ledger, novidade, relatório semanal, feedback de ideias | 1º relatório semanal com 5–10 idea cards e verificação de novidade | 6–8 dias |
-| **P5 · Instagram** (semana 8) | adapter conforme §7.2 (varredura de contas públicas via Apify/HikerAPI + captura manual pelo Telegram + curadoria da lista de seguidos), extração multimodal | posts das contas configuradas no digest; custo dentro do teto | 3–5 dias |
+| **P5 · Instagram** (executada em 2026-11-08; plano `docs/superpowers/plans/2026-11-08-insight-engine-p5-instagram.md`) | adapter conforme §7.2 (varredura de contas públicas via Apify/HikerAPI + captura manual pelo Telegram + curadoria da lista de seguidos), extração multimodal | posts das contas configuradas no digest; custo dentro do teto | 3–5 dias |
 | **P6 · Endurecimento** (semana 9) | evals de extração/ideação, backup, documentação, calibração de pesos com 4 semanas de feedback, melhorias da interface (a primeira versão veio na P3) | métricas G2–G4 medidas e reportadas | 3–4 dias |
 
 Cada fase vira um *plan* no padrão `docs/superpowers/plans/` (TDD, tarefas pequenas), como nas entregas anteriores do repositório. Ordem de execução desde 2026-11-08: P0 → P1 → P3 → P2 → P4 → P5 → P6.

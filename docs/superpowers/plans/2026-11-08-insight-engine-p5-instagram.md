@@ -61,3 +61,36 @@
 - Uma captura manual de verdade: um link de post público mandado ao bot.
 - Uma varredura com 2 ou 3 contas de teste, com custo medido.
 - Adendo, merge e push.
+
+## Adendo: execução (2026-11-08)
+
+Executada na branch `feature/insight-engine-p5`, logo depois da P4. Cada tarefa começou pelos testes. O Apify, o LLM e a web entram por fakes nos testes e de verdade na verificação real.
+
+| Tarefa | Commit | Suíte |
+|---|---|---|
+| 0 · Plano | `552f2f9` | 285 |
+| 1 · Cliente do Apify | `01696ba` | 288 |
+| 2 · Fonte Instagram (varredura) | `1bdec90` | 291 |
+| 3 · Visão e mídia | `e0b9f9f` | 295 |
+| 4 · Captura manual, triagem v3 | `5ebc5c9` | 302 |
+| 5 · `sotawhat instagram import` | `f2cb4d2` | 307 |
+| 6 · Run diário e `doctor` | `5bf975f` | 309 |
+| 7 · Correção: item conhecido mandado ao bot volta para a triagem | `52c0b70` | 311 |
+| 7 · Documentação, SDD v1.7 e adendo | este commit | 311 |
+
+### Mudanças além do plano
+- **Links escondidos.** O ouvinte também lê os links embutidos no texto (entidades `text_link` do Telegram), que o regex não via.
+- **Redirecionamentos.** A página de um link é buscada sem seguir redirecionamentos às cegas: cada salto precisa resolver para endereço público (até 3 saltos).
+- **Visão sem orçamento.** Estourar o orçamento desliga só a visão pelo resto do run: os posts, já pagos no Apify, entram com a legenda.
+- **Transcrição de reels.** Fica opcional no extra `[audio]` (`faster-whisper`), sem `ffmpeg`, porque o PyAV decodifica o áudio.
+- **HikerAPI.** Fica como alternativa ainda não implementada.
+
+### Tarefa 7: resultados
+1. **Verificação real** num banco temporário, com 2 contas públicas de teste (`openai` como "ia" e `mayoclinic` como "saude"), até 2 posts por conta:
+   - varredura: 2 posts por categoria, em 26 s e 19 s (num deles, um post em colaboração com outra conta);
+   - visão: descrições em pt-BR que leem as telas do carrossel e o texto dos slides (por exemplo, "What are microRNAs?" na capa de um reel);
+   - captura manual: o post resolvido pelo Apify, e um link do arXiv com o título e o resumo da página;
+   - triagem v3: os 4 posts de marca foram rejeitados com razão (história de usuária do ChatGPT, dicas de exercício, divulgação sobre microRNA, robô amador), e o "Attention Is All You Need" mandado à mão foi para "Fronteira de IA" (4,25);
+   - custo: US$ 0,011 no Apify (do crédito grátis de US$ 5) e US$ 0,0014 de triagem.
+2. **O que a verificação mostrou:** o post mandado ao bot já estava no banco pela varredura, e o upsert ignorava ids conhecidos, então ele ficava com a rejeição antiga. Agora o item passa a ser do leitor (fonte `manual:telegram`) e, se não estava aprovado, volta para a triagem (`52c0b70`).
+3. **Banco real:** a 1 mensagem pendente na caixa de entrada (um texto curto sem link) ficou para o run das 07:00. O arquivo `config/instagram_accounts.yaml` ainda não existe, porque depende da sua exportação "Seguidores e seguindo"; até lá a varredura não roda, e o `doctor` avisa. A captura manual já funciona.

@@ -55,9 +55,28 @@ Phase P1 adds the triage and the real digest:
   file, and `sotawhat eval models [--apply]` runs the bake-off of triage models against it
   and can put the winner first in `config/llm.yaml`.
 
+Phase P3 adds the knowledge graph and its own interface (no Obsidian):
+
+- After the digest, `run daily` extracts entities (techniques, models, datasets, organizations,
+  products, problems, regulations), relations and figures from every approved item with strict JSON
+  (`sotawhat/llm/prompts/extract_v1.md`). It resolves them into one entity graph in SQLite: aliases in
+  `config/aliases.yaml`, a cheap LLM judge for look-alike names (never across version numbers) and an
+  audit trail of merges. The triage categories become graph nodes too. `sotawhat graph extract
+  [--limit N]` does the same on demand, e.g. for the items approved before P3.
+- `sotawhat serve` opens the interface at http://127.0.0.1:8765: the graph (sigma.js + graphology,
+  shipped in the package), filters by period, type and mentions, search, entity and item panels, and
+  👍 👎 🧪 votes that count like the Telegram ones. It reads SQLite, so it works with Docker closed.
+  `scripts\schedule_daily.ps1 -Web` starts it at every logon.
+- Neo4j mirror (optional): set `NEO4J_PASSWORD`, run `sotawhat graph up` (opens Docker Desktop and
+  starts `compose.yaml`, ports only on 127.0.0.1) and `sotawhat graph sync [--rebuild]`. The daily run
+  keeps it in sync. Neo4j Browser: http://127.0.0.1:7474 (user `neo4j`).
+- MCP: `.mcp.json` registers `sotawhat-graph` (`sotawhat serve-mcp`) for Claude Code, with `search`,
+  `entity`, `neighbors`, `recent_items`, `graph_stats` and read-only `cypher`.
+- `sotawhat graph status` prints the counts; `sotawhat graph export` writes JSON + CSV to `data/exports/`.
+
 To set it up, copy `.env.example` to `.env` and fill in at least `OPENROUTER_API_KEY`,
 `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Then schedule the daily run with
-`powershell -ExecutionPolicy Bypass -File scripts\schedule_daily.ps1 [-Listener]`.
+`powershell -ExecutionPolicy Bypass -File scripts\schedule_daily.ps1 [-Listener] [-Web]`.
 
 Obsidian is no longer used (SDD §9): nothing reads or writes a vault, and the 2.0 `digest` and
 `backfill-links` commands are gone.

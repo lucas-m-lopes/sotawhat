@@ -43,3 +43,9 @@ def test_parse_run_daily():
 def test_parse_doctor():
     assert parse_args(["doctor"]).llm is False
     assert parse_args(["doctor", "--llm"]).llm is True
+
+def test_parse_run_no_llm_and_feedback():
+    assert parse_args(["run", "daily", "--no-llm"]).no_llm is True
+    assert parse_args(["run", "daily"]).no_llm is False
+    assert parse_args(["feedback", "listen"]).action == "listen"
+    assert parse_args(["feedback", "pull"]).command == "feedback"

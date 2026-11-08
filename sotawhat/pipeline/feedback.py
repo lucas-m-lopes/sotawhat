@@ -104,3 +104,27 @@ def listen(store, notifier, allowed_user, should_stop=lambda: False, timeout=50,
             log.warning("telegram: %s", exc)
             sleep(60 if exc.status == 409 else 15)   # 409: another getUpdates is running
 
+
+def main_feedback(ns) -> int:
+    from sotawhat.config import load_settings
+    from sotawhat.notify.telegram import TelegramNotifier
+    from sotawhat.pipeline.daily import setup_logging
+    from sotawhat.store.db import Store
+
+    settings = load_settings()
+    notifier = TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id)
+    if not notifier.configured:
+        print("Telegram não configurado: preencha TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID no .env")
+        return 2
+    with Store(settings.db_path) as store:
+        if ns.action == "pull":
+            counts = pull(store, notifier, settings.allowed_user_id)
+            print(f"votos {counts['vote']} · mensagens {counts['inbox']} · ignorados {counts['ignored']}")
+            return 0
+        setup_logging(settings.sotawhat_data_dir, datetime.now().date().isoformat(), settings.sotawhat_log_level)
+        print("ouvindo o Telegram (Ctrl+C para sair)")
+        try:
+            listen(store, notifier, settings.allowed_user_id)
+        except KeyboardInterrupt:
+            pass
+    return 0

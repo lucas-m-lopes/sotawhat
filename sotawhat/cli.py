@@ -2,7 +2,7 @@
 import argparse
 import sys
 
-_SUBCOMMANDS = {"search", "digest", "backfill-links", "run", "doctor"}
+_SUBCOMMANDS = {"search", "digest", "backfill-links", "run", "doctor", "feedback"}
 
 def parse_args(argv):
     # Backward compat: `sotawhat <keyword...> [N]` with no subcommand -> search.
@@ -31,9 +31,13 @@ def parse_args(argv):
     p_run.add_argument("--limit", type=int, default=10)
     p_run.add_argument("--vault", default=None, help="also write Obsidian notes (transition, SDD §9)")
     p_run.add_argument("--no-notify", action="store_true")
+    p_run.add_argument("--no-llm", action="store_true", help="collect and run stage A only (no LLM calls)")
 
     p_doctor = sub.add_parser("doctor")
     p_doctor.add_argument("--llm", action="store_true", help="smoke-test each primary model (cents)")
+
+    p_feedback = sub.add_parser("feedback")
+    p_feedback.add_argument("action", choices=["pull", "listen"])
 
     ns = parser.parse_args(argv)
     if ns.command == "search":
@@ -81,6 +85,9 @@ def main(argv=None):
     elif ns.command == "doctor":
         from sotawhat.doctor import main_doctor
         raise SystemExit(main_doctor(ns))
+    elif ns.command == "feedback":
+        from sotawhat.pipeline.feedback import main_feedback
+        raise SystemExit(main_feedback(ns))
 
 if __name__ == "__main__":
     main()

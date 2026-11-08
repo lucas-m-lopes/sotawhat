@@ -35,3 +35,36 @@
 ## Tarefa 7: Interface: aba Hoje e status dos runs
 ## Tarefa 8: `doctor`, documentação final e SDD v2.0
 ## Tarefa 9: Verificação real, adendo, merge e push
+
+## Adendo: execução (2026-11-08)
+
+Executada na branch `feature/insight-engine-p6`, logo depois da P5. Cada tarefa começou pelos testes. As medições e o reparo rodaram também no banco real.
+
+| Tarefa | Commit | Suíte |
+|---|---|---|
+| 0 · Plano | `53d30bb` | 311 |
+| 1 · Backup e restauração | `14f4d76` | 315 |
+| 2–6 · Avaliações (triagem, extração, ideias), relatório das metas, calibração | `195de81` | 321 |
+| 7 · Aba Hoje | `03d68e4` | 323 |
+| 7 · Correção: `sotawhat repair cjk` | `2f01191` | 324 |
+| 5 · Metas no run semanal (envio mensal) | `ea41600` | 325 |
+| 8–9 · Documentação, SDD v2.0 e adendo | este commit | 325 |
+
+### Mudanças além do plano
+- **`sotawhat repair cjk`.** A aba Hoje mostrou tokens chineses nos resumos ("orientar和质量 improvement"). Eram 17 itens triados pelo MiniMax no run da manhã de 2026-11-08, antes do validador da P1. O reparo pede só os textos ao modelo atual e mantém decisão, notas e total, para que nada seja reenviado. O `doctor` aponta textos assim.
+- **Backup num arquivo só.** A cópia herdava o modo WAL do banco e deixava arquivos `-wal`/`-shm` ao lado. Agora ela é gravada com journal DELETE, e a rotação apaga os companheiros.
+- **Aba Hoje.** Mostra o último digest de verdade: um run sem triagem (`--no-llm`) é pulado, com aviso.
+- **Calibração.** Os cortes da triagem só podem subir: só itens entregues recebem voto, então não há como saber o que se perderia abaixo do corte. Baixar um corte continua sendo trabalho do golden set (`eval models`).
+
+### Tarefa 9: resultados (banco real)
+1. **`sotawhat backup`:** 4,8 MB, integridade ok, arquivo único em `data/backups/` (pasta ignorada pelo git). O `doctor` mostra o backup de hoje.
+2. **`sotawhat eval report`:**
+   - G1: 100% de 3 runs diários;
+   - G2: máx. 10 + 5 itens e 4 no radar; precisão de 100% em 19 votos ("poucos dados");
+   - G3: grafo de 30 dias em 21 ms e busca em 3 ms; a extração ainda depende da anotação;
+   - G4: nenhuma ideia decidida;
+   - o Semantic Scholar aparece com 3 falhas seguidas (429, sem chave);
+   - custo de LLM no mês: US$ 0,27.
+3. **`sotawhat calibrate`:** "faltam 81 votos" e "faltam 30 finalistas decididas"; nada foi alterado.
+4. **`sotawhat repair cjk`:** 17 corrigidos, nenhum restante e nenhuma decisão alterada, por ≈ US$ 0,007.
+5. **Interface:** a aba Hoje, conferida no Chrome, mostra o digest com os votos e os últimos runs.

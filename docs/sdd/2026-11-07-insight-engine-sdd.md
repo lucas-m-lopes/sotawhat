@@ -2,12 +2,13 @@
 
 **Tipo:** Software Design Document (SDD) — serve também como *spec* para desenvolvimento orientado a especificação (spec-driven).
 **Data:** 2026-11-07
-**Status:** v1.7 (2026-11-08):
+**Status:** v2.0 (2026-11-08), com todas as fases (P0–P6) executadas:
 - respostas do usuário de 2026-11-07 incorporadas: Instagram pessoal, Neo4j no Docker Desktop, LLMs chineses via OpenRouter;
 - medições da P1 incorporadas: modelo de embeddings e deduplicação por título (§6.3, §6.7, D3);
 - decisões de 2026-11-08 incorporadas: digest em duas seções, "IA ∩ Saúde" e "Fronteira de IA" (escolha feita a partir do golden set), e cópia do digest por e-mail (§6.7, §6.11, §16.1);
 - v1.4: o Obsidian sai do projeto, e nada lê nem escreve no vault (§9, D12). A interface própria com o grafo vem para a P3, que passa a ser executada antes da P2. O grafo de entidades fica no SQLite, e o Neo4j vira espelho (§6.3, §11, D16);
 - v1.5: P2 executada (fontes novas como canais com teto diário, triagem v2 com os tipos de item, Gmail por label; §11). A pedido do usuário ("continue a implantação segundo o plano SDD direto até o final"), as fases seguem sem pausa: P4, P5 e P6;
+- v2.0: P6 executada. Backup do SQLite, avaliações de triagem, extração e ideias, relatório das metas G1–G4, proposta de calibração, reparo de textos antigos e aba Hoje (§12, §11). O que depende de você está em §16.2;
 - v1.7: P5 executada. Captura manual pelo Telegram, varredura do Instagram pelo Apify, curadoria das contas, visão e triagem v3 (§7.2, §11);
 - v1.6: P4 executada. Inteligência semanal no SQLite com NetworkX (§6.9), motor de ideias num modo econômico mais enxuto (§8.6), ledger com votos no Telegram e na interface, relatório semanal, abas Ideias e Tendências e ferramentas novas no MCP (§6.11);
 - perguntas restantes em §16.2.
@@ -21,6 +22,7 @@
 - Plano da fase P2: `docs/superpowers/plans/2026-11-08-insight-engine-p2-new-sources.md`
 - Plano da fase P4: `docs/superpowers/plans/2026-11-08-insight-engine-p4-intelligence-ideation.md`
 - Plano da fase P5: `docs/superpowers/plans/2026-11-08-insight-engine-p5-instagram.md`
+- Plano da fase P6: `docs/superpowers/plans/2026-11-08-insight-engine-p6-hardening.md`
 
 ---
 
@@ -853,7 +855,7 @@ Mínimo por fase:
 | **P3 · Grafo + interface** (executada antes da P2, decisão de 2026-11-08) | remoção do Obsidian; extração v1 (entidades, relações e números) dos itens aprovados; resolução de entidades com aliases e juiz LLM; categorias da taxonomia como nós; **interface web própria** (FastAPI + sigma.js, lendo do SQLite); espelho no Neo4j (`compose.yaml`, `sotawhat graph up` e `sync`); MCP server; export JSON/CSV; extração e espelho no run diário. Plano: `docs/superpowers/plans/2026-11-08-insight-engine-p3-graph-interface.md` | grafo navegável em `localhost:8765` com os itens já aprovados; consultas pelo MCP no Claude Code; Neo4j espelhado; nada do Obsidian no código | 4–6 dias |
 | **P4 · Inteligência + ideação** (executada em 2026-11-08; plano `docs/superpowers/plans/2026-11-08-insight-engine-p4-intelligence-ideation.md`) | comunidades/tendências/lacunas, mapa semanal, pipeline de ideação (§8), ledger, novidade, relatório semanal, feedback de ideias | 1º relatório semanal com 5–10 idea cards e verificação de novidade | 6–8 dias |
 | **P5 · Instagram** (executada em 2026-11-08; plano `docs/superpowers/plans/2026-11-08-insight-engine-p5-instagram.md`) | adapter conforme §7.2 (varredura de contas públicas via Apify/HikerAPI + captura manual pelo Telegram + curadoria da lista de seguidos), extração multimodal | posts das contas configuradas no digest; custo dentro do teto | 3–5 dias |
-| **P6 · Endurecimento** (semana 9) | evals de extração/ideação, backup, documentação, calibração de pesos com 4 semanas de feedback, melhorias da interface (a primeira versão veio na P3) | métricas G2–G4 medidas e reportadas | 3–4 dias |
+| **P6 · Endurecimento** (executada em 2026-11-08; plano `docs/superpowers/plans/2026-11-08-insight-engine-p6-hardening.md`) | evals de extração/ideação, backup, documentação, calibração de pesos com 4 semanas de feedback, melhorias da interface (a primeira versão veio na P3) | métricas G2–G4 medidas e reportadas | 3–4 dias |
 
 Cada fase vira um *plan* no padrão `docs/superpowers/plans/` (TDD, tarefas pequenas), como nas entregas anteriores do repositório. Ordem de execução desde 2026-11-08: P0 → P1 → P3 → P2 → P4 → P5 → P6.
 
@@ -871,6 +873,20 @@ Cada fase vira um *plan* no padrão `docs/superpowers/plans/` (TDD, tarefas pequ
 | Eval · ideação | notas humanas (novidade, utilidade, viabilidade 1–5) por ideia; taxa "vale explorar" | ledger + relatório mensal |
 | Integração | run diário em modo `--dry-run` com fontes reais (opcional, marcado `network`) | manual/semanal |
 | Operação | `doctor`, resumo de execução, alerta de falha, custo por etapa | automático |
+
+**Como ficou na P6** (medido com os dados reais em 2026-11-08; detalhes no adendo do plano da P6):
+- **Metas.** `sotawhat eval report [--send]` mede G1–G4 a partir do banco, sem LLM, e mostra cada taxa com a contagem por trás ("poucos dados" abaixo de um mínimo). O `run weekly` grava o relatório toda semana e manda a tabela no primeiro domingo do mês.
+- **Primeira medição:**
+  - G1: 100% de 3 runs diários;
+  - G2: digest no teto (10 + 5 e 4 no radar) e precisão de 100% em 19 votos;
+  - G3: consultas do grafo em 21 ms (grafo de 30 dias) e 3 ms (busca); a precisão da extração ainda depende da anotação;
+  - G4: nenhuma ideia decidida ainda.
+- **Triagem por votos:** `sotawhat eval triage` usa o último voto de cada item contra a decisão. O golden set e o bake-off continuam em `sotawhat eval golden` e `sotawhat eval models`.
+- **Extração:** `sotawhat eval extract draft` gera uma amostra de 40 itens em Markdown, você desmarca o que está errado, e `sotawhat eval extract import` calcula a precisão por tipo.
+- **Ideias:** `sotawhat eval ideas` mostra a taxa "vale explorar" (👍, 🧪 ou 🛠️ sobre as decididas) por lente, amostrador e família do gerador.
+- **Calibração:** `sotawhat calibrate [--apply]` só propõe; grava em `config/` apenas com `--apply`. Precisa de 100 votos para os cortes da triagem, que só podem subir, porque só itens entregues recebem voto; para baixar um corte use o golden set. Os pesos da rubrica de ideias precisam de 30 finalistas decididas.
+- **Backup:** `sotawhat backup` toda semana no `run weekly`, guardando as 8 cópias mais novas; `--restore` para restaurar. O espelho Neo4j se reconstrói do SQLite (`graph sync --rebuild`), e o export JSON/CSV continua (G7).
+- **Reparo:** `sotawhat repair cjk` corrigiu 17 resumos com tokens chineses que vinham do run da manhã de 2026-11-08 (MiniMax, antes do validador), sem mudar nenhuma decisão.
 
 ---
 
@@ -1016,6 +1032,25 @@ As respostas mudam a implementação; onde não houver resposta, a suposição i
 **Transição**
 16. *(respondida — §16.1: sem Obsidian e sem migração)*
 17. Manter o nome `sotawhat` (versão 3.0) ou renomear o repositório? *Suposição:* manter.
+
+### 16.3 Ações que dependem de você (2026-11-08, ao fim da P6)
+
+1. **Chave do OpenRouter.** O limite de US$ 5 da chave não renova (`limit_reset` vazio; o `doctor` avisa). O pipeline gasta ≈ US$ 0,10 por dia mais ≈ US$ 0,13 por semana, ou seja, ≈ US$ 4 por mês, e a chave se esgota em ~5 semanas. Defina a renovação mensal e um limite de ≈ US$ 15–20/mês.
+2. **Gmail.** Crie o filtro que aplica a label `newsletters/ai` às newsletters sem RSS (§16.2, item 2).
+3. **Instagram.**
+   - Exporte "Seguidores e seguindo" em JSON no Accounts Center e rode `sotawhat instagram import following.json --yes`.
+   - Revise `config/instagram_accounts.yaml`.
+   - A captura manual já funciona: no app, Compartilhar → Telegram → o bot.
+4. **Votos.** Vote nos digests e nas ideias:
+   - o classificador começa com 100 votos por perfil;
+   - a calibração da triagem, com 100 votos;
+   - os pesos da rubrica de ideias, com 30 decisões.
+5. **Anotação da extração** (meta G3). Rode `sotawhat eval extract draft`, desmarque o que estiver errado no Markdown e rode `sotawhat eval extract import`.
+6. **Opcionais:**
+   - chave do Semantic Scholar (hoje dá 429);
+   - chaves do Lens.org ou do EPO OPS (patentes no prior art);
+   - `uv pip install -e ".[audio]"` para transcrever reels;
+   - no Docker Desktop, "Start Docker Desktop when you sign in", para o espelho Neo4j.
 
 ---
 

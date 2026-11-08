@@ -110,3 +110,52 @@ Os itens novos passam pela triagem e pelo grafo da P3 sem mudança nessas etapas
 - Segmentação de um e-mail real do AlphaSignal, sem gravar.
 - `doctor`.
 - Adendo, merge e push.
+
+---
+
+## Adendo: execução (2026-11-08)
+
+Executada na branch `feature/insight-engine-p2`, logo depois da P3. Cada tarefa começou pelos testes, com fixtures gravados das respostas reais da sondagem.
+
+| Tarefa | Commit | Suíte |
+|---|---|---|
+| 0 · Plano | `2c41970` | 226 |
+| 1 · Fontes sem palavra-chave | `64da9ab` | 229 |
+| 2–5 · GitHub, Hugging Face, registry MCP, medRxiv | `43b56dc` | 234 |
+| 6–7 · FDA e The Batch | `032b380` | 238 |
+| 8 · Newsletters do Gmail | `d488d44` | 242 |
+| 9 · Perfis e `run daily` (Crossref vira canal; gancho `on_start`) | `c74e2da` | 246 |
+| 10 · Triagem v2 | `5db8ea8` | 247 |
+| 11 · `doctor` | `043eccc` | 250 |
+| 12 · Documentação, SDD v1.5 | `29b9474` | 250 |
+| 13 · Correção: ids das matérias do The Batch | `2da2883` | 251 |
+
+### Mudanças além do plano
+- **A tarefa `segment`** passou a começar pelo DeepSeek V4.1 Flash, com o GLM-5.3-Flash de reserva. São os dois modelos com melhor taxa de JSON estrito no bake-off da P1; o MiMo tinha 77%. O `.env` fixava o MiMo em `SOTAWHAT_MODEL_SEGMENT`, uma sobra do modelo antigo, e a linha foi esvaziada.
+- **Crossref.** Os periódicos via Crossref deixaram de filtrar por palavra-chave: pegam os trabalhos recentes de cada periódico (até 10), e o filtro de termos de IA do perfil médico continua valendo.
+- **The Batch.** A coleta real mostrou que todas as matérias de uma edição viravam um item só, porque a normalização da URL descarta o `#fragmento`. Agora a fonte informa um id canônico (`thebatch:378#slug`). As 2 linhas colapsadas, ainda sem triagem, foram apagadas, e o estado da fonte foi zerado para o run das 07:00 reler as edições.
+
+### Tarefa 13: resultados
+1. **`run daily --no-llm --no-notify`:** 3 min de coleta, 272 itens coletados, 200 novos e nenhuma falha nas fontes novas. Os itens ficaram sem decisão de propósito: o run agendado das 07:00 faz a triagem e manda o digest.
+   - **Novos por fonte:**
+     - GitHub IA: 15 repositórios; GitHub médico: 1;
+     - MCP: 12 de saúde e 10 recentes;
+     - HF: 10 modelos médicos, 5 datasets médicos e 10 modelos em alta;
+     - feeds: AlphaSignal 10, Google News EN 10 e PT-BR 10, STAT IA 2, JAMA AI 1, Healthcare Dive 1;
+     - medRxiv: 7 (depois do filtro de IA);
+     - Crossref: 15 (Radiology: AI 4, JAMIA 3, npj Digital Medicine 3, Nature Machine Intelligence 2, Nature Medicine 1, NEJM AI 1, npj Health Systems 1);
+     - The Batch: 2, antes da correção.
+   - **FDA:** a linha de base guardou 1.615 submissões.
+   - **Semantic Scholar:** continua com 429 sem chave (alerta da 3ª falha seguida).
+2. **Gmail:** segmentação de um e-mail real do AlphaSignal, sem gravar itens. Saiu 1 história (um *deep dive*), e o link de rastreamento foi resolvido até `arxiv.org/abs/2610.42147`, com DeepSeek, US$ 0,0005 e 17 s.
+3. **Triagem v2 em amostra** (sem gravar):
+   - repositório de skill jurídica chilena → `reject`;
+   - MedGemma 1.5 4B (modelo) → `main` (A4 B4 C5);
+   - MR-RATE (dataset de RM 3D com laudos) → `main` (4,65);
+   - servidor MCP de suplementos → `reject`;
+   - estudo do JAMA AI sobre escribas de IA → `main`.
+4. **`doctor`:** GitHub ok (busca 30/30 por minuto), Hugging Face ok (conta do usuário). As newsletters do Gmail dão aviso: a label `newsletters/ai` não existe, e a busca por remetente acha 37 e-mails em 30 dias.
+
+**Pendências do usuário:**
+- criar no Gmail o filtro que aplica a label `newsletters/ai` às newsletters sem RSS;
+- opcional: uma chave do Semantic Scholar, que acaba com o 429.

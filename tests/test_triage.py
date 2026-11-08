@@ -127,7 +127,7 @@ def test_run_triage_end_to_end(tmp_path):
     assert rows["pmid:5"]["decision"] == "muted" and "webinar" in rows["pmid:5"]["reason"]
     assert rows["pmid:2"]["decision"] == "duplicate" and st.cluster_sources("pmid:1") == ["crossref", "pubmed"]
     main = rows["pmid:1"]
-    assert main["decision"] == "main" and main["prompt_version"] == "triage_v2" and main["model"].startswith("deepseek")
+    assert main["decision"] == "main" and main["prompt_version"] == "triage_v3" and main["model"].startswith("deepseek")
     assert main["why_it_matters_pt"] == "Importa para o hospital." and '"A03"' in main["tags_json"]
     assert rows["pmid:3"]["decision"] == "frontier" and '"S": 2' in rows["pmid:3"]["scores_json"]
     assert rows["pmid:4"]["why_it_matters_pt"] == ""            # excluded items carry no "why it matters"
@@ -186,3 +186,28 @@ def test_triage_v2_explains_the_new_item_kinds():
     repo = Item(id="url:https://github.com/o/r", kind="repo", source="github:ai", source_id="r", title="o/r — MCP server",
                 url="https://github.com/o/r", text="GitHub repository · ★ 314")
     assert "kind: repo" in item_message(repo)
+
+
+def test_items_sent_by_hand_skip_the_filters_and_are_never_rejected(tmp_path):
+    items = [_item(1, "Webinar sobre escriba ambiente", source="manual:telegram"),
+             _item(2, "Webinar de vendas", source="pubmed"),
+             _item(3, "Lixo sem substância enviado por mim", source="manual:telegram"),
+             _item(4, "Outro item comum sobre sepse", source="pubmed")]
+    st, run = _store(tmp_path, items)
+
+    class Gate:                                 # would push every item out of the top 1
+        version = "medico-test"
+
+        def score(self, vectors):
+            return np.linspace(0.2, 0.1, len(vectors))
+
+    answers = {"lixo": out(frontier_ai=0, medical_applicability=0, actionability=0, hard_exclusion="clinical_without_ai")}
+    gw = FakeGateway(answers)
+    stats = run_triage(st, run, gw, Rubric(classifier_top_n=1, concurrency=1), Mutes(title_terms=("webinar",)),
+                       HashEmbedder(64), gates={"medico": Gate()}, now=NOW)
+    decisions = dict(st.conn.execute("SELECT item_id, decision FROM triage").fetchall())
+    assert decisions["pmid:2"] == "muted" and decisions["pmid:1"] != "muted"          # the mute only hits pubmed
+    assert decisions["pmid:3"] == "radar" and stats.rejected == 0                     # never rejected
+    assert "gated" not in (decisions["pmid:1"], decisions["pmid:3"])
+    assert set(gw.calls[:2]) == {"Webinar sobre escriba ambiente", "Lixo sem substância enviado por mim"}  # first
+    st.close()

@@ -1,5 +1,6 @@
 # sotawhat/evals/commands.py
 """`sotawhat eval golden draft|import` and `sotawhat eval models`."""
+import json
 from datetime import date
 from pathlib import Path
 
@@ -93,4 +94,61 @@ def main_models(ns) -> int:
 
 
 def main_eval(ns) -> int:
-    return main_golden(ns) if ns.eval_command == "golden" else main_models(ns)
+    if ns.eval_command == "golden":
+        return main_golden(ns)
+    if ns.eval_command == "models":
+        return main_models(ns)
+    return main_measures(ns)
+
+
+def main_measures(ns) -> int:
+    """`eval triage`, `eval ideas`, `eval report [--send]` and `eval extract draft|import` (P6)."""
+    from datetime import date
+
+    from sotawhat.config import load_settings
+    from sotawhat.evals import extract_eval, metrics
+    from sotawhat.store.db import Store
+
+    settings = load_settings()
+    with Store(settings.db_path) as store:
+        if ns.eval_command == "extract":
+            if ns.action == "draft":
+                try:
+                    path = extract_eval.write_draft(store, n=ns.n, force=ns.force)
+                except FileExistsError as exc:
+                    print(f"[eval] {exc}")
+                    return 1
+                print(f"[rascunho] {path}: desmarque o que estiver errado e rode `sotawhat eval extract import`")
+                return 0
+            result = extract_eval.import_labels()
+            e, r = result["entities"], result["relations"]
+            print(f"{result['items']} itens · entidades {e['right']}/{e['total']} certas · relações {r['right']}/{r['total']}"
+                  f" certas\n[resultado] {extract_eval.FOLDER / 'extract_v1.json'}")
+            return 0
+        if ns.eval_command == "triage":
+            g2 = metrics.triage_by_votes(store)
+            print(f"{g2['votes']} itens votados")
+            for decision, counts in sorted(g2["table"].items()):
+                value, n = g2["precision"].get(decision, (None, 0))
+                print(f"- {decision}: {dict(counts)}" + (f" · precisão {value} em {n}" if value is not None else ""))
+            return 0
+        if ns.eval_command == "ideas":
+            print(json.dumps(metrics.ideas_metrics(store), ensure_ascii=False, indent=1))
+            return 0
+        g = metrics.goals(store, extract_summary=extract_eval.FOLDER / "extract_v1.json")
+    text = metrics.render_goals(g)
+    out = settings.sotawhat_data_dir / "reports" / f"{date.today().isoformat()}-metas.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    print(text + f"\n[relatório] {out}")
+    if getattr(ns, "send", False):
+        from sotawhat.notify.telegram import TelegramError, TelegramNotifier, esc
+
+        notifier = TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id)
+        if notifier.configured:
+            table = [line for line in text.splitlines() if line.startswith("| G")]
+            try:
+                notifier.send_message("📊 <b>metas do SDD</b>\n" + "\n".join(esc(line) for line in table))
+            except TelegramError as exc:
+                print(f"[telegram] {exc}")
+    return 0

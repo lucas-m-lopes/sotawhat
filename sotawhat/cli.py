@@ -77,6 +77,17 @@ def parse_args(argv):
     p_models.add_argument("--limit", type=int, default=0)
     p_models.add_argument("--concurrency", type=int, default=4)
     p_models.add_argument("--apply", action="store_true", help="put the winner first in config/llm.yaml")
+    eval_sub.add_parser("triage", help="precision of the triage by your votes (G2)")
+    eval_sub.add_parser("ideas", help="the idea ledger: finalists and the share you want to explore (G4)")
+    p_report = eval_sub.add_parser("report", help="the SDD goals G1-G4 in data/reports (P6)")
+    p_report.add_argument("--send", action="store_true", help="also send the goals table to Telegram")
+    p_extract = eval_sub.add_parser("extract", help="precision of the extraction on an annotated sample (G3)")
+    p_extract.add_argument("action", choices=["draft", "import"])
+    p_extract.add_argument("--n", type=int, default=40)
+    p_extract.add_argument("--force", action="store_true", help="overwrite an existing draft")
+
+    p_calibrate = sub.add_parser("calibrate", help="proposals for the triage cut-offs and the idea weights (P6)")
+    p_calibrate.add_argument("--apply", action="store_true", help="write the proposal to config/")
 
     ns = parser.parse_args(argv)
     if ns.command == "search":
@@ -139,6 +150,9 @@ def main(argv=None):
     elif ns.command == "graph":
         from sotawhat.graph.commands import main_graph
         raise SystemExit(main_graph(ns))
+    elif ns.command == "calibrate":
+        from sotawhat.evals.calibrate import main_calibrate
+        raise SystemExit(main_calibrate(ns))
     elif ns.command == "backup":
         from sotawhat.store.backup import main_backup
         raise SystemExit(main_backup(ns))

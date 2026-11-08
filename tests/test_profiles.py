@@ -66,3 +66,21 @@ def test_p2_channel_sources_per_profile(tmp_path):
 def test_without_settings_the_stateful_channels_stay_out():
     assert not {"fda-ai-devices", "the-batch", "gmail"} & set(_names(build_sources("medico") + build_sources("geral")))
     assert "gmail" not in _names(build_sources("geral"))
+
+
+def test_instagram_and_manual_capture_join_the_profiles(tmp_path):
+    from types import SimpleNamespace
+
+    from sotawhat.store.db import Store
+
+    settings = SimpleNamespace(sotawhat_data_dir=tmp_path, sotawhat_config_dir=tmp_path, github_token="", hf_token="",
+                               crossref_mailto="", gmail_address="", gmail_app_password="", gmail_query="",
+                               instagram_per_account=3, instagram_max_usd_run=0.15)
+    apify = SimpleNamespace(configured=True)
+    with Store(tmp_path / "insight.db") as st:
+        geral = _names(build_sources("geral", settings=settings, apify=apify))
+        medico = _names(build_sources("medico", settings=settings, apify=apify, store=st))
+        assert "instagram-ia" in geral and "instagram-saude" in medico and "manual-telegram" in medico
+        off = _names(build_sources("medico", settings=settings, apify=SimpleNamespace(configured=False), store=st))
+        assert "instagram-saude" not in off and "manual-telegram" in off          # links work without Apify
+        assert not {"instagram-ia", "manual-telegram"} & set(_names(build_sources("geral")))

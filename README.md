@@ -167,6 +167,9 @@ After P6, newsletters by RSS (2026-11-09):
   (the same `segment` task as the Gmail newsletters), each story keeping its source link. A run takes at most
   2 entries per newsletter from the last 4 days and never reads an entry twice. The health newsletters are
   filtered by AI terms in English and Portuguese before the triage.
+- Full text: when a feed carries only an excerpt (less than 1,500 characters: MedCity, Out-Of-Pocket, Lilian
+  Weng), the article page is read and its main text (trafilatura) replaces the excerpt, before the health
+  filter. A post keeps up to 8,000 characters, what the triage reads. Pages that block robots keep the excerpt.
 - `sotawhat newsletters add <address> --profile ia|saude [--kind digest]` finds the feed (a Substack name
   such as `importai`, a site, a topic page or a feed URL) and appends it to the file. `sotawhat doctor`
   checks every enabled feed.

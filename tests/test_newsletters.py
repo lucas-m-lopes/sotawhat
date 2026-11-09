@@ -13,11 +13,16 @@ from sotawhat.items import to_item
 from sotawhat.llm.gateway import BudgetExceeded, LLMFailure
 from sotawhat.llm.schemas import NewsletterStories
 from sotawhat.profiles import health_ai_text
-from sotawhat.sources.newsletters import (NewsletterFeedSource, add_newsletter, default_name, discover_feed,
-                                          feed_candidates, load_newsletters, mentions_ai_pt)
+from sotawhat.sources.newsletters import (FULL_TEXT_BELOW, TEXT_CHARS, NewsletterFeedSource, add_newsletter,
+                                          default_name, discover_feed, feed_candidates, load_newsletters,
+                                          mentions_ai_pt)
 from sotawhat.sources.rss import FeedError
 
 NOW = calendar.timegm((2026, 11, 9, 12, 0, 0))
+# The main content of an article page, as the reader (sotawhat.sources.pages.read_article) returns it.
+ARTICLE = ("<h1>Hospitals adopt AI scribes</h1>" + "".join(
+    f"<p>Paragraph {i}: ambient AI scribes are reaching more clinics, and the evidence on time saved is still mixed "
+    f"across studies.</p>" for i in range(20)) + '<p>See the <a href="https://jamanetwork.com/x">JAMA study</a>.</p>')
 
 
 def _date(days_ago):
@@ -162,6 +167,62 @@ def test_llm_failure_reads_the_issue_again_and_budget_stops(tmp_path):
 
     stop = NewsletterFeedSource("n", path, "ia", tmp_path / "s3.json", segmenter=broke, fetch=lambda url: feed, now=NOW)
     assert stop.fetch(40) == [] and stop.stopped == "run budget reached" and len(calls) == 1
+
+
+def test_excerpt_entries_are_completed_with_the_article_page(tmp_path):
+    path = write_yaml(tmp_path / "n.yaml", [{"name": "oop", "url": "https://oop.health/rss.xml", "profile": "ia"}])
+    long_body = "".join(f"<p>Section {i}: a long post about open models, RL and evals in practice.</p>" for i in range(200))
+    feed = rss(("Excerpt only", "https://oop.health/p/1", 1, "<p>Pregnancy taught me a lot about healthcare…</p>"),
+               ("Full in the feed", "https://oop.health/p/2", 2, long_body),
+               ("Blocked page", "https://oop.health/p/3", 3, "<p>A short <a href='https://x.org'>teaser</a>.</p>"))
+    asked = []
+
+    def article(url):
+        asked.append(url)
+        return ARTICLE if url.endswith("/1") else ""
+
+    src = NewsletterFeedSource("n", path, "ia", tmp_path / "s.json", fetch=lambda url: feed, article=article,
+                               per_feed=3, now=NOW)
+    excerpt, full, blocked = src.fetch(40)
+    assert asked == ["https://oop.health/p/1", "https://oop.health/p/3"]      # an entry with the full text is not fetched
+    assert excerpt.abstract.startswith("Hospitals adopt AI scribes Paragraph 0") and "JAMA study." in excerpt.abstract
+    assert len(excerpt.abstract) > FULL_TEXT_BELOW and "[1]" not in excerpt.abstract
+    assert len(full.abstract) == TEXT_CHARS and full.abstract.startswith("Section 0:")    # what the triage reads
+    assert blocked.abstract == "A short teaser."                                # the page failed: the excerpt stays
+    plain = NewsletterFeedSource("n", path, "ia", tmp_path / "s2.json", fetch=lambda url: feed, per_feed=3, now=NOW)
+    assert plain.fetch(40)[0].abstract == "Pregnancy taught me a lot about healthcare…"   # no reader: the feed only
+
+
+def test_the_health_filter_judges_the_article_not_the_teaser(tmp_path):
+    path = write_yaml(tmp_path / "n.yaml", [{"name": "oop", "url": "https://oop.health/rss.xml", "profile": "saude"}])
+    other = "".join(f"<p>Parte {i}: o reajuste dos planos individuais será de 12% neste ano.</p>" for i in range(30))
+    feed = rss(("Pregnancy taught me a lot about healthcare", "https://oop.health/p/1", 1, "<p>Get it by email</p>"),
+               ("Plano de saúde reajusta preços", "https://oop.health/p/2", 2, "<p>Leia mais</p>"),
+               ("Full but off topic", "https://oop.health/p/3", 3, other))
+    asked = []
+
+    def article(url):
+        asked.append(url)
+        return ARTICLE if url.endswith("/1") else other
+
+    src = NewsletterFeedSource("n", path, "saude", tmp_path / "s.json", ai_filter=health_ai_text, fetch=lambda url: feed,
+                               article=article, per_feed=3, now=NOW)
+    results = src.fetch(40)
+    assert [r.title for r in results] == ["Pregnancy taught me a lot about healthcare"]   # the page talks about AI
+    assert asked == ["https://oop.health/p/1", "https://oop.health/p/2"] and "Paragraph 19" in results[0].abstract
+
+
+def test_a_digest_whose_feed_carries_only_the_headline_is_split_from_its_page(tmp_path):
+    path = write_yaml(tmp_path / "n.yaml", [{"name": "the-rundown", "url": "https://www.therundown.ai/feed",
+                                            "profile": "ia", "kind": "digest"}])
+    feed = rss(("A new frontier model", "https://www.therundown.ai/p/issue", 1, "<p>PLUS: three more stories</p>"))
+    seen = []
+    stories = [{"title": "Medical agents", "summary": "A paper on agents for hospitals.", "link": 1, "category": "paper"}]
+    src = NewsletterFeedSource("n", path, "ia", tmp_path / "s.json", segmenter=segmenter_returning(stories, seen),
+                               fetch=lambda url: feed, article=lambda url: ISSUE, resolve=lambda url: url, now=NOW)
+    results = src.fetch(40)
+    assert "Filler text" in seen[0][2] and "[1] https://arxiv.org/abs/2611.05555" in seen[0][2]
+    assert [r.title for r in results] == ["Medical agents"] and to_item(results[0]).id == "arxiv:2611.05555"
 
 
 def test_a_failing_feed_is_recorded_and_the_others_go_on(tmp_path):

@@ -9,6 +9,10 @@ and a `kind`:
 A run reads the entries of the last `max_age_days`, at most `per_feed` per newsletter, and never reads an
 entry twice (`data/state/newsletters-<profile>.json`). Health newsletters cover much more than AI, so the
 source filters them itself with English and Portuguese AI terms ("IA" only in capitals: "ia" is a verb).
+Full text: an entry whose feed carries less than FULL_TEXT_BELOW characters (an excerpt: MedCity, Out-Of-Pocket,
+Lilian Weng) gives way to the article page (`article`, trafilatura) when the page has more text, and the health
+filter judges that text, not a teaser of a few words. Entries that already carry their text read no page. A
+post keeps up to TEXT_CHARS characters, what the triage reads.
 A Substack is added with `sotawhat newsletters add <endereço> --profile saude`."""
 import calendar
 import json
@@ -35,6 +39,8 @@ log = logging.getLogger("sotawhat.newsletters")
 
 PROFILES = ("ia", "saude")
 KINDS = ("post", "digest")
+FULL_TEXT_BELOW = 1500      # less text than this in the feed: an excerpt, the article page is read
+TEXT_CHARS = 8000           # what a post keeps (pipeline/triage.py reads up to 8000 characters)
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 _AI_PT = re.compile(r"\bIAs?\b|(?i:\b(intelig[eê]ncia artificial|aprendizado de m[aá]quina|aprendizado profundo|"
                     r"redes? neura(l|is)|modelos? de linguagem|vis[aã]o computacional|chatbots?|algoritmos? de ia)\b)")
@@ -44,6 +50,7 @@ HEADER = """# config/newsletters.yaml - newsletters lidas pelo RSS no run diári
 #            ≈ US$ 0,0005 por edição)
 #   enabled: false deixa a newsletter listada sem ler
 # As de saúde passam por um filtro de termos de IA (inglês e português) antes da triagem.
+# Texto completo: quando o feed traz só um trecho (menos de 1.500 caracteres), o texto vem da página do artigo.
 # Acrescentar um Substack (ou outro feed): sotawhat newsletters add https://exemplo.substack.com --profile saude
 """
 
@@ -87,14 +94,21 @@ def _body(entry) -> str:
     return (entry.get("content") or [{}])[0].get("value") or entry.get("summary", "") or ""
 
 
+def _plain(html) -> str:
+    """The text of an HTML body on one line, links as plain words."""
+    return " ".join(html_to_text(html, numbered=False)[0].split())
+
+
 class NewsletterFeedSource(Source):
     keywordless = True
     ai_specific = True      # the frontier feeds only carry AI; the health ones are filtered here (EN + PT)
 
     def __init__(self, name, path, profile, state_path, segmenter=None, ai_filter=None, max_age_days=4,
-                 per_feed=2, max_items=40, fetch=None, resolve=None, now=None):
+                 per_feed=2, max_items=40, fetch=None, resolve=None, article=None, now=None):
+        """`article(url)` -> the main content of an article page as HTML ("" when it cannot be read); without it
+        only the feed is read."""
         self.name, self.path, self.profile, self.state_path = name, Path(path), profile, Path(state_path)
-        self.segmenter, self.ai_filter = segmenter, ai_filter
+        self.segmenter, self.ai_filter, self.article = segmenter, ai_filter, article
         self.max_age_days, self.per_feed, self.max_items = max_age_days, per_feed, max_items
         self._fetch, self._resolve, self._now = fetch or fetch_feed, resolve or resolve_link, now
         self.feeds, self.feed_errors, self.stopped = [], {}, None   # feeds: (name, url), for the per-feed health
@@ -145,11 +159,21 @@ class NewsletterFeedSource(Source):
             self.state_path.write_text(json.dumps({"seen": (seen + read)[-3000:]}), encoding="utf-8")
         return results[:limit]
 
+    def _about_ai(self, title, text) -> bool:
+        return self.ai_filter is None or self.ai_filter(f"{title} {text[:600]}")
+
     def _entry(self, feed, entry, stamp, key) -> list:
-        """The items of one entry; [] when a health post does not mention AI."""
+        """The items of one entry; [] when a health post does not mention AI. An excerpt gives way to the
+        article page when the page has more text, before the health filter reads it."""
         link = entry.get("link", "") or ""
         title = " ".join((entry.get("title", "") or "").split())
         html = _body(entry)
+        text = _plain(html)
+        if len(text) < FULL_TEXT_BELOW and self.article is not None and link.startswith(("https://", "http://")):
+            page = self.article(link)
+            page_text = _plain(page)
+            if len(page_text) > len(text):
+                html, text = page, page_text
         day = time.strftime("%Y-%m-%d", time.gmtime(stamp))
         source = f"newsletter:{feed['name']}"
         if feed["kind"] == "digest" and self.segmenter is not None and len(html) > 500:
@@ -166,12 +190,10 @@ class NewsletterFeedSource(Source):
                 out.append(Result(id=url or f"{link}#{position}", title=story_title, authors=[feed["name"]],
                                   date=day, url=url or link, abstract=summary, source=source, extra=extra))
             return out
-        text, _ = html_to_text(html)
-        summary = " ".join(text.split())[:1500]
-        if self.ai_filter is not None and not self.ai_filter(f"{title} {summary[:600]}"):
+        if not self._about_ai(title, text):
             return []
         return [Result(id=normalize_url(link) if link else key, title=title, authors=[feed["name"]], date=day,
-                       url=link, abstract=summary, source=source, extra={"kind": "newsletter_item"})]
+                       url=link, abstract=text[:TEXT_CHARS], source=source, extra={"kind": "newsletter_item"})]
 
 
 # ----- sotawhat newsletters add -------------------------------------------------------------------------

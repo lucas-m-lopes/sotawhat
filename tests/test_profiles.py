@@ -96,5 +96,7 @@ def test_newsletters_split_by_profile(tmp_path):
     saude = next(s for s in build_sources("medico", settings=settings, segmenter=seg) if s.name == "newsletters-saude")
     assert (ia.profile, saude.profile) == ("ia", "saude") and ia.segmenter is seg and saude.segmenter is seg
     assert ia.ai_filter is None and saude.ai_filter is not None and saude.ai_filter("Hcor adota IA")
+    from sotawhat.sources.pages import read_article
+    assert ia.article is read_article and saude.article is read_article        # excerpt feeds read the page
     assert str(ia.path) == str(tmp_path / "newsletters.yaml")
     assert str(saude.state_path) == str(tmp_path / "state" / "newsletters-saude.json")

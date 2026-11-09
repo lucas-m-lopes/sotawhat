@@ -4,6 +4,7 @@
 #            ≈ US$ 0,0005 por edição)
 #   enabled: false deixa a newsletter listada sem ler
 # As de saúde passam por um filtro de termos de IA (inglês e português) antes da triagem.
+# Texto completo: quando o feed traz só um trecho (menos de 1.500 caracteres), o texto vem da página do artigo.
 # Acrescentar um Substack (ou outro feed): sotawhat newsletters add https://exemplo.substack.com --profile saude
 # Fora daqui: AlphaSignal e OpenAI (RSS em sotawhat/profiles.py), The Batch (sitemap) e a Rundown AI (Gmail,
 # label newsletters/ai). Feeds conferidos em 2026-11-09.
@@ -68,7 +69,7 @@ newsletters:
     profile: ia
     kind: post
     enabled: true
-    note: ensaios técnicos longos e raros (OpenAI → Thinking Machines)
+    note: ensaios técnicos longos e raros (OpenAI → Thinking Machines); o feed só tem o resumo, o texto vem da página
   - name: the-rundown
     url: https://www.therundown.ai/feed
     profile: ia
@@ -171,7 +172,7 @@ newsletters:
     profile: saude
     kind: post
     enabled: true
-    note: Nikhil Krishnan; negócios de saúde nos EUA (o feed só traz o resumo)
+    note: Nikhil Krishnan; negócios de saúde nos EUA (o feed só traz o resumo, o texto vem da página)
   - name: palpate-health-ai
     url: https://palpatehealthai.substack.com/feed
     profile: saude
@@ -183,13 +184,13 @@ newsletters:
     profile: saude
     kind: post
     enabled: true
-    note: MedCity News, categoria IA
+    note: MedCity News, categoria IA (o feed só traz o resumo, o texto vem da página)
   - name: auntminnie
     url: https://www.auntminnie.com/feed
     profile: saude
     kind: post
     enabled: true
-    note: radiologia e imagem
+    note: radiologia e imagem (a página bloqueia robôs; as entradas curtas ficam com o trecho do feed)
   - name: futuro-da-saude
     url: https://futurodasaude.com.br/feed/
     profile: saude

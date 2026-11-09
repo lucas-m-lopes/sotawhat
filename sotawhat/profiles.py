@@ -16,6 +16,7 @@ from sotawhat.sources.inbox import InboxSource
 from sotawhat.sources.instagram import InstagramSource
 from sotawhat.sources.mcp_registry import MCPRegistrySource
 from sotawhat.sources.newsletters import NewsletterFeedSource, mentions_ai_pt
+from sotawhat.sources.pages import read_article
 from sotawhat.sources.medrxiv import MedRxivSource
 from sotawhat.sources.pubmed import PubMedSource
 from sotawhat.sources.rss import RSSSource
@@ -124,7 +125,7 @@ def _newsletters(settings, segmenter, profile):
     """Newsletters by RSS (config/newsletters.yaml): ia -> geral, saude -> medico (filtered by AI terms)."""
     return NewsletterFeedSource(f"newsletters-{profile}", settings.sotawhat_config_dir / "newsletters.yaml", profile,
                                 settings.sotawhat_data_dir / "state" / f"newsletters-{profile}.json", segmenter=segmenter,
-                                ai_filter=health_ai_text if profile == "saude" else None,
+                                ai_filter=health_ai_text if profile == "saude" else None, article=read_article,
                                 max_items=60 if profile == "ia" else 40)
 
 

@@ -7,7 +7,7 @@ import pytest
 
 from sotawhat.items import to_item
 from sotawhat.llm.schemas import NewsletterStories
-from sotawhat.sources.gmail import GmailNewsletterSource, html_to_text, make_segmenter, skip_link
+from sotawhat.sources.gmail import GmailNewsletterSource, covered, html_to_text, make_segmenter, skip_link
 
 RAW = Path("tests/fixtures/newsletter.eml").read_bytes()
 
@@ -113,3 +113,17 @@ def test_make_segmenter_uses_the_segment_task():
     assert task == "segment" and "Sender <s@x.y>" in messages[1]["content"] and stories[0].link == 1
     with pytest.raises(Exception):
         NewsletterStories.model_validate({"stories": [STORIES[0] | {"category": "spam"}]})
+
+
+def test_senders_with_a_feed_of_their_own_are_skipped(tmp_path):
+    """The Batch (sitemap) and AlphaSignal (RSS) already arrive by their own sources: a Gmail filter that also
+    labels their e-mails must not double the stories, nor spend an LLM call."""
+    batch = RAW.replace(b"From: AI Weekly <news@aiweekly.example>", b"From: The Batch <thebatch@mail.deeplearning.ai>")
+    seen = []
+    src = GmailNewsletterSource("eu@gmail.com", "pw", "q", segmenter_returning(STORIES, seen), tmp_path / "g.json",
+                                imap_factory=lambda: FakeIMAP([(b"9", b"3333", batch), (b"7", b"1111", RAW)]),
+                                resolve=lambda u: u)
+    results = src.fetch(40)
+    assert len(seen) == 1 and {r.source for r in results} == {"gmail:aiweekly.example"}
+    assert sorted(json.loads((tmp_path / "g.json").read_text())["seen"]) == ["1111", "3333"]   # read, never again
+    assert covered("AlphaSignal <news@alphasignal.ai>") and not covered("The Rundown <news@daily.therundown.ai>")

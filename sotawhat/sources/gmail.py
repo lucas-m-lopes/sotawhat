@@ -26,7 +26,7 @@ from sotawhat.models import Result
 from sotawhat.sources.base import Source
 
 DROP = {"sponsor", "job", "event"}
-_SKIP = re.compile(r"unsubscribe|preferences|manage[ -]?(your)?[ -]?subscription|opt[ -]?out|view (it )?in (your )?browser|"
+_SKIP = re.compile(r"(un)?subscribe|preferences|manage[ -]?(your)?[ -]?subscription|opt[ -]?out|view (it )?in (your )?browser|"
                    r"forward to a friend|refer(ral)?\b", re.I)
 _MSGID = re.compile(rb"X-GM-MSGID (\d+)")
 _BLOCKS = {"p", "div", "br", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "table", "ul", "ol", "section"}
@@ -110,6 +110,34 @@ def make_segmenter(gateway, max_chars=24000):
     return segment
 
 
+def stories_from_html(segmenter, subject, sender, content, html=True, resolve=None) -> list:
+    """One newsletter issue (an e-mail or a feed entry) -> [(position, story, url)]: the LLM splits the text,
+    each story keeps the link it chose, resolved past tracking redirects. Sponsor, job and event stories
+    are dropped; `position` counts every story the model returned."""
+    resolve = resolve or resolve_link
+    text, links, labels = _parse(content) if html else (content, {}, {})
+    usable = {n: url for n, url in links.items() if not skip_link(url, labels.get(n, ""))}
+    listing = "\n".join(f"[{n}] {url}" for n, url in usable.items())
+    stories = segmenter(subject, sender, f"{text}\n\nLinks:\n{listing}" if listing else text)
+    out = []
+    for position, story in enumerate(stories, 1):
+        if story.category in DROP:
+            continue
+        url = usable.get(story.link, "")
+        out.append((position, story, normalize_url(resolve(url)) if url else ""))
+    return out
+
+
+# Senders whose content already arrives through a source of its own (The Batch by its sitemap, AlphaSignal by
+# RSS): their e-mails are skipped, so a Gmail filter that also labels them never doubles the stories.
+COVERED_BY_FEEDS = ("deeplearning.ai", "alphasignal.ai")
+
+
+def covered(sender, domains=COVERED_BY_FEEDS) -> bool:
+    domain = parseaddr(sender)[1].rsplit("@", 1)[-1].lower()
+    return any(domain == d or domain.endswith("." + d) for d in domains)
+
+
 def _gmail_imap():
     return imaplib.IMAP4_SSL("imap.gmail.com", 993, ssl_context=ssl.create_default_context())
 
@@ -119,11 +147,12 @@ class GmailNewsletterSource(Source):
     ai_specific = True
 
     def __init__(self, address, app_password, query, segmenter, state_path, name="gmail", max_messages=10,
-                 max_items=40, imap_factory=None, resolve=None):
+                 max_items=40, imap_factory=None, resolve=None, skip_domains=COVERED_BY_FEEDS):
         self.name, self.address, self.password, self.query = name, address, app_password, query
         self.segmenter, self.state_path = segmenter, Path(state_path)
         self.max_messages, self.max_items = max_messages, max_items
         self._imap_factory, self._resolve = imap_factory or _gmail_imap, resolve or resolve_link
+        self.skip_domains = tuple(skip_domains)
 
     def _seen(self) -> list:
         if not self.state_path.exists():
@@ -150,7 +179,9 @@ class GmailNewsletterSource(Source):
                 msgid = match.group(1).decode() if match else uid.decode()
                 if msgid in seen or not raw:
                     continue
-                results += self._stories(msgid, email.message_from_bytes(raw, policy=policy.default))
+                message = email.message_from_bytes(raw, policy=policy.default)
+                if not covered(str(message.get("From", "")), self.skip_domains):
+                    results += self._stories(msgid, message)
                 read.append(msgid)
                 if len(results) >= limit:
                     break
@@ -173,17 +204,9 @@ class GmailNewsletterSource(Source):
             day = ""
         body = message.get_body(preferencelist=("html", "plain"))
         content = body.get_content() if body is not None else ""
-        text, links, labels = _parse(content) if body is not None and body.get_content_subtype() == "html" \
-            else (content, {}, {})
-        usable = {n: url for n, url in links.items() if not skip_link(url, labels.get(n, ""))}
-        listing = "\n".join(f"[{n}] {url}" for n, url in usable.items())
-        stories = self.segmenter(subject, sender, f"{text}\n\nLinks:\n{listing}" if listing else text)
+        html = body is not None and body.get_content_subtype() == "html"
         out = []
-        for position, story in enumerate(stories, 1):
-            if story.category in DROP:
-                continue
-            url = usable.get(story.link, "")
-            url = normalize_url(self._resolve(url)) if url else ""
+        for position, story, url in stories_from_html(self.segmenter, subject, sender, content, html, self._resolve):
             out.append(Result(id=url or f"gmail:{msgid}#{position}", title=" ".join(story.title.split()),
                               authors=[domain], date=day, url=url, abstract=" ".join(story.summary.split()),
                               source=f"gmail:{domain}", extra={"kind": "newsletter_item", "category": story.category}))

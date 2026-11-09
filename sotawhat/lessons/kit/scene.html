@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<link rel="stylesheet" href="../../../_kit/lesson.css">
+<script type="importmap">{"imports": {"three": "../../../_kit/three.module.js"}}</script>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1920" height="1080"></canvas><div id="sub"></div></div>
+<div id="ui"></div>
+<script type="module">
+import { start } from '../../../_kit/lesson_kit.js';
+import build from './scene.js';
+start(build);
+</script>
+</body>
+</html>

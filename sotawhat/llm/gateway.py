@@ -74,13 +74,15 @@ def _period_starts(now):
 
 class LLMGateway:
     def __init__(self, client, store=None, settings=None, run_id=None, budget_day=None,
-                 budget_month=None, now=lambda: datetime.now(timezone.utc), tasks=None):
+                 budget_month=None, now=lambda: datetime.now(timezone.utc), tasks=None, budget_run=None):
+        """`budget_run`: a cap on the calls of `run_id` (a lesson); it replaces the daily cap when given."""
         self.client = client
         self.store = store
         self.settings = settings
         self.run_id = run_id
         self.tasks = tasks or {}   # config/llm.yaml `tasks`
         self._now = now
+        self.budget_run = budget_run
         if settings is not None:
             self.privacy = Privacy(zdr=settings.openrouter_zdr, data_collection=settings.openrouter_data_collection,
                                    quantizations=settings.quantizations)
@@ -88,12 +90,15 @@ class LLMGateway:
             budget_month = settings.sotawhat_llm_budget_usd_month if budget_month is None else budget_month
         else:
             self.privacy = Privacy()
-        self.budget_day = budget_day
+        self.budget_day = None if budget_run is not None else budget_day
         self.budget_month = budget_month
 
     def _check_budget(self):
         if self.store is None:
             return
+        if self.budget_run is not None and self.run_id is not None and \
+                self.store.llm_cost_for_run(self.run_id) >= self.budget_run:
+            raise BudgetExceeded(f"run LLM budget of US$ {self.budget_run:.2f} reached")
         day_start, month_start = _period_starts(self._now())
         if self.budget_day is not None and self.store.llm_cost_since(day_start) >= self.budget_day:
             raise BudgetExceeded(f"daily LLM budget of US$ {self.budget_day:.2f} reached")

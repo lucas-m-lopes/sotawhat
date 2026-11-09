@@ -1,0 +1,13 @@
+/* lesson.css — the page of one three.js scene: 1920×1080 for the capture, scaled to the window when interactive. */
+html, body { margin: 0; background: #0f141a; color: #f2f2f2; font-family: "Segoe UI", system-ui, sans-serif; }
+#stage { position: relative; width: 100%; max-width: 1280px; margin: 0 auto; aspect-ratio: 16 / 9; }
+#stage canvas { display: block; width: 100%; height: 100%; }
+#sub { position: absolute; left: 50%; bottom: 2.6%; transform: translateX(-50%); max-width: 88%; padding: .3em .8em;
+  background: rgba(0, 0, 0, .6); color: #f2f2f2; font: 500 clamp(12px, 2vw, 22px)/1.25 "Segoe UI", sans-serif;
+  text-align: center; white-space: pre; }
+#ui { display: flex; gap: 12px; align-items: center; justify-content: center; padding: 12px; }
+#ui input[type=range] { width: min(60vw, 640px); }
+#ui button { font: inherit; padding: 4px 12px; border-radius: 6px; border: 1px solid #3a4452; background: #1b2330; color: inherit; cursor: pointer; }
+body.capture #stage { width: 1920px; height: 1080px; max-width: none; margin: 0; }
+body.capture #sub { font-size: 36px; bottom: 30px; }
+body.capture #ui { display: none; }

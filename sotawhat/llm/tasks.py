@@ -8,6 +8,7 @@ MIMO_PRO = "xiaomi/mimo-v2.6-pro"
 GLM = "z-ai/glm-5.3"
 GLM_FLASH = "z-ai/glm-5.3-flash"
 MINIMAX_FLASH = "minimax/minimax-m3.1-flash"
+KIMI_PRO = "moonshotai/kimi-k3.1-pro"     # lessons: escalation after 2 failed repairs (best open model on AA-3D)
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,11 @@ DEFAULT_TASKS = {
     "judge": TaskSpec((DEEPSEEK_FLASH, GLM_FLASH, MIMO_PRO), "low", 2500),
     "synth": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO), "high", 12000),
     "accounts": TaskSpec((DEEPSEEK_FLASH, GLM_FLASH), "low", 3000),   # Instagram accounts to scan (P5)
+    # lessons (aulas 3D): the economic scenario of docs/research/reports/Aulas didáticas animadas em 3D.md;
+    # three.js scenes pass (MIMO_PRO, DEEPSEEK_FLASH) per call, escalation passes (KIMI_PRO, MIMO_PRO)
+    "lesson_plan": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO, GLM_FLASH), "high", 24000),
+    "lesson_facts": TaskSpec((DEEPSEEK_FLASH, GLM_FLASH), "low", 4000),
+    "lesson_code": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO), "high", 20000),
     "smoke": TaskSpec((DEEPSEEK_FLASH,), "low", 600),
 }
 

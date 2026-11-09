@@ -7,6 +7,7 @@ import re
 import time
 from datetime import datetime, timezone
 
+from sotawhat.lessons.deliver import handle_callback as handle_lesson_callback
 from sotawhat.notify.telegram import TelegramError
 from sotawhat.pipeline.deliver import CODES, VOTES, idea_keyboard, keyboard
 from sotawhat.store.db import utcnow
@@ -38,6 +39,8 @@ def handle_update(store, notifier, update, allowed_user) -> str:
     if query is not None:
         if str((query.get("from") or {}).get("id")) != str(allowed_user):
             return "ignored"
+        if handle_lesson_callback(store, notifier, query):        # quiz, lesson review, voice test
+            return "vote"
         parsed = parse_callback(query.get("data"))
         row = store.delivery_by_key(parsed[0]) if parsed else None
         if row is None:

@@ -1,0 +1,43 @@
+# config/lessons_glossary.yaml — como as vozes locais devem ler os termos técnicos das aulas.
+# A legenda mostra o termo original; só o áudio usa a grafia adaptada (`spoken`).
+# `ipa` (opcional) vai para o Chirp 3 HD do Google como pronúncia personalizada.
+# A troca é por palavra inteira e ignora maiúsculas; termos com várias palavras vêm antes dos simples.
+terms:
+  - {term: large language model, spoken: lardj lénguidj módel}
+  - {term: reinforcement learning, spoken: reinfórssment lêrning}
+  - {term: machine learning, spoken: machín lêrning}
+  - {term: deep learning, spoken: dip lêrning}
+  - {term: fine-tuning, spoken: fáin túning}
+  - {term: softmax, spoken: sóftméks}
+  - {term: token, spoken: tôken}
+  - {term: tokens, spoken: tôkens}
+  - {term: embedding, spoken: embéding}
+  - {term: embeddings, spoken: embédings}
+  - {term: transformer, spoken: transfórmer}
+  - {term: transformers, spoken: transfórmers}
+  - {term: attention, spoken: aténchon}
+  - {term: self-attention, spoken: sélf aténchon}
+  - {term: query, spoken: kuéri}
+  - {term: queries, spoken: kuéris}
+  - {term: key, spoken: qui}
+  - {term: keys, spoken: quis}
+  - {term: value, spoken: véliu}
+  - {term: values, spoken: véliuz}
+  - {term: encoder, spoken: encôder}
+  - {term: decoder, spoken: decôder}
+  - {term: dataset, spoken: déita-set}
+  - {term: datasets, spoken: déita-sets}
+  - {term: benchmark, spoken: bêntchmark}
+  - {term: pipeline, spoken: páip-láin}
+  - {term: prompt, spoken: prômpt}
+  - {term: LLM, spoken: éle éle ême}
+  - {term: LLMs, spoken: éle éle êmes}
+  - {term: GPU, spoken: gê pê u}
+  - {term: voxel, spoken: vóksel}
+  - {term: voxels, spoken: vóksels}
+  - {term: batch, spoken: bétch}
+  - {term: score, spoken: iscór}
+  - {term: feedback, spoken: fídbék}
+  - {term: reward, spoken: riuórd}
+  - {term: loss, spoken: lóss}
+  - {term: gradient, spoken: grêidient}

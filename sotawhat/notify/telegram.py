@@ -2,7 +2,9 @@
 """Telegram Bot API client (SDD §7.7): messages with inline buttons, updates (votes and links) and
 button refresh. The bot token never appears in raised errors."""
 import html
+import json
 import time
+from pathlib import Path
 
 import httpx
 
@@ -56,11 +58,21 @@ class TelegramNotifier:
     def configured(self) -> bool:
         return bool(self.token and self.chat_id)
 
-    def _call(self, method, payload=None, timeout=None):
+    def _call(self, method, payload=None, timeout=None, files=None):
         for attempt in range(2):
             try:
-                response = self._http.post(f"/{method}", json=payload or {},
-                                           timeout=timeout or httpx.USE_CLIENT_DEFAULT)
+                if files:   # multipart upload (video, audio): the other fields go as form fields
+                    form = {k: json.dumps(v) if isinstance(v, (dict, list)) else str(v) for k, v in (payload or {}).items()}
+                    opened = {k: (name, open(path, "rb"), mime) for k, (name, path, mime) in files.items()}
+                    try:
+                        response = self._http.post(f"/{method}", data=form, files=opened,
+                                                   timeout=timeout or httpx.USE_CLIENT_DEFAULT)
+                    finally:
+                        for _, handle, _ in opened.values():
+                            handle.close()
+                else:
+                    response = self._http.post(f"/{method}", json=payload or {},
+                                               timeout=timeout or httpx.USE_CLIENT_DEFAULT)
             except httpx.TransportError as exc:
                 raise TelegramError(f"{method}: transport error {type(exc).__name__}") from None
             try:
@@ -103,6 +115,30 @@ class TelegramNotifier:
     def edit_reply_markup(self, chat_id, message_id, reply_markup) -> None:
         self._call("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": message_id,
                                               "reply_markup": reply_markup})
+
+    def edit_message_text(self, chat_id, message_id, text, reply_markup=None, parse_mode="HTML") -> None:
+        payload = {"chat_id": chat_id, "message_id": message_id, "text": text, "parse_mode": parse_mode,
+                   "disable_web_page_preview": True}
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        self._call("editMessageText", payload)
+
+    def send_video(self, path, caption="", reply_markup=None, duration=None, width=None, height=None) -> dict:
+        """Up to 50 MB with the cloud Bot API; the player streams it (supports_streaming)."""
+        payload = {"chat_id": self.chat_id, "caption": caption, "parse_mode": "HTML", "supports_streaming": "true"}
+        for key, value in (("duration", duration), ("width", width), ("height", height)):
+            if value:
+                payload[key] = int(value)
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        return self._call("sendVideo", payload, timeout=600,
+                          files={"video": (Path(path).name, path, "video/mp4")}) or {}
+
+    def send_audio(self, path, title="", caption="", reply_markup=None) -> dict:
+        payload = {"chat_id": self.chat_id, "title": title, "caption": caption, "parse_mode": "HTML"}
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        return self._call("sendAudio", payload, timeout=120, files={"audio": (Path(path).name, path, "audio/wav")}) or {}
 
     def get_me(self) -> dict:
         return self._call("getMe") or {}

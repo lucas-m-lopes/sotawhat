@@ -51,20 +51,21 @@ def test_p2_channel_sources_per_profile(tmp_path):
                         gmail_address="eu@gmail.com", gmail_app_password="abcdefghijklmnop")
     medico = build_sources("medico", settings=settings)
     assert _names(medico) == ["pubmed", "arxiv", "medical", "crossref", "health-ai-news", "health-news", "google-news",
-                              "medrxiv", "fda-ai-devices", "github-med", "hf-medical", "mcp-health"]
+                              "medrxiv", "fda-ai-devices", "newsletters-saude", "github-med", "hf-medical", "mcp-health"]
     channels = [s for s in medico if s.keywordless]
     assert {s.name for s in channels} >= {"crossref", "medrxiv", "fda-ai-devices", "github-med", "google-news"}
     assert next(s for s in medico if s.name == "github-med").token == "ghp_x"
     assert str(next(s for s in medico if s.name == "fda-ai-devices").state_path).startswith(str(tmp_path))
     geral = build_sources("geral", settings=settings, segmenter=lambda *a: [])
     assert _names(geral) == ["arxiv", "semantic_scholar", "hf_papers", "labs", "ai-news", "the-batch", "gmail",
-                             "github-ai", "hf-trending", "mcp-recent"]
+                             "newsletters-ia", "github-ai", "hf-trending", "mcp-recent"]
     assert next(s for s in geral if s.name == "hf-trending").token == "hf_x"
     assert next(s for s in geral if s.name == "labs").keywordless is False
 
 
 def test_without_settings_the_stateful_channels_stay_out():
-    assert not {"fda-ai-devices", "the-batch", "gmail"} & set(_names(build_sources("medico") + build_sources("geral")))
+    assert not {"fda-ai-devices", "the-batch", "gmail", "newsletters-ia", "newsletters-saude"} & set(
+        _names(build_sources("medico") + build_sources("geral")))
     assert "gmail" not in _names(build_sources("geral"))
 
 
@@ -84,3 +85,16 @@ def test_instagram_and_manual_capture_join_the_profiles(tmp_path):
         off = _names(build_sources("medico", settings=settings, apify=SimpleNamespace(configured=False), store=st))
         assert "instagram-saude" not in off and "manual-telegram" in off          # links work without Apify
         assert not {"instagram-ia", "manual-telegram"} & set(_names(build_sources("geral")))
+
+
+def test_newsletters_split_by_profile(tmp_path):
+    from sotawhat.config import Settings
+
+    settings = Settings(_env_file=None, sotawhat_data_dir=tmp_path, sotawhat_config_dir=tmp_path)
+    seg = lambda *a: []                                                             # noqa: E731
+    ia = next(s for s in build_sources("geral", settings=settings, segmenter=seg) if s.name == "newsletters-ia")
+    saude = next(s for s in build_sources("medico", settings=settings, segmenter=seg) if s.name == "newsletters-saude")
+    assert (ia.profile, saude.profile) == ("ia", "saude") and ia.segmenter is seg and saude.segmenter is seg
+    assert ia.ai_filter is None and saude.ai_filter is not None and saude.ai_filter("Hcor adota IA")
+    assert str(ia.path) == str(tmp_path / "newsletters.yaml")
+    assert str(saude.state_path) == str(tmp_path / "state" / "newsletters-saude.json")

@@ -1,0 +1,216 @@
+# config/newsletters.yaml - newsletters lidas pelo RSS no run diário (Substack, beehiiv, sites).
+#   profile: ia (seção Fronteira de IA, perfil geral) | saude (seção IA ∩ Saúde, perfil médico)
+#   kind:    post (cada post é um item) | digest (cada edição traz várias notícias; o LLM separa uma a uma,
+#            ≈ US$ 0,0005 por edição)
+#   enabled: false deixa a newsletter listada sem ler
+# As de saúde passam por um filtro de termos de IA (inglês e português) antes da triagem.
+# Acrescentar um Substack (ou outro feed): sotawhat newsletters add https://exemplo.substack.com --profile saude
+# Fora daqui: AlphaSignal e OpenAI (RSS em sotawhat/profiles.py), The Batch (sitemap) e a Rundown AI (Gmail,
+# label newsletters/ai). Feeds conferidos em 2026-11-09.
+newsletters:
+  # ----- Fronteira de IA ------------------------------------------------------------------------------
+  - name: import-ai
+    url: https://importai.substack.com/feed
+    profile: ia
+    kind: digest
+    enabled: true
+    note: Jack Clark (Anthropic); pesquisa e política de IA, semanal
+  - name: interconnects
+    url: https://www.interconnects.ai/feed
+    profile: ia
+    kind: post
+    enabled: true
+    note: Nathan Lambert; modelos abertos, pós-treino e RL, 1–2 por semana
+  - name: latent-space
+    url: https://www.latent.space/feed
+    profile: ia
+    kind: post
+    enabled: true
+    note: engenharia de IA (swyx); ~5 por semana, entram as 2 mais novas por dia
+  - name: understanding-ai
+    url: https://www.understandingai.org/feed
+    profile: ia
+    kind: post
+    enabled: true
+    note: Timothy B. Lee; análise de modelos e mercado, semanal
+  - name: one-useful-thing
+    url: https://www.oneusefulthing.org/feed
+    profile: ia
+    kind: post
+    enabled: true
+    note: Ethan Mollick; uso prático de LLMs, ~quinzenal
+  - name: normal-technology
+    url: https://www.normaltech.ai/feed
+    profile: ia
+    kind: post
+    enabled: true
+    note: Narayanan e Kapoor (ex-AI Snake Oil); avaliação e ceticismo, mensal
+  - name: epoch-ai
+    url: https://epochai.substack.com/feed
+    profile: ia
+    kind: post
+    enabled: true
+    note: Epoch AI; tendências de computação, custo e capacidade dos modelos
+  - name: dair-ai
+    url: https://nlp.elvissaravia.com/feed
+    profile: ia
+    kind: digest
+    enabled: true
+    note: Elvis Saravia; Top AI Papers of the Week e AI Agents Weekly
+  - name: guide-to-ai
+    url: https://nathanbenaich.substack.com/feed
+    profile: ia
+    kind: digest
+    enabled: true
+    note: Nathan Benaich (State of AI); resumo mensal
+  - name: lilian-weng
+    url: https://lilianweng.github.io/index.xml
+    profile: ia
+    kind: post
+    enabled: true
+    note: ensaios técnicos longos e raros (OpenAI → Thinking Machines)
+  - name: the-rundown
+    url: https://www.therundown.ai/feed
+    profile: ia
+    kind: post
+    enabled: false
+    note: chega pelo Gmail (o RSS só traz a manchete do dia)
+  - name: tldr-ai
+    url: https://tldr.tech/api/rss/ai
+    profile: ia
+    kind: digest
+    enabled: false
+    note: diária; o RSS só tem títulos e repete Rundown/AlphaSignal
+  - name: the-neuron
+    url: https://www.theneuron.ai/feed/
+    profile: ia
+    kind: post
+    enabled: false
+    note: diária, repete as outras
+  - name: bens-bites
+    url: https://www.bensbites.com/feed
+    profile: ia
+    kind: post
+    enabled: false
+    note: ensaios sobre agentes; repete as diárias
+  - name: last-week-in-ai
+    url: https://lastweekin.ai/feed
+    profile: ia
+    kind: digest
+    enabled: false
+    note: resumo semanal irregular (última edição em 2026-10-09)
+  - name: the-sequence
+    url: https://thesequence.substack.com/feed
+    profile: ia
+    kind: post
+    enabled: false
+    note: ~5 por semana, parte paga
+  - name: zvi
+    url: https://thezvi.substack.com/feed
+    profile: ia
+    kind: post
+    enabled: false
+    note: cobertura exaustiva, posts enormes várias vezes por semana
+  - name: exponential-view
+    url: https://www.exponentialview.co/feed
+    profile: ia
+    kind: post
+    enabled: false
+    note: Azeem Azhar; macro e estratégia
+  - name: dwarkesh
+    url: https://www.dwarkesh.com/feed
+    profile: ia
+    kind: post
+    enabled: false
+    note: entrevistas longas com pesquisadores
+  # ----- IA ∩ Saúde ---------------------------------------------------------------------------------
+  - name: ground-truths
+    url: https://erictopol.substack.com/feed
+    profile: saude
+    kind: post
+    enabled: true
+    note: Eric Topol; medicina e IA, semanal
+  - name: ai-health-uncut
+    url: https://www.fixhealth.ai/feed
+    profile: saude
+    kind: post
+    enabled: true
+    note: Sergei Polevikov; mercado de IA em saúde (OpenEvidence, Epic, big techs)
+  - name: second-opinion
+    url: https://secondopinion.media/feed
+    profile: saude
+    kind: post
+    enabled: true
+    note: Christina Farr; adoção de IA e saúde digital, vários por semana
+  - name: doctor-penguin
+    url: https://doctorpenguin.substack.com/feed
+    profile: saude
+    kind: digest
+    enabled: true
+    note: papers de IA médica comentados; parada desde 2026-07, entra sozinha se voltar
+  - name: medical-futurist
+    url: https://medicalfuturist.com/feed
+    profile: saude
+    kind: post
+    enabled: true
+    note: Bertalan Meskó; tecnologia em saúde, semanal
+  - name: health-api-guy
+    url: https://healthapiguy.substack.com/feed
+    profile: saude
+    kind: post
+    enabled: true
+    note: Brendan Keeler; interoperabilidade (FHIR, Epic, TEFCA)
+  - name: hospitalogy
+    url: https://hospitalogy.com/feed
+    profile: saude
+    kind: post
+    enabled: true
+    note: Blake Madden; estratégia e negócios de hospitais
+  - name: out-of-pocket
+    url: https://www.outofpocket.health/p/rss.xml
+    profile: saude
+    kind: post
+    enabled: true
+    note: Nikhil Krishnan; negócios de saúde nos EUA (o feed só traz o resumo)
+  - name: palpate-health-ai
+    url: https://palpatehealthai.substack.com/feed
+    profile: saude
+    kind: post
+    enabled: true
+    note: IA em saúde sem hype, escrita por clínica
+  - name: medcity-ai
+    url: https://medcitynews.com/category/artificial-intelligence/feed/
+    profile: saude
+    kind: post
+    enabled: true
+    note: MedCity News, categoria IA
+  - name: auntminnie
+    url: https://www.auntminnie.com/feed
+    profile: saude
+    kind: post
+    enabled: true
+    note: radiologia e imagem
+  - name: futuro-da-saude
+    url: https://futurodasaude.com.br/feed/
+    profile: saude
+    kind: post
+    enabled: true
+    note: Futuro da Saúde (Brasil)
+  - name: saude-business
+    url: https://www.saudebusiness.com/feed
+    profile: saude
+    kind: post
+    enabled: true
+    note: Saúde Business (Brasil); gestão hospitalar
+  - name: medicina-sa
+    url: https://medicinasa.com.br/feed/
+    profile: saude
+    kind: post
+    enabled: true
+    note: Medicina S/A (Brasil)
+  - name: hospitais-brasil
+    url: https://portalhospitaisbrasil.com.br/feed/
+    profile: saude
+    kind: post
+    enabled: false
+    note: Portal Hospitais Brasil; muito release de empresa

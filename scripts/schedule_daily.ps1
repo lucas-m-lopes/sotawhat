@@ -15,11 +15,13 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $repo = (Resolve-Path "$PSScriptRoot\..").Path
-$exe = Join-Path $repo ".venv\Scripts\sotawhat.exe"
+# pythonw.exe has no console window: a run used to die when its black window was closed (exit 0xC000013A,
+# the first weekly run on 2026-11-08). Logs stay in data\logs; prints and tracebacks go to data\logs\console.log.
+$exe = Join-Path $repo ".venv\Scripts\pythonw.exe"
 if (-not (Test-Path $exe)) { throw "Not found: $exe - install first: uv pip install -e .[dev]" }
 if (-not (Test-Path (Join-Path $repo ".env"))) { Write-Warning "No .env in $repo - copy .env.example to .env and fill it in." }
 
-$arguments = "run daily"
+$arguments = "-m sotawhat.cli run daily"
 
 # WorkingDirectory = repo root, so the `.env` file, `config\` and `data\insight.db` are found.
 $action = New-ScheduledTaskAction -Execute $exe -Argument $arguments -WorkingDirectory $repo
@@ -61,7 +63,7 @@ if ($Web) {
 if ($Weekly) {
     # Trends, map, gaps, meta-review and the idea engine (P4), Sundays at 20:00: report in data\weekly,
     # ideas on Telegram (4 buttons each) and an e-mail copy. Stops at SOTAWHAT_LLM_BUDGET_USD_RUN_WEEKLY.
-    $weeklyAction = New-ScheduledTaskAction -Execute $exe -Argument "run weekly" -WorkingDirectory $repo
+    $weeklyAction = New-ScheduledTaskAction -Execute $exe -Argument "-m sotawhat.cli run weekly" -WorkingDirectory $repo
     $sunday = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At $WeeklyTime
     $weeklySettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun -MultipleInstances IgnoreNew `
         -ExecutionTimeLimit (New-TimeSpan -Hours 2)

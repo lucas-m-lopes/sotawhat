@@ -39,3 +39,28 @@ def test_parse_eval_commands():
     assert (ns.eval_command, ns.action, ns.n, ns.dir) == ("golden", "draft", 40, "tests/evals/triage")
     ns = parse_args(["eval", "models", "--models", "a/b,c/d", "--apply"])
     assert (ns.eval_command, ns.task, ns.models, ns.apply, ns.limit) == ("models", "triage", "a/b,c/d", True, 0)
+
+
+def test_newsletters_add_arguments():
+    from sotawhat.cli import parse_args
+
+    ns = parse_args(["newsletters", "add", "importai", "--profile", "ia", "--kind", "digest"])
+    assert (ns.command, ns.newsletters_action, ns.address, ns.profile, ns.kind, ns.name) == \
+        ("newsletters", "add", "importai", "ia", "digest", None)
+
+
+def test_without_a_console_output_goes_to_a_log_file(tmp_path, monkeypatch):
+    """pythonw.exe (scheduled tasks) has no stdout/stderr: prints and tracebacks must land in data/logs."""
+    import sys
+
+    from sotawhat.cli import _console_to_file
+
+    monkeypatch.setenv("SOTAWHAT_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+    _console_to_file()
+    print("digest enviado")
+    sys.stderr.write("Traceback: boom\n")
+    sys.stdout.close()
+    text = (tmp_path / "logs" / "console.log").read_text(encoding="utf-8")
+    assert "digest enviado" in text and "Traceback: boom" in text

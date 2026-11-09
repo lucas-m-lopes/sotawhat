@@ -2,12 +2,13 @@
 
 **Tipo:** Software Design Document (SDD) — serve também como *spec* para desenvolvimento orientado a especificação (spec-driven).
 **Data:** 2026-11-07
-**Status:** v2.0 (2026-11-08), com todas as fases (P0–P6) executadas:
+**Status:** v2.1 (2026-11-09), com todas as fases (P0–P6) executadas e as newsletters por RSS:
 - respostas do usuário de 2026-11-07 incorporadas: Instagram pessoal, Neo4j no Docker Desktop, LLMs chineses via OpenRouter;
 - medições da P1 incorporadas: modelo de embeddings e deduplicação por título (§6.3, §6.7, D3);
 - decisões de 2026-11-08 incorporadas: digest em duas seções, "IA ∩ Saúde" e "Fronteira de IA" (escolha feita a partir do golden set), e cópia do digest por e-mail (§6.7, §6.11, §16.1);
 - v1.4: o Obsidian sai do projeto, e nada lê nem escreve no vault (§9, D12). A interface própria com o grafo vem para a P3, que passa a ser executada antes da P2. O grafo de entidades fica no SQLite, e o Neo4j vira espelho (§6.3, §11, D16);
 - v1.5: P2 executada (fontes novas como canais com teto diário, triagem v2 com os tipos de item, Gmail por label; §11). A pedido do usuário ("continue a implantação segundo o plano SDD direto até o final"), as fases seguem sem pausa: P4, P5 e P6;
+- v2.1: newsletters por RSS (`config/newsletters.yaml`, 24 ativas: fronteira e IA ∩ saúde, inclusive brasileiras), digests separados em notícias pelo LLM, filtro de termos de IA em inglês e português, `sotawhat newsletters add` para qualquer Substack. O Gmail fica para a Rundown AI; The Batch e AlphaSignal são ignorados no Gmail porque já têm fonte própria. Runs agendados sem janela de console (pythonw), depois que fechar a janela matou o primeiro run semanal (§7.1, §16.3);
 - v2.0: P6 executada. Backup do SQLite, avaliações de triagem, extração e ideias, relatório das metas G1–G4, proposta de calibração, reparo de textos antigos e aba Hoje (§12, §11). O que depende de você está em §16.2;
 - v1.7: P5 executada. Captura manual pelo Telegram, varredura do Instagram pelo Apify, curadoria das contas, visão e triagem v3 (§7.2, §11);
 - v1.6: P4 executada. Inteligência semanal no SQLite com NetworkX (§6.9), motor de ideias num modo econômico mais enxuto (§8.6), ledger com votos no Telegram e na interface, relatório semanal, abas Ideias e Tendências e ferramentas novas no MCP (§6.11);

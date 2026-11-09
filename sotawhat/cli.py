@@ -3,7 +3,7 @@ import argparse
 import sys
 
 _SUBCOMMANDS = {"search", "run", "ideate", "doctor", "feedback", "eval", "serve", "serve-mcp", "graph", "instagram",
-                "backup", "calibrate", "repair"}
+                "newsletters", "backup", "calibrate", "repair"}
 
 def parse_args(argv):
     # Backward compat: `sotawhat <keyword...> [N]` with no subcommand -> search.
@@ -52,6 +52,15 @@ def parse_args(argv):
     p_instagram.add_argument("--max", type=int, default=50, help="accounts enabled for the daily scan (default 50)")
     p_instagram.add_argument("--limit", type=int, default=None, help="classify at most N new accounts")
     p_instagram.add_argument("--yes", action="store_true", help="fetch the profiles on Apify (paid) and classify")
+
+    p_news = sub.add_parser("newsletters", help="newsletters read by RSS (config/newsletters.yaml)")
+    p_news.add_argument("newsletters_action", choices=["add"])
+    p_news.add_argument("address", help="Substack name (importai), site or feed URL")
+    p_news.add_argument("--profile", choices=["ia", "saude"], required=True,
+                        help="ia: Fronteira de IA (perfil geral); saude: IA ∩ Saúde (perfil médico)")
+    p_news.add_argument("--kind", choices=["post", "digest"], default="post",
+                        help="post: each post is an item; digest: each issue is split into its stories by the LLM")
+    p_news.add_argument("--name", default=None, help="short name (default: from the address)")
 
     p_backup = sub.add_parser("backup", help="copy data/insight.db to data/backups (P6)")
     p_backup.add_argument("--keep", type=int, default=8, help="copies to keep (default 8)")
@@ -118,9 +127,24 @@ def _run_search(ns):
         return
     print(render_grouped(results, ns.keyword))
 
+def _console_to_file():
+    """Under pythonw.exe (the scheduled tasks run without a console window, so closing a window can no longer
+    kill a run) there is no stdout/stderr: prints and tracebacks go to data/logs/console.log instead."""
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    import os
+    from pathlib import Path
+
+    folder = Path(os.environ.get("SOTAWHAT_DATA_DIR") or "data") / "logs"
+    folder.mkdir(parents=True, exist_ok=True)
+    out = open(folder / "console.log", "a", encoding="utf-8", errors="replace", buffering=1)  # noqa: SIM115
+    sys.stdout = sys.stdout or out
+    sys.stderr = sys.stderr or out
+
 def main(argv=None):
     import truststore
     truststore.inject_into_ssl()   # trust the Windows store (local TLS inspection; never verify=False)
+    _console_to_file()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")   # cp1252 consoles/pipes must not crash on emoji
     ns = parse_args(argv if argv is not None else sys.argv[1:])
@@ -165,6 +189,9 @@ def main(argv=None):
     elif ns.command == "instagram":
         from sotawhat.pipeline.accounts import main_instagram
         raise SystemExit(main_instagram(ns))
+    elif ns.command == "newsletters":
+        from sotawhat.sources.newsletters import main_newsletters
+        raise SystemExit(main_newsletters(ns))
 
 if __name__ == "__main__":
     main()

@@ -1,7 +1,8 @@
 # sotawhat/profiles.py
 """Profiles and their sources (SDD §5.3, §7). Keyword sources run once per profile keyword; channel sources
 (P2) run once per day with a cap per source. Sources that keep state in `data/state/` (FDA, The Batch,
-Gmail, Instagram) are only built when `settings` is given; Gmail also needs the LLM segmenter. P5: the
+Gmail, newsletters, Instagram) are only built when `settings` is given; Gmail also needs the LLM segmenter,
+and the newsletters split their digests with it (config/newsletters.yaml: ia -> geral, saude -> medico). P5: the
 Instagram scan (Apify) splits by account category (ia -> geral, saude -> medico), and the links sent to the
 Telegram bot (manual capture) enter the medical profile when the store is given."""
 from sotawhat.sources.arxiv import ArxivSource
@@ -14,11 +15,13 @@ from sotawhat.sources.hf_papers import HFPapersSource
 from sotawhat.sources.inbox import InboxSource
 from sotawhat.sources.instagram import InstagramSource
 from sotawhat.sources.mcp_registry import MCPRegistrySource
+from sotawhat.sources.newsletters import NewsletterFeedSource, mentions_ai_pt
 from sotawhat.sources.medrxiv import MedRxivSource
 from sotawhat.sources.pubmed import PubMedSource
 from sotawhat.sources.rss import RSSSource
 from sotawhat.sources.semantic_scholar import SemanticScholarSource
 from sotawhat.sources.the_batch import TheBatchSource
+from sotawhat.textmatch import contains_any
 
 # Lab/blog feeds (general). URLs pinned here; unreachable feeds are skipped at runtime.
 LAB_FEEDS = [
@@ -112,6 +115,19 @@ PROFILES = {
 }
 
 
+def health_ai_text(text) -> bool:
+    """The health newsletters cover much more than AI: a story or post enters only when it mentions AI."""
+    return contains_any(text, AI_TERMS) or mentions_ai_pt(text)
+
+
+def _newsletters(settings, segmenter, profile):
+    """Newsletters by RSS (config/newsletters.yaml): ia -> geral, saude -> medico (filtered by AI terms)."""
+    return NewsletterFeedSource(f"newsletters-{profile}", settings.sotawhat_config_dir / "newsletters.yaml", profile,
+                                settings.sotawhat_data_dir / "state" / f"newsletters-{profile}.json", segmenter=segmenter,
+                                ai_filter=health_ai_text if profile == "saude" else None,
+                                max_items=60 if profile == "ia" else 40)
+
+
 def _instagram(settings, apify, describer, category):
     return InstagramSource(apify, settings.sotawhat_config_dir / "instagram_accounts.yaml",
                            settings.sotawhat_data_dir / "state" / "instagram.json", category, describer=describer,
@@ -132,6 +148,7 @@ def build_sources(profile, crossref_mailto="", settings=None, segmenter=None, st
             if segmenter is not None:
                 sources.append(GmailNewsletterSource(settings.gmail_address, settings.gmail_app_password,
                                                      settings.gmail_query, segmenter, state / "gmail.json"))
+            sources.append(_newsletters(settings, segmenter, "ia"))
         sources += [GitHubSource("github-ai", GITHUB_AI, days=3, min_stars=20, max_items=15, token=github_token),
                     HFHubSource("hf-trending", [("trending-models", "models", {"sort": "trendingScore"})], per_query=10,
                                 max_items=10, token=hf_token),
@@ -151,6 +168,7 @@ def build_sources(profile, crossref_mailto="", settings=None, segmenter=None, st
                    MedRxivSource(days=2, max_items=40)]
         if state is not None:
             sources.append(FDAAIDevicesSource(state / "fda_ai_devices.json"))
+            sources.append(_newsletters(settings, segmenter, "saude"))
         sources += [GitHubSource("github-med", GITHUB_MEDICAL, days=7, min_stars=5, max_items=15, token=github_token),
                     HFHubSource("hf-medical", [("medical-models", "models", {"filter": "medical", "sort": "trendingScore"}),
                                                ("medical-datasets", "datasets", {"filter": "medical", "sort": "trendingScore"})],

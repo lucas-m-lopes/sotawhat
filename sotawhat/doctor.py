@@ -319,6 +319,47 @@ def check_gmail(settings, imap_factory=None) -> Check:
     return Check(name, "ok", f"{count} mensagens em 30 dias para `{settings.gmail_query}`")
 
 
+def check_newsletters(settings, fetch=None, now=None) -> Check:
+    """config/newsletters.yaml: each enabled feed answers with entries; one with nothing new in 90 days is
+    only named (Doctor Penguin pauses for months), a failing one is a warning."""
+    import calendar
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    import feedparser
+
+    from sotawhat.configfiles import ConfigError
+    from sotawhat.sources.newsletters import load_newsletters
+    from sotawhat.sources.rss import fetch_feed
+
+    name = "newsletters (RSS)"
+    try:
+        feeds = [f for f in load_newsletters(Path(settings.sotawhat_config_dir) / "newsletters.yaml") if f["enabled"]]
+    except ConfigError as exc:
+        return Check(name, "fail", str(exc))
+    if not feeds:
+        return Check(name, "warn", "nenhuma ativa em config/newsletters.yaml")
+    fetch, now = fetch or fetch_feed, now or time.time()
+
+    def newest(feed):
+        try:
+            entries = feedparser.parse(fetch(feed["url"])).entries
+        except Exception as exc:  # noqa: BLE001 - reported per feed
+            return feed["name"], None, f"{type(exc).__name__}"
+        stamps = [calendar.timegm(t) for t in (e.get("published_parsed") or e.get("updated_parsed") for e in entries) if t]
+        return feed["name"], max(stamps) if stamps else None, None if entries else "feed vazio"
+
+    with ThreadPoolExecutor(8) as pool:
+        found = list(pool.map(newest, feeds))
+    failing = [f"{n} ({err})" for n, _, err in found if err]
+    quiet = [n for n, stamp, err in found if not err and (stamp is None or stamp < now - 90 * 86400)]
+    by_profile = {p: sum(1 for f in feeds if f["profile"] == p) for p in ("ia", "saude")}
+    detail = (f"{len(feeds) - len(failing)} de {len(feeds)} respondem (IA {by_profile['ia']}, saúde {by_profile['saude']})"
+              + (f"; falhando: {', '.join(failing)}" if failing else "")
+              + (f"; sem post há 90+ dias: {', '.join(quiet)}" if quiet else ""))
+    return Check(name, "warn" if failing else "ok", detail)
+
+
 def check_instagram(settings, apify=None) -> list:
     """P5: the Apify plan (usage of the cycle) and the accounts file with the last scan."""
     from sotawhat.configfiles import ConfigError
@@ -510,7 +551,7 @@ def main_doctor(ns) -> int:
     if notifier.configured:
         checks.append(check_telegram(notifier))
     checks.append(check_email(settings))
-    checks += [check_github(settings), check_hf(settings), check_gmail(settings)]
+    checks += [check_github(settings), check_hf(settings), check_gmail(settings), check_newsletters(settings)]
     checks += check_instagram(settings)
     with Store(settings.db_path) as store:
         checks.append(check_last_run(store))

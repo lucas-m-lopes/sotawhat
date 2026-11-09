@@ -1,18 +1,31 @@
 # lesson_kit.py — base of every Manim scene of a sotawhat lesson (copied to data/lessons/_kit; do not edit per lesson).
 """A scene reads its narration sentences ("beats") from the JSON in LESSON_SCENE: [{"text", "duration"}].
 `self.beat(*animations)` plays what one sentence describes and holds the frame until the sentence ends, so the
-picture is always in sync with the voice. The subtitles are drawn here, in the band below y = -2.7. After each
-beat the layout is checked (text inside the safe area, no text over text): a problem raises LayoutError, which
-goes back to the LLM that wrote the scene. Formulas use matplotlib's mathtext (no LaTeX installed)."""
+picture is always in sync with the voice. The subtitles are drawn here, in the band below y = -2.7.
+
+Layout by construction: `connect(a, b)` is an arrow that follows its two ends and disappears with them, `flow()`
+lays out a chain with its arrows, `at()` places things in named zones and `self.clear_stage()` empties the stage
+when the scene changes subject. After each beat the picture is checked; a problem raises LayoutError, which goes
+back to the LLM that wrote the scene:
+- anything outside the frame or in the subtitle band;
+- text over text, a text crossing the border of a shape, shapes partially covering each other;
+- an arrow left behind when the object at one end left, an arrow that arrives before its target, a loose arrow
+  that touches nothing, an arrow that crosses another object;
+- LaTeX typed into a Text; more than 16 things on the stage.
+Formulas use matplotlib's mathtext (no LaTeX installed)."""
 import hashlib
 import json
+import math
 import os
+import re
 import textwrap
 from pathlib import Path
 
 from manim import *  # noqa: F401,F403 - the scenes use the whole manim namespace through this module
-from manim import (DOWN, LEFT, RIGHT, UP, Arrow, BackgroundRectangle, Brace, DecimalNumber, Line, NumberLine,
-                   Paragraph, RoundedRectangle, Scene, Square, SVGMobject, Text, VGroup, config)
+from manim import (DOWN, LEFT, RIGHT, UP, Annulus, Arrow, ArrowTip, BackgroundRectangle, Brace, Circle,
+                   CurvedArrow, CurvedDoubleArrow, DecimalNumber, DoubleArrow, Ellipse, FadeOut, Line, MarkupText,
+                   NumberLine, Paragraph, Polygon, Rectangle, RegularPolygon, RoundedRectangle, Scene, Sector, Square,
+                   SurroundingRectangle, SVGMobject, Text, TipableVMobject, VGroup, config)
 
 config.background_color = "#0f141a"
 FONT = "Segoe UI"
@@ -24,12 +37,18 @@ C_BLUE, C_ORANGE, C_GREEN, C_PURPLE = "#4ea1ff", "#ffb74d", "#7bd389", "#b39ddb"
 C_RED, C_YELLOW, C_GRAY, C_TEAL = "#ef6f6c", "#ffd54f", "#8a94a6", "#4dd0c4"
 SAFE_LEFT, SAFE_RIGHT, SAFE_TOP, SAFE_BOTTOM = -6.75, 6.75, 3.8, -2.7
 SUB_Y, SUB_WIDTH = -3.38, 62
+MAX_ON_STAGE = 16
+ZONES = {"center": (0, 0.4), "left": (-4.3, 0.4), "right": (4.3, 0.4), "top": (0, 2.3), "bottom": (0, -1.6),
+         "top-left": (-4.3, 2.3), "top-right": (4.3, 2.3), "bottom-left": (-4.3, -1.6), "bottom-right": (4.3, -1.6)}
+_STAGE = {"scene": None, "incoming": set(), "ids": set(), "stamp": None}
+_LATEX = re.compile(r"\\[A-Za-z]+|[\^_]\{")
 
 
 class LayoutError(Exception):
     pass
 
 
+# --- formulas and the mobjects that would need LaTeX ----------------------------------------------------------
 def Formula(tex, color=C_TEXT, font_size=40):
     """A formula in matplotlib mathtext (\\frac, \\sqrt, ^, _, \\mathrm, Greek letters) as a vector mobject."""
     import matplotlib
@@ -60,10 +79,7 @@ def MathTex(*parts, color=C_TEXT, font_size=40, **_):
 Tex = MathTex
 
 
-# Mobjects that use LaTeX inside get text instead (there is no LaTeX here): numbers, axis labels, matrices,
-# Title, BulletedList and brace labels.
 def _number_text(value, **kwargs):
-    kwargs.pop("color", None)
     return Text(str(value), font_size=kwargs.pop("font_size", 28), color=C_TEXT)
 
 
@@ -121,8 +137,12 @@ def BraceText(mob, text, brace_direction=DOWN, **_):
 BraceLabel = BraceText
 
 
+# --- building blocks ---------------------------------------------------------------------------------------------
 def title(text, color=C_TEXT):
-    return Text(text, font_size=40, color=color).to_edge(UP, buff=0.45)
+    """The scene title at the top; it stays when the stage is cleared."""
+    mob = Text(text, font_size=40, color=color).to_edge(UP, buff=0.45)
+    mob.lesson_keep = True
+    return mob
 
 
 def label(text, size=28, color=C_TEXT):
@@ -130,20 +150,79 @@ def label(text, size=28, color=C_TEXT):
 
 
 def box(text, color=C_BLUE, size=26, width=None, height=None):
-    """A rounded box with centered text: VGroup(rectangle, text)."""
+    """A rounded box with centered text: VGroup(rectangle, text). The box always fits its text."""
     words = Text(text, font_size=size, color=C_TEXT)
-    rect = RoundedRectangle(corner_radius=0.14, width=width or words.width + 0.5, height=height or words.height + 0.4,
-                            stroke_color=color, stroke_width=3, fill_color=color, fill_opacity=0.18)
+    rect = RoundedRectangle(corner_radius=0.14, width=max(width or 0, words.width + 0.5),
+                            height=max(height or 0, words.height + 0.4), stroke_color=color, stroke_width=3,
+                            fill_color=color, fill_opacity=0.18)
     return VGroup(rect, words.move_to(rect))
-
-
-def arrow(a, b, color=C_MUTED, width=4):
-    """An arrow between two mobjects (or points), stopping at their borders."""
-    return Arrow(a, b, buff=0.12, stroke_width=width, color=color, max_tip_length_to_length_ratio=0.18)
 
 
 def tokens(words, color=C_BLUE, size=26):
     return VGroup(*[box(w, color=color, size=size) for w in words]).arrange(RIGHT, buff=0.18)
+
+
+def at(mob, zone):
+    """Puts a mobject in a named zone of the stage: center, left, right, top, bottom, top-left, top-right,
+    bottom-left, bottom-right."""
+    x, y = ZONES[zone]
+    return mob.move_to([x, y, 0])
+
+
+def allow_overlap(*mobs):
+    """For overlaps that are the point (a Venn diagram, a heat map over a contour): the check skips them."""
+    for mob in mobs:
+        for m in mob.get_family():
+            m.lesson_overlap_ok = True
+    return mobs[0] if len(mobs) == 1 else VGroup(*mobs)
+
+
+def _family_ids():
+    scene = _STAGE["scene"]
+    stamp = (scene.renderer.time, len(scene.mobjects))
+    if _STAGE["stamp"] != stamp:
+        _STAGE["ids"] = {id(m) for top in scene.mobjects for m in top.get_family()}
+        _STAGE["stamp"] = stamp
+    return _STAGE["ids"]
+
+
+def _on_stage(mob) -> bool:
+    """On the stage and visible, or coming in during the current beat."""
+    if _STAGE["scene"] is None or id(mob) in _STAGE["incoming"]:
+        return True
+    if id(mob) not in _family_ids():
+        return False
+    return any(_shown(m) for m in mob.get_family())
+
+
+def connect(a, b, color=C_MUTED, width=4, path_arc=0.0):
+    """An arrow from the border of `a` to the border of `b` that follows them when they move and disappears when
+    either of them leaves the stage. Create it with GrowArrow(...) in the beat where both ends are on screen."""
+    def build():
+        return Arrow(a, b, buff=0.12, stroke_width=width, color=color, path_arc=path_arc,
+                     max_tip_length_to_length_ratio=0.18)
+
+    link = build()
+    link.lesson_link = (a, b)
+
+    def follow(m):
+        m.become(build())
+        if not (_on_stage(a) and _on_stage(b)):
+            m.set_opacity(0)
+
+    link.add_updater(follow)
+    return link
+
+
+def arrow(a, b, color=C_MUTED, width=4):
+    """Same as connect(a, b)."""
+    return connect(a, b, color=color, width=width)
+
+
+def flow(*items, direction=RIGHT, buff=1.0, color=C_MUTED):
+    """A chain laid out in `direction` with a connect() arrow between neighbours -> (group, arrows)."""
+    group = VGroup(*items).arrange(direction, buff=buff)
+    return group, VGroup(*[connect(a, b, color=color) for a, b in zip(items, items[1:])])
 
 
 class Grid(VGroup):
@@ -171,8 +250,58 @@ class Grid(VGroup):
                 for r in range(self.rows) for c in range(self.cols)]
 
 
-def _text_like(mob):
-    return isinstance(mob, (Text, Paragraph)) or getattr(mob, "lesson_text", None)
+# --- the layout check ------------------------------------------------------------------------------------------
+ARROWS = (Arrow, DoubleArrow, CurvedArrow, CurvedDoubleArrow)
+SHAPES = (Rectangle, Circle, Ellipse, Polygon, RegularPolygon, Annulus, Sector)
+NOT_SHAPES = (BackgroundRectangle, SurroundingRectangle, ArrowTip)
+
+
+def _shown(m) -> bool:
+    return m.has_points() and (m.get_fill_opacity() > 0.05 or m.get_stroke_opacity() > 0.05)
+
+
+def _text_like(m) -> bool:
+    return isinstance(m, (Text, Paragraph, MarkupText)) or bool(getattr(m, "lesson_text", None))
+
+
+def _box(m):
+    return m.get_left()[0], m.get_right()[0], m.get_bottom()[1], m.get_top()[1]
+
+
+def _area(b) -> float:
+    return max(0.0, b[1] - b[0]) * max(0.0, b[3] - b[2])
+
+
+def _inter(a, b) -> float:
+    w, h = min(a[1], b[1]) - max(a[0], b[0]), min(a[3], b[3]) - max(a[2], b[2])
+    return w * h if w > 0 and h > 0 else 0.0
+
+
+def _dist(p, b) -> float:
+    return math.hypot(max(b[0] - p[0], 0.0, p[0] - b[1]), max(b[2] - p[1], 0.0, p[1] - b[3]))
+
+
+def _inside(p, b, shrink=0.12) -> bool:
+    w, h = (b[1] - b[0]) * shrink / 2, (b[3] - b[2]) * shrink / 2
+    return b[0] + w < p[0] < b[1] - w and b[2] + h < p[1] < b[3] - h
+
+
+def _name(m) -> str:
+    if isinstance(m, Paragraph):
+        return "o parágrafo"
+    text = getattr(m, "text", "") if isinstance(m, (Text, MarkupText)) else ""
+    if text:
+        return f"o texto {text[:28]!r}"
+    if getattr(m, "lesson_text", None):
+        return "a fórmula"
+    kind = {"RoundedRectangle": "a caixa", "Rectangle": "o retângulo", "Square": "o quadrado", "Circle": "o círculo",
+            "Dot": "o ponto", "Ellipse": "a elipse"}.get(type(m).__name__, f"o {type(m).__name__}")
+    return f"{kind} em ({m.get_x():.1f}, {m.get_y():.1f})"
+
+
+def _arrow_name(m) -> str:
+    s, e = m.get_start(), m.get_end()
+    return f"a seta de ({s[0]:.1f}, {s[1]:.1f}) a ({e[0]:.1f}, {e[1]:.1f})"
 
 
 class LessonScene(Scene):
@@ -183,6 +312,8 @@ class LessonScene(Scene):
         self.warnings = []
         self._sub = VGroup()
         self.add(self._sub)
+        self._arrows = {}               # id(arrow) -> [id of what its start touched, id of what its tip touched]
+        _STAGE.update(scene=self, incoming=set(), stamp=None)
 
     # --- subtitles ------------------------------------------------------------------------
     @staticmethod
@@ -221,14 +352,27 @@ class LessonScene(Scene):
         rest = total
         animations = [a for a in animations if a is not None]
         if animations:
+            moving = [m for a in animations if getattr(a, "mobject", None) is not None for m in a.mobject.get_family()]
+            _STAGE["incoming"] = {id(m) for m in moving}
+            for m in moving:            # connect() arrows made before their ends were placed: follow them now
+                if m.updaters:
+                    m.update(0)
             played = min(run_time or min(1.8, total * 0.6), total)
             self.play(*animations, run_time=played)
+            _STAGE["incoming"] = set()
             rest = total - played
         if rest > 0.02:
             self.wait(rest)
         self._check(self._i)
         self._i += 1
 
+    def clear_stage(self, *keep):
+        """FadeOut animations for everything on the stage except the title and `keep`: pass them to beat()."""
+        kept = {id(k) for k in keep}
+        return [FadeOut(m) for m in self.mobjects
+                if m is not self._sub and not getattr(m, "lesson_keep", False) and id(m) not in kept]
+
+    # --- the check ------------------------------------------------------------------------
     def _problem(self, message):
         if self.lenient:
             self.warnings.append(message)
@@ -236,36 +380,130 @@ class LessonScene(Scene):
         else:
             raise LayoutError(message)
 
-    def _check(self, i):
-        boxes = []
+    def _units(self):
+        """-> texts, shapes, arrows, others (visible units) and {id(unit): id(its top-level mobject)}."""
+        texts, shapes, arrows, others, seen, owner = [], [], [], [], set(), {}
         for top in self.mobjects:
             if top is self._sub:
                 continue
-            for mob in top.get_family():
-                if not _text_like(mob) or mob.get_fill_opacity() < 0.05:
+            for m in top.get_family():
+                if id(m) in seen:
                     continue
-                name = "parágrafo" if isinstance(mob, Paragraph) else \
-                    (getattr(mob, "text", "") or getattr(mob, "lesson_text", "texto"))
-                left, right = mob.get_left()[0], mob.get_right()[0]
-                bottom, top_y = mob.get_bottom()[1], mob.get_top()[1]
-                if left < SAFE_LEFT - 0.05 or right > SAFE_RIGHT + 0.05 or top_y > SAFE_TOP + 0.05:
-                    self._problem(f"frase {i + 1}: o texto {name!r} sai do quadro (x de {left:.1f} a {right:.1f}, "
-                                  f"topo {top_y:.1f}); a área útil é x ∈ [-6.75, 6.75], y ≤ 3.8")
-                if bottom < SAFE_BOTTOM - 0.05:
-                    self._problem(f"frase {i + 1}: o texto {name!r} invade a faixa das legendas (base em y = {bottom:.1f}; "
-                                  f"mantenha y ≥ -2.7)")
-                boxes.append((name, left, right, bottom, top_y))
-        for a in range(len(boxes)):
-            for b in range(a + 1, len(boxes)):
-                na, l1, r1, b1, t1 = boxes[a]
-                nb, l2, r2, b2, t2 = boxes[b]
-                w, h = min(r1, r2) - max(l1, l2), min(t1, t2) - max(b1, b2)
-                smaller = min((r1 - l1) * (t1 - b1), (r2 - l2) * (t2 - b2))
-                if w > 0 and h > 0 and smaller > 0 and w * h > 0.3 * smaller:
-                    self._problem(f"frase {i + 1}: os textos {na!r} e {nb!r} se sobrepõem; use arrange/next_to "
-                                  f"ou tire um deles com FadeOut")
+                owner[id(m)] = id(top)
+                if _text_like(m) or isinstance(m, ARROWS) or isinstance(m, NOT_SHAPES) or \
+                        (isinstance(m, TipableVMobject) and m.has_tip()):
+                    seen.update(id(d) for d in m.get_family())
+                    if isinstance(m, NOT_SHAPES):
+                        continue
+                    if any(_shown(d) for d in m.get_family()):
+                        (texts if _text_like(m) else arrows).append(m)
+                    continue
+                if not _shown(m):
+                    continue
+                (shapes if isinstance(m, SHAPES) else others).append(m)
+        return texts, shapes, arrows, others, owner
+
+    def _check(self, i):
+        n = i + 1
+        texts, shapes, arrows, others, owner = self._units()
+        on_stage = [m for m in self.mobjects if m is not self._sub and not getattr(m, "lesson_keep", False)
+                    and any(_shown(d) for d in m.get_family())]
+        if len(on_stage) > MAX_ON_STAGE:
+            self._problem(f"frase {n}: {len(on_stage)} elementos na tela (máximo {MAX_ON_STAGE}); limpe com "
+                          f"self.beat(*self.clear_stage(), ...) ao mudar de assunto")
+        for m in texts + shapes + arrows + others:
+            left, right, bottom, top = _box(m)
+            name = _arrow_name(m) if m in arrows else _name(m)
+            if left < SAFE_LEFT - 0.05 or right > SAFE_RIGHT + 0.05 or top > SAFE_TOP + 0.05:
+                self._problem(f"frase {n}: {name} sai do quadro (x de {left:.1f} a {right:.1f}, topo {top:.1f}); "
+                              "a área útil é x ∈ [-6.75, 6.75], y ≤ 3.8")
+            elif bottom < SAFE_BOTTOM - 0.05:
+                self._problem(f"frase {n}: {name} invade a faixa das legendas (base em y = {bottom:.1f}; "
+                              "mantenha y ≥ -2.7)")
+        for t in texts:
+            content = getattr(t, "text", "") if isinstance(t, (Text, MarkupText)) else ""
+            if content and _LATEX.search(content):
+                self._problem(f"frase {n}: {_name(t)} tem LaTeX dentro de Text; use Formula(r\"...\") ou um "
+                              "símbolo Unicode (Σ, √, ≈)")
+        boxes = {id(m): _box(m) for m in texts + shapes + others}
+        for a in range(len(texts)):
+            for b in range(a + 1, len(texts)):
+                ba, bb = boxes[id(texts[a])], boxes[id(texts[b])]
+                if _inter(ba, bb) > 0.3 * max(1e-6, min(_area(ba), _area(bb))):
+                    self._problem(f"frase {n}: {_name(texts[a])} e {_name(texts[b])} se sobrepõem; use "
+                                  "arrange/next_to ou tire um deles com FadeOut")
+        # overlaps between different objects (a drawing made of overlapping shapes, a stack of slices, is one object)
+        solid = [s for s in shapes if _area(boxes[id(s)]) > 0.04 and not getattr(s, "lesson_overlap_ok", False)]
+        for t in texts:
+            if getattr(t, "lesson_overlap_ok", False):
+                continue
+            bt = boxes[id(t)]
+            for s in solid:
+                if owner.get(id(s)) == owner.get(id(t)):
+                    continue
+                share = _inter(bt, boxes[id(s)]) / max(1e-6, _area(bt))
+                if 0.12 < share < 0.85:
+                    self._problem(f"frase {n}: {_name(t)} cruza a borda de {_name(s)}; ponha o texto dentro "
+                                  "(box(...) ajusta a caixa ao texto) ou ao lado, com next_to")
+        for a in range(len(solid)):
+            for b in range(a + 1, len(solid)):
+                if owner.get(id(solid[a])) == owner.get(id(solid[b])):
+                    continue
+                ba, bb = boxes[id(solid[a])], boxes[id(solid[b])]
+                share = _inter(ba, bb) / max(1e-6, min(_area(ba), _area(bb)))
+                if 0.12 < share < 0.85:
+                    self._problem(f"frase {n}: {_name(solid[a])} e {_name(solid[b])} se cobrem em parte; afaste "
+                                  "com arrange/next_to (ou allow_overlap se a sobreposição for o conteúdo)")
+        # arrows: what each end touched when the arrow came in is remembered; an end whose object left (and that now
+        # touches nothing) or a target that only arrives in a later sentence is a problem; connect() needs no check
+        anchors = texts + shapes + others
+        present = {id(m) for m in anchors}
+
+        def nearest(p):
+            ranked = sorted(anchors, key=lambda m: _dist(p, boxes[id(m)]))
+            return ranked[0] if ranked and _dist(p, boxes[id(ranked[0])]) <= 0.45 else None
+
+        for arr in arrows:
+            ends = (arr.get_start(), arr.get_end())
+            linked = getattr(arr, "lesson_link", None)
+            near = [nearest(p) for p in ends]
+            if not linked:
+                record = self._arrows.get(id(arr))
+                if record is None:
+                    self._arrows[id(arr)] = [id(m) if m is not None else None for m in near]
+                    origin = any(other is not arr and min(math.dist(ends[0][:2], other.get_start()[:2]),
+                                                          math.dist(ends[0][:2], other.get_end()[:2])) < 0.3
+                                 for other in arrows)             # hand-drawn axes share their origin
+                    if near[0] is None and near[1] is None and not origin:
+                        self._problem(f"frase {n}: {_arrow_name(arr)} está solta, nenhuma ponta toca um objeto; "
+                                      "ligue objetos com connect(a, b)")
+                else:
+                    for k in (0, 1):
+                        if record[k] is not None and record[k] not in present and near[k] is None:
+                            self._problem(f"frase {n}: {_arrow_name(arr)} ficou na tela, mas o objeto da "
+                                          f"{'origem' if k == 0 else 'ponta'} saiu; tire a seta junto (FadeOut) ou "
+                                          "use connect(a, b), que some com as pontas")
+                        elif record[k] is None and near[k] is not None and k == 1:
+                            self._problem(f"frase {n}: {_arrow_name(arr)} apareceu antes do alvo; crie a seta na "
+                                          "mesma frase em que o objeto da ponta entra")
+                        if near[k] is not None:
+                            record[k] = id(near[k])
+            skip = {id(m) for m in near if m is not None}
+            if linked:
+                skip |= {id(d) for end in linked for d in end.get_family()}
+            for target in texts + solid:
+                if id(target) in skip:
+                    continue
+                bt = boxes[id(target)]
+                if all(_inside(p, bt, shrink=0.0) for p in ends):        # a container around the arrow
+                    continue
+                if any(_inside(arr.point_from_proportion(k / 10), bt) for k in range(2, 9)):
+                    self._problem(f"frase {n}: {_arrow_name(arr)} atravessa {_name(target)}; desvie o caminho, "
+                                  "mude a posição dos objetos ou tire a seta")
+                    break
 
     def tear_down(self):
+        _STAGE.update(scene=None, incoming=set(), stamp=None)
         if self._i != len(self.beats):
             raise LayoutError(f"a cena tem {len(self.beats)} frases e beat() foi chamado {self._i} vezes; "
                               f"chame self.beat(...) exatamente uma vez por frase")

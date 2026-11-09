@@ -12,7 +12,8 @@ from sotawhat.lessons.pack import pack_prompt
 from sotawhat.llm.prompts import load as load_prompt
 from sotawhat.llm.schemas import _Portuguese
 
-PLAN_PROMPT, FACTS_PROMPT = "lesson_plan_v1", "lesson_facts_v1"
+PLAN_PROMPT, FACTS_PROMPT = "lesson_plan_v2", "lesson_facts_v1"
+_READ_ONLY = re.compile(r"[:;()—–\"“”/]")     # punctuation that reads well but sounds bad
 _SLUG = re.compile(r"[^a-z0-9]+")
 CHARS_PER_SECOND = 15.0       # pt-BR narration (Piper faber: 166 characters in 10.6 s)
 PAUSE_S = 0.45                # between sentences
@@ -96,8 +97,11 @@ def lint(plan, n_sources) -> list:
             problems.append(f"cena {n} é 3D sem justificativa espacial em why_3d; use manim ou justifique")
         for k, beat in enumerate(scene.beats, 1):
             words = len(beat.narration.split())
-            if not 5 <= words <= 40:
-                problems.append(f"c{n}f{k}: a frase tem {words} palavras; use de 8 a 28")
+            if not 5 <= words <= 30:
+                problems.append(f"c{n}f{k}: a frase tem {words} palavras; use de 8 a 22")
+            if _READ_ONLY.search(beat.narration) or beat.narration.count(",") > 2:
+                problems.append(f"c{n}f{k}: frase escrita para ler, não para ouvir; tire dois-pontos, ponto e vírgula, "
+                                "travessão, parênteses, aspas e barras, e use no máximo uma vírgula")
             if not -1 <= beat.source < n_sources:
                 problems.append(f"c{n}f{k}: fonte {beat.source} não existe (use -1 a {n_sources - 1})")
     if not 3 <= len(plan.quiz) <= 5:

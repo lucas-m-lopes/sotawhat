@@ -37,6 +37,7 @@ DEFAULT_TASKS = {
     "lesson_plan": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO, GLM_FLASH), "high", 24000),
     "lesson_facts": TaskSpec((DEEPSEEK_FLASH, GLM_FLASH), "low", 4000),
     "lesson_code": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO), "high", 20000),
+    "lesson_critic": TaskSpec((MIMO_FLASH, GLM_FLASH), "low", 3000),     # G4: looks at the frames of a scene
     "smoke": TaskSpec((DEEPSEEK_FLASH,), "low", 600),
 }
 

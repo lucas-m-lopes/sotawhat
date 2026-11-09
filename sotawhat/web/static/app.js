@@ -908,11 +908,16 @@
     out.push(el("h3", {}, "Quiz"), el("ol", {}, plan.quiz.map((q) => el("li", {}, q.question,
       el("details", {}, el("summary", {}, "resposta"), el("p", {}, `${"ABCD"[q.answer]}) ${q.options[q.answer]} — ${q.explanation}`))))));
     const after = gates.G1_after || gates.G1_first || [];
+    const visual = Object.values(scenes).flatMap((s) => (s.visual || []).flatMap((r) => r.defects || []));
+    const serious = visual.filter((d) => d.severity === "grave");
+    const fixed = Object.values(scenes).reduce((n, s) => n + (s.visual_fixes || 0), 0);
     out.push(el("h3", {}, "Portões automáticos"), el("ul", {},
       el("li", {}, `G1 fatos: ${(gates.G1_first || []).length} problema(s) na 1ª checagem, ${after.length} depois da revisão`),
       ...after.map((p) => el("li", { class: "muted" }, p)),
       el("li", {}, `G2 roteiro: ${(gates.G2 || []).length ? gates.G2.join("; ") : "ok"}`),
-      el("li", {}, `cenas na 1ª tentativa: ${report.first_try ?? "?"} de ${plan.scenes.length}; slides de reserva: ${report.fallbacks ?? 0}`)));
+      el("li", {}, `G3 render e layout: cenas na 1ª tentativa ${report.first_try ?? "?"} de ${plan.scenes.length}; slides de reserva: ${report.fallbacks ?? 0}`),
+      el("li", {}, `G4 revisão visual: ${serious.length} defeito(s) grave(s) e ${visual.length - serious.length} leve(s) vistos nos quadros; ${fixed} correção(ões) feitas com as imagens`),
+      ...serious.slice(0, 8).map((d) => el("li", { class: "muted" }, `${d.kind}: ${d.where} → ${d.fix}`))));
     out.push(el("h3", {}, "Checklist da sua revisão (G8)"), el("ol", {}, CHECKLIST.map((c) => el("li", {}, c))));
     if (d.sources && d.sources.length) out.push(el("h3", {}, "Fontes"), el("ol", { start: 0 }, d.sources.map((s) => {
       const url = safeUrl(s.url);

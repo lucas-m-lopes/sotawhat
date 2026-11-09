@@ -37,6 +37,20 @@ terms:
   - {term: voxels, spoken: vóksels}
   - {term: batch, spoken: bétch}
   - {term: score, spoken: iscór}
+  - {term: scores, spoken: iscórs}
+  - {term: logit, spoken: lójit}
+  - {term: logits, spoken: lójits}
+  - {term: head, spoken: réd}
+  - {term: heads, spoken: réds}
+  - {term: multi-head, spoken: múlti réd}
+  - {term: feed-forward, spoken: fíd fóruard}
+  - {term: cross-attention, spoken: cróss aténchon}
+  - {term: U-Net, spoken: iu-nét}
+  - {term: patch, spoken: pétch}
+  - {term: patches, spoken: pétches}
+  - {term: layer, spoken: lêier}
+  - {term: layers, spoken: lêiers}
+  - {term: sampling, spoken: sémpling}
   - {term: feedback, spoken: fídbék}
   - {term: reward, spoken: riuórd}
   - {term: loss, spoken: lóss}

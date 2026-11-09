@@ -123,7 +123,7 @@ def test_narrate_keeps_existing_clips(tmp_path):
 
     plan = _plan()
     durations = narrate(Fake(), plan, tmp_path / "audio")
-    assert durations == [[1.45, 1.45], [1.45, 1.45]] and calls[0][0] == "c01f01.wav"
+    assert durations == [[1.32, 1.75], [1.32, 1.75]] and calls[0][0] == "c01f01.wav"      # longer pause at the end
     (tmp_path / "audio" / "c02f02.wav").unlink()
     narrate(Fake(), plan, tmp_path / "audio")
     assert calls[1] == ["c02f02.wav"]                                               # only the missing sentence
@@ -168,7 +168,7 @@ def test_scene_is_repaired_then_escalated_then_rendered(tmp_path, monkeypatch):
     monkeypatch.setattr(rd, "render_manim", fake_manim)
     gw = CodeGateway(GOOD_PY.replace("import numpy as np", "import os"), GOOD_PY, GOOD_PY, GOOD_PY)
     report = coder.build_scene(gw, None, tmp_path, tmp_path / "s1", tmp_path, tmp_path, _plan(), 1, [2.0, 3.0],
-                               log=lambda *_: None)
+                               log=lambda *_: None, critic=False)
     assert report["ok"] and report["attempts"] == 4 and not report["fallback"]
     assert "política de código" in report["errors"][0] and "NameError" in report["errors"][1]
     other = coder.ESCALATE["economico"]["manim"][0]
@@ -194,7 +194,7 @@ def test_a_scene_that_never_renders_becomes_a_slide(tmp_path, monkeypatch):
     monkeypatch.setattr(rd, "render_manim", fake_manim)
     gw = CodeGateway(*[GOOD_JS] * 4)
     report = coder.build_scene(gw, None, tmp_path, tmp_path / "s2", tmp_path, tmp_path, _plan(), 2, [2.0, 3.0],
-                               log=lambda *_: None)
+                               log=lambda *_: None, critic=False)
     assert report["fallback"] and not report["ok"] and report["attempts"] == 4
     assert (tmp_path / "s2" / "index.html").exists() and "class Cena(LessonScene)" in scripts[0]
     assert rd.python_problems(scripts[0].replace("import textwrap\n", "")) == [] or "textwrap" in scripts[0]

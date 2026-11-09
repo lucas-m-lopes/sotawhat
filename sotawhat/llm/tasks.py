@@ -33,15 +33,15 @@ DEFAULT_TASKS = {
     "synth": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO), "high", 12000),
     "accounts": TaskSpec((DEEPSEEK_FLASH, GLM_FLASH), "low", 3000),   # Instagram accounts to scan (P5)
     # lessons (aulas 3D): the economic scenario of docs/research/reports/Aulas didáticas animadas em 3D.md;
-    # three.js scenes pass (MIMO_PRO, DEEPSEEK_FLASH) per call, escalation passes (KIMI_PRO, MIMO_PRO)
+    # sotawhat/lessons/coder.py passes the models per call (PRIMARY, ESCALATE, VISUAL_FIX); these are the defaults
     "lesson_plan": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO, GLM_FLASH), "high", 24000),
     "lesson_facts": TaskSpec((DEEPSEEK_FLASH, GLM_FLASH), "low", 4000),
-    "lesson_code": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO), "high", 24000),           # Manim scenes and repairs
+    "lesson_code": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO), "high", 32000),           # Manim scenes and repairs
     # three.js scenes and visual fixes: MiMo-V2.6-Pro with high reasoning spent ~16k of 20k tokens thinking and cut
     # the code off (truncated JS, invalid JSON) in the pilot, so low reasoning and room for the code
-    "lesson_code_3d": TaskSpec((MIMO_PRO, DEEPSEEK_FLASH), "low", 24000),
+    "lesson_code_3d": TaskSpec((MIMO_PRO, GLM_FLASH), "low", 24000),
     "lesson_fix": TaskSpec((MIMO_PRO, GLM_FLASH), "low", 24000),                  # sees the frames
-    "lesson_critic": TaskSpec((MIMO_FLASH, GLM_FLASH), "low", 3000),             # G4: looks at the frames of a scene
+    "lesson_critic": TaskSpec((MIMO_FLASH, GLM_FLASH), "low", 6000),             # G4: looks at the frames of a scene
     "smoke": TaskSpec((DEEPSEEK_FLASH,), "low", 600),
 }
 

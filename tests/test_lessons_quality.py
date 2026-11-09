@@ -82,7 +82,7 @@ def test_visual_review_fixes_serious_defects_with_the_frames(tmp_path, monkeypat
     fix = gw.calls[2]
     content = fix[1][-1]["content"]
     assert fix[2] == coder.VISUAL_FIX and isinstance(content, list)                            # it sees the frames
-    assert "quadro 2 (seta_solta)" in content[0]["text"] and content[1]["type"] == "image_url"
+    assert "quadro 2 (seta_solta)" in content[0]["text"] and content[1]["type"] == "image_url" and len(content) == 2
     assert report["visual_fixes"] == 1 and len(report["visual"]) == 2 and "Atenção 2" in renders[-1]
     critic = gw.calls[1][1][1]["content"]
     assert critic[0]["text"].startswith("Cena: C1") and len(critic) == 3                      # text + 2 frames
@@ -212,3 +212,25 @@ def test_lessons_never_pay_dear_endpoints(tmp_path):
         gw = _gateway(settings, st, st.start_run("lesson"), 0.0, "economico")
         assert gw.privacy.max_price == MAX_PRICE["economico"] and gw.budget_run == 0.6 and gw.budget_day is None
         assert MAX_PRICE["economico"]["completion"] < 8.0 <= MAX_PRICE["equilibrado"]["completion"] + 2.0
+
+
+def test_resume_can_redo_some_scenes(tmp_path):
+    import json
+    from types import SimpleNamespace
+
+    from sotawhat.cli import parse_args
+    from sotawhat.lessons.pipeline import forget_scenes, lesson_dir
+
+    assert parse_args(["lessons", "resume", "5", "--refazer", "2,5"]).refazer == "2,5"
+    settings = SimpleNamespace(sotawhat_data_dir=tmp_path)
+    work = lesson_dir(settings, 5)
+    for n in (2, 3):
+        scene = work / "scenes" / f"{n:02d}"
+        (scene / "frames").mkdir(parents=True)
+        for name in ("scene.js", "out.mp4", "scene.json"):
+            (scene / name).write_text("x", encoding="utf-8")
+    (work / "report.json").write_text(json.dumps({"scenes": {"2": {"ok": True}, "3": {"ok": True}}}), encoding="utf-8")
+    assert forget_scenes(settings, 5, "2, 5") == [2, 5]
+    assert not (work / "scenes" / "02" / "out.mp4").exists() and (work / "scenes" / "02" / "scene.json").exists()
+    assert (work / "scenes" / "03" / "out.mp4").exists()
+    assert json.loads((work / "report.json").read_text(encoding="utf-8"))["scenes"] == {"3": {"ok": True}}

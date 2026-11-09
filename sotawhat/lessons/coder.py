@@ -25,16 +25,17 @@ from sotawhat.llm.prompts import load as load_prompt
 from sotawhat.llm.schemas import _Portuguese
 from sotawhat.llm.tasks import DEEPSEEK_FLASH, GLM_FLASH, KIMI_PRO, MIMO_PRO
 
-PRIMARY = {"manim": (DEEPSEEK_FLASH, MIMO_PRO), "three": (MIMO_PRO, DEEPSEEK_FLASH)}
+PRIMARY = {"manim": (DEEPSEEK_FLASH, MIMO_PRO), "three": (MIMO_PRO, GLM_FLASH)}
 # after two failures the scene goes to another family; Kimi K3.1 Pro only in the balanced scenario: in the pilot two
 # Kimi repairs cost US$ 0.26 of a US$ 0.33 lesson
-ESCALATE = {"economico": {"manim": (MIMO_PRO, DEEPSEEK_FLASH), "three": (DEEPSEEK_FLASH, MIMO_PRO)},
+# three.js escalates to GLM-5.3-Flash (sees images, AA-3D 937): DeepSeek made the CT scenes worse in the pilot
+ESCALATE = {"economico": {"manim": (MIMO_PRO, DEEPSEEK_FLASH), "three": (GLM_FLASH, MIMO_PRO)},
             "equilibrado": {"manim": (KIMI_PRO, MIMO_PRO), "three": (KIMI_PRO, MIMO_PRO)}}
 VISUAL_FIX = (MIMO_PRO, GLM_FLASH)  # both see the frames
 TASKS = {"manim": "lesson_code", "three": "lesson_code_3d"}
 PROMPTS = {"manim": "lesson_manim_v2", "three": "lesson_three_v1"}
 CRITIC_PROMPT = "lesson_critic_v1"
-MAX_ATTEMPTS, MAX_VISUAL_FIXES = 4, 2
+MAX_ATTEMPTS, MAX_VISUAL_FIXES, MAX_FIX_FRAMES = 4, 2, 4
 
 
 class SceneCode(BaseModel):
@@ -163,10 +164,12 @@ def _visual_round(gateway, tools, mode, lessons_root, scene_dir, kit_dir, cache_
         return None
     log(f"  cena {n}: revisão visual achou {len(serious)} defeito(s) grave(s); corrigindo com as imagens")
     listing = "\n".join(f"- quadro {d.frame} ({d.kind}): {d.where} → {d.fix}" for d in serious)
+    shown = sorted({d.frame for d in serious})[:MAX_FIX_FRAMES]          # only the frames with serious defects
     content = [{"type": "text", "text": "A revisão visual dos quadros (um por frase, na ordem) achou estes defeitos:\n"
                                         f"{listing}\n\nCorrija o código para eliminá-los sem piorar o resto e devolva o "
-                                        "arquivo completo, seguindo o contrato."}]
-    content += [_image(f) for f in frames]
+                                        "arquivo completo, seguindo o contrato. As imagens são os "
+                                        f"quadros {', '.join(map(str, shown))}."}]
+    content += [_image(frames[k - 1]) for k in shown]
     fix = messages + [{"role": "assistant", "content": json.dumps({"code": code}, ensure_ascii=False)},
                       {"role": "user", "content": content}]
     try:

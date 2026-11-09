@@ -177,6 +177,21 @@ def rerender(settings, store, tools, lesson_id, voice):
     _save(work / "report.json", report)
 
 
+def forget_scenes(settings, lesson_id, which) -> list:
+    """Drops the code, video and report of some scenes ("2,5"), so `resume` makes them again."""
+    numbers = sorted({int(x) for x in str(which).replace(" ", "").split(",") if x})
+    work = lesson_dir(settings, lesson_id)
+    report = _load(work / "report.json", {"scenes": {}})
+    for n in numbers:
+        scene_dir = work / "scenes" / f"{n:02d}"
+        for name in ("scene.py", "scene.js", "out.mp4", "audio.wav", "warnings.txt"):
+            (scene_dir / name).unlink(missing_ok=True)
+        shutil.rmtree(scene_dir / "frames", ignore_errors=True)
+        report.get("scenes", {}).pop(str(n), None)
+    _save(work / "report.json", report)
+    return numbers
+
+
 def _gateway(settings, store, run_id, previous_cost, mode="economico"):
     from sotawhat.configfiles import load_config
     from sotawhat.llm.gateway import LLMGateway
@@ -340,6 +355,9 @@ def main_lessons(ns) -> int:
             return 0
         if ns.lessons_action == "rerender":
             rerender(settings, store, tools, lesson_id, voice)
+        if ns.lessons_action == "resume" and getattr(ns, "refazer", ""):
+            redo = forget_scenes(settings, lesson_id, ns.refazer)
+            log(f"refazendo as cenas {', '.join(map(str, redo))}")
         deliver = ns.lessons_action in ("make", "resume") and not ns.no_send
         return run_lesson(settings, store, tools, lesson_id, voice, getattr(ns, "modo", "economico") or "economico",
                           deliver, log=log)

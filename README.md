@@ -156,6 +156,24 @@ Phase P6 hardens it and measures the SDD goals:
   before the P1 bake-off), keeping every decision.
 - The interface gains the Hoje tab: the latest digest with its votes and the recent runs.
 
+After P6, newsletters by RSS (2026-11-09):
+
+- `config/newsletters.yaml` lists the newsletters read every day: frontier AI (Import AI, Interconnects,
+  Latent Space, Understanding AI, One Useful Thing, Normal Technology, Epoch AI, DAIR.AI papers, Guide to AI,
+  Lilian Weng) and AI ∩ health (Ground Truths, AI Health Uncut, Second Opinion, Doctor Penguin, The Medical
+  Futurist, Health API Guy, Hospitalogy, Out-Of-Pocket, Palpate Health AI, MedCity AI, AuntMinnie, Futuro da
+  Saúde, Saúde Business, Medicina S/A). Repetitive daily digests are listed but disabled.
+- `kind: post` makes every post one item; `kind: digest` splits each issue into its stories with the LLM
+  (the same `segment` task as the Gmail newsletters), each story keeping its source link. A run takes at most
+  2 entries per newsletter from the last 4 days and never reads an entry twice. The health newsletters are
+  filtered by AI terms in English and Portuguese before the triage.
+- `sotawhat newsletters add <address> --profile ia|saude [--kind digest]` finds the feed (a Substack name
+  such as `importai`, a site, a topic page or a feed URL) and appends it to the file. `sotawhat doctor`
+  checks every enabled feed.
+- The Gmail source skips e-mails from senders that have their own source (The Batch, AlphaSignal), so a
+  filter that also labels them never doubles the stories. The scheduled daily and weekly runs use
+  `pythonw.exe`: with no console window, closing a window can no longer kill a run.
+
 To set it up, copy `.env.example` to `.env` and fill in at least `OPENROUTER_API_KEY`,
 `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Then schedule the runs with
 `powershell -ExecutionPolicy Bypass -File scripts\schedule_daily.ps1 [-Listener] [-Web] [-Weekly]`.

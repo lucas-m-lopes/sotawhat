@@ -7,6 +7,7 @@ import random
 import shutil
 import threading
 import time
+from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +26,7 @@ from sotawhat.llm.tasks import DEEPSEEK_FLASH, KIMI_PRO, MIMO_PRO
 PLAN_MODELS = {"economico": None, "equilibrado": (KIMI_PRO, DEEPSEEK_FLASH, MIMO_PRO)}
 TITLE_S, END_S = 4.0, 4.0
 LLM_TIMEOUT_S = 900.0
+MAX_PRICE = {"economico": {"prompt": 1.0, "completion": 2.5}, "equilibrado": {"prompt": 3.0, "completion": 10.0}}
 SCENE_WORKERS = 3
 
 
@@ -175,7 +177,7 @@ def rerender(settings, store, tools, lesson_id, voice):
     _save(work / "report.json", report)
 
 
-def _gateway(settings, store, run_id, previous_cost):
+def _gateway(settings, store, run_id, previous_cost, mode="economico"):
     from sotawhat.configfiles import load_config
     from sotawhat.llm.gateway import LLMGateway
     from sotawhat.llm.openrouter import OpenRouterClient
@@ -186,8 +188,12 @@ def _gateway(settings, store, run_id, previous_cost):
     client = OpenRouterClient(settings.openrouter_api_key, base_url=settings.openrouter_base_url,
                               app_title=settings.openrouter_app_title, timeout=LLM_TIMEOUT_S)
     budget = max(0.05, settings.sotawhat_llm_budget_usd_lesson - previous_cost)
-    return LLMGateway(client, store=store, settings=settings, run_id=run_id,
-                      tasks=load_config(settings.sotawhat_config_dir).llm.get("tasks"), budget_run=budget)
+    gateway = LLMGateway(client, store=store, settings=settings, run_id=run_id,
+                         tasks=load_config(settings.sotawhat_config_dir).llm.get("tasks"), budget_run=budget)
+    # a model can have a ZDR endpoint ten times dearer than the others (MiMo-V2.6-Pro: PrimaLabs US$ 4/8 per M vs
+    # DeepInfra US$ 0.39/0.78; three pilot calls there cost US$ 0.52): the lessons never pay more than this
+    gateway.privacy = replace(gateway.privacy, max_price=MAX_PRICE[mode])
+    return gateway
 
 
 def run_lesson(settings, store, tools, lesson_id, voice, mode, deliver, log=print) -> int:
@@ -197,7 +203,7 @@ def run_lesson(settings, store, tools, lesson_id, voice, mode, deliver, log=prin
     lesson = store.get_lesson(lesson_id)
     previous = json.loads(lesson["report_json"] or "{}").get("cost_usd") or 0.0
     run_id = store.start_run("lesson")
-    gateway = _gateway(settings, store, run_id, previous)
+    gateway = _gateway(settings, store, run_id, previous, mode)
     try:
         report = make_lesson(settings, store, gateway, tools, lesson_id, voice, mode=mode, log=log)
     except (LessonError, BudgetExceeded, InsufficientCredits, LLMFailure, RenderError, VoiceError, RuntimeError) as exc:

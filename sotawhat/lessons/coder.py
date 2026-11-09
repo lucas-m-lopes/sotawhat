@@ -23,14 +23,15 @@ from sotawhat.lessons import render as rd
 from sotawhat.llm.gateway import LLMFailure
 from sotawhat.llm.prompts import load as load_prompt
 from sotawhat.llm.schemas import _Portuguese
-from sotawhat.llm.tasks import DEEPSEEK_FLASH, KIMI_PRO, MIMO_PRO
+from sotawhat.llm.tasks import DEEPSEEK_FLASH, GLM_FLASH, KIMI_PRO, MIMO_PRO
 
 PRIMARY = {"manim": (DEEPSEEK_FLASH, MIMO_PRO), "three": (MIMO_PRO, DEEPSEEK_FLASH)}
 # after two failures the scene goes to another family; Kimi K3.1 Pro only in the balanced scenario: in the pilot two
 # Kimi repairs cost US$ 0.26 of a US$ 0.33 lesson
 ESCALATE = {"economico": {"manim": (MIMO_PRO, DEEPSEEK_FLASH), "three": (DEEPSEEK_FLASH, MIMO_PRO)},
             "equilibrado": {"manim": (KIMI_PRO, MIMO_PRO), "three": (KIMI_PRO, MIMO_PRO)}}
-VISUAL_FIX = (MIMO_PRO,)            # sees the frames
+VISUAL_FIX = (MIMO_PRO, GLM_FLASH)  # both see the frames
+TASKS = {"manim": "lesson_code", "three": "lesson_code_3d"}
 PROMPTS = {"manim": "lesson_manim_v2", "three": "lesson_three_v1"}
 CRITIC_PROMPT = "lesson_critic_v1"
 MAX_ATTEMPTS, MAX_VISUAL_FIXES = 4, 2
@@ -84,8 +85,8 @@ def skeleton(scene, durations) -> str:
             "    update(t) {\n" + body + "    },\n  };\n}")
 
 
-def _ask(gateway, messages, models) -> str:
-    return gateway.structured("lesson_code", messages, SceneCode, models=models).code
+def _ask(gateway, messages, models, mode="manim") -> str:
+    return gateway.structured(TASKS[mode], messages, SceneCode, models=models).code
 
 
 def slide_code(scene) -> str:
@@ -169,7 +170,7 @@ def _visual_round(gateway, tools, mode, lessons_root, scene_dir, kit_dir, cache_
     fix = messages + [{"role": "assistant", "content": json.dumps({"code": code}, ensure_ascii=False)},
                       {"role": "user", "content": content}]
     try:
-        return gateway.structured("lesson_code", fix, SceneCode, models=VISUAL_FIX).code
+        return gateway.structured("lesson_fix", fix, SceneCode, models=VISUAL_FIX).code
     except LLMFailure as exc:
         report["visual"].append({"error": str(exc)[:200]})
         return None
@@ -195,7 +196,7 @@ def build_scene(gateway, tools, lessons_root, scene_dir, kit_dir, cache_dir, pla
         code = code_path.read_text(encoding="utf-8")
         report["models"].append("cache")
     else:
-        code = _ask(gateway, messages, PRIMARY[mode])
+        code = _ask(gateway, messages, PRIMARY[mode], mode)
         report["models"].append(PRIMARY[mode][0])
     for attempt in range(1, MAX_ATTEMPTS + 1):
         report["attempts"] = attempt
@@ -215,7 +216,7 @@ def build_scene(gateway, tools, lessons_root, scene_dir, kit_dir, cache_dir, pla
             fix = messages + [{"role": "assistant", "content": json.dumps({"code": code}, ensure_ascii=False)},
                               {"role": "user", "content": f"O render falhou:\n{exc}\n\nCorrija a causa e devolva o "
                                                           "arquivo completo, seguindo o contrato."}]
-            code = _ask(gateway, fix, models)
+            code = _ask(gateway, fix, models, mode)
     if not report["ok"]:
         (scene_dir / "scene.py").write_text(slide_code(scene), encoding="utf-8")
         rd.render_manim(tools, scene_dir, kit_dir, cache_dir, lenient=True)

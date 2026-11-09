@@ -78,7 +78,7 @@ def test_visual_review_fixes_serious_defects_with_the_frames(tmp_path, monkeypat
     gw = Gateway()
     report = coder.build_scene(gw, None, tmp_path, tmp_path / "s1", tmp_path, tmp_path, _plan(), 1, [2.0, 3.0],
                                log=lambda *_: None)
-    assert [c[0] for c in gw.calls] == ["lesson_code", "lesson_critic", "lesson_code", "lesson_critic"]
+    assert [c[0] for c in gw.calls] == ["lesson_code", "lesson_critic", "lesson_fix", "lesson_critic"]
     fix = gw.calls[2]
     content = fix[1][-1]["content"]
     assert fix[2] == coder.VISUAL_FIX and isinstance(content, list)                            # it sees the frames
@@ -172,3 +172,43 @@ def test_kit_layout_check_on_manim(tmp_path, code, beats, expected):
     else:
         with pytest.raises(rd.RenderError, match=expected):
             rd.render_manim(tools, scene_dir, KIT, tmp_path / "cache")
+
+
+def test_three_scenes_and_visual_fixes_use_their_own_tasks(tmp_path, monkeypatch):
+    from sotawhat.llm.tasks import DEFAULT_TASKS
+
+    assert DEFAULT_TASKS["lesson_code_3d"].reasoning == "low" and DEFAULT_TASKS["lesson_fix"].reasoning == "low"
+    assert DEFAULT_TASKS["lesson_code_3d"].max_tokens >= 24000 and coder.TASKS == {"manim": "lesson_code",
+                                                                                   "three": "lesson_code_3d"}
+
+    def fake_three(tools, lessons_root, scene_dir, lenient=False):
+        (scene_dir / "out.mp4").write_bytes(b"x")
+
+    monkeypatch.setattr(rd, "render_three", fake_three)
+    tasks = []
+
+    class Gateway:
+        def structured(self, task, messages, model, models=None):
+            tasks.append(task)
+            return coder.SceneCode(code="export default function build(kit) { return { update(t) {} }; }")
+
+    report = coder.build_scene(Gateway(), None, tmp_path, tmp_path / "s2", tmp_path, tmp_path, _plan(), 2, [2.0, 3.0],
+                               log=lambda *_: None, critic=False)
+    assert report["ok"] and tasks == ["lesson_code_3d"]
+
+
+def test_lessons_never_pay_dear_endpoints(tmp_path):
+    from types import SimpleNamespace
+
+    from sotawhat.lessons.pipeline import MAX_PRICE, _gateway
+    from sotawhat.store.db import Store
+
+    settings = SimpleNamespace(openrouter_api_key="k", openrouter_base_url="https://openrouter.ai/api/v1",
+                               openrouter_app_title="", openrouter_zdr=True, openrouter_data_collection="deny",
+                               quantizations=["fp8"], sotawhat_llm_budget_usd_day=1.0, sotawhat_llm_budget_usd_month=25.0,
+                               sotawhat_llm_budget_usd_lesson=0.6, sotawhat_config_dir=tmp_path,
+                               model_override=lambda task: "")
+    with Store(tmp_path / "insight.db") as st:
+        gw = _gateway(settings, st, st.start_run("lesson"), 0.0, "economico")
+        assert gw.privacy.max_price == MAX_PRICE["economico"] and gw.budget_run == 0.6 and gw.budget_day is None
+        assert MAX_PRICE["economico"]["completion"] < 8.0 <= MAX_PRICE["equilibrado"]["completion"] + 2.0

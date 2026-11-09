@@ -3,7 +3,8 @@ import argparse
 import sys
 
 _SUBCOMMANDS = {"search", "run", "ideate", "doctor", "feedback", "eval", "serve", "serve-mcp", "graph", "instagram",
-                "newsletters", "backup", "calibrate", "repair"}
+                "newsletters", "backup", "calibrate", "repair", "lessons"}
+_LESSON_ID_ACTIONS = ("resume", "rerender", "send", "pack")
 
 def parse_args(argv):
     # Backward compat: `sotawhat <keyword...> [N]` with no subcommand -> search.
@@ -62,6 +63,17 @@ def parse_args(argv):
                         help="post: each post is an item; digest: each issue is split into its stories by the LLM")
     p_news.add_argument("--name", default=None, help="short name (default: from the address)")
 
+    p_lessons = sub.add_parser("lessons", help="aulas 3D narradas: setup, voices, make, resume, rerender, send, pack, list")
+    p_lessons.add_argument("lessons_action", choices=["setup", "voices", "make", "resume", "rerender", "send", "pack", "list"])
+    p_lessons.add_argument("id", nargs="?", type=int, help="the lesson number (resume, rerender, send, pack)")
+    p_lessons.add_argument("--tema", help="topic of the lesson (make)")
+    p_lessons.add_argument("--entidade", type=int, action="append", help="graph entity id; repeat for several")
+    p_lessons.add_argument("--auto", action="store_true", help="the strongest weekly trend that has no lesson yet")
+    p_lessons.add_argument("--voz", help="piper:faber|cadu|jeff or google:pt-BR-Chirp3-HD-<name>")
+    p_lessons.add_argument("--modo", choices=["economico", "equilibrado"], default="economico",
+                           help="equilibrado: Kimi K3.1 Pro writes the storyboard")
+    p_lessons.add_argument("--sem-envio", dest="no_send", action="store_true", help="do not send it to Telegram")
+
     p_backup = sub.add_parser("backup", help="copy data/insight.db to data/backups (P6)")
     p_backup.add_argument("--keep", type=int, default=8, help="copies to keep (default 8)")
     p_backup.add_argument("--restore", default=None, help="restore this copy over data/insight.db")
@@ -113,6 +125,8 @@ def parse_args(argv):
                 pass
         ns.keyword = " ".join(words)
         ns.num = num
+    if ns.command == "lessons" and ns.lessons_action in _LESSON_ID_ACTIONS and ns.id is None:
+        parser.error(f"lessons {ns.lessons_action} precisa do número da aula")
     return ns
 
 def _run_search(ns):
@@ -192,6 +206,9 @@ def main(argv=None):
     elif ns.command == "newsletters":
         from sotawhat.sources.newsletters import main_newsletters
         raise SystemExit(main_newsletters(ns))
+    elif ns.command == "lessons":
+        from sotawhat.lessons.pipeline import main_lessons
+        raise SystemExit(main_lessons(ns))
 
 if __name__ == "__main__":
     main()

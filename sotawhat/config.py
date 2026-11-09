@@ -51,6 +51,13 @@ class Settings(BaseSettings):
 
     sotawhat_web_port: int = 8765     # `sotawhat serve` (P3), always on 127.0.0.1
 
+    # lessons (aulas 3D, F0/F1): voice "piper:faber" (local) or "google:pt-BR-Chirp3-HD-Charon" (needs the key);
+    # empty = the voice you chose in the blind test, else piper:faber
+    google_tts_api_key: str = ""
+    sotawhat_lesson_voice: str = ""
+    sotawhat_llm_budget_usd_lesson: float = 0.60
+    sotawhat_lesson_max_mb: int = 48  # Telegram cloud Bot API: 50 MB per video
+
     # Neo4j mirror of the entity graph (P3, D16); empty password = mirror off (the interface works anyway)
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"

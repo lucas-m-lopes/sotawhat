@@ -213,3 +213,35 @@ def test_today_skips_runs_without_a_digest(client):
         st.finish_run(later, ok=True, stats={"collected": {"geral": 5}, "new": 5})
     run = c.get("/api/today").json()["run"]
     assert run["id"] == first and run["latest_id"] == later
+
+
+def test_lessons_api_and_media(client):
+    import json
+
+    c, _, db = client
+    assert c.get("/api/lessons").json() == []
+    plan = {"title": "Atenção", "objective": "entender", "scenes": [
+        {"title": "Tokens", "mode": "manim", "beats": [{"narration": "Frase.", "source": -1}]},
+        {"title": "TC", "mode": "three", "beats": [{"narration": "Frase.", "source": 0}]},
+        {"title": "Volume", "mode": "three", "beats": [{"narration": "Frase.", "source": -1}]}],
+            "quiz": [{"question": "Q?", "options": ["a", "b", "c"], "answer": 0, "explanation": "e"}]}
+    with Store(db) as st:
+        lid = st.create_lesson("Atenção no Transformer", [1])
+        folder = db.parent / "lessons" / f"{lid:03d}"
+        (folder / "scenes" / "02").mkdir(parents=True)
+        (folder / "aula.mp4").write_bytes(b"\0\0")
+        (folder / "scenes" / "02" / "scene.js").write_text("export default function build(k) {}", encoding="utf-8")
+        (folder / "sources.json").write_text(json.dumps({"sources": [{"title": "Paper", "url": "https://x.org",
+                                                                      "published": "2026-11-01"}]}), encoding="utf-8")
+        st.update_lesson(lid, title="Atenção", status="pronta", video_path=str(folder / "aula.mp4"), duration_s=270.0,
+                         cost_usd=0.08, plan=plan, report={"scenes": {"2": {"ok": True}, "3": {"ok": False, "fallback": True}},
+                                                           "gates": {"G2": []}})
+        st.record_lesson_answer(lid, 0, 0, 0, True)
+    listing = c.get("/api/lessons").json()
+    assert listing[0]["video"] == f"/lessons/{lid:03d}/aula.mp4" and listing[0]["quiz_score"] == [[1, 1], [0, 0]]
+    assert [s["n"] for s in listing[0]["scenes3d"]] == [2]                         # the slide fallback is not 3D
+    detail = c.get(f"/api/lessons/{lid}").json()
+    assert detail["sources"][0]["title"] == "Paper" and detail["report"]["gates"] == {"G2": []}
+    js = c.get(f"/lessons/{lid:03d}/scenes/02/scene.js")
+    assert js.status_code == 200 and js.headers["content-type"].startswith("text/javascript")
+    assert c.get("/api/lessons/999").status_code == 404

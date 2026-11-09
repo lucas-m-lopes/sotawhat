@@ -109,6 +109,18 @@ def test_budget_blocks_call_before_spending(tmp_path):
         assert client.payloads == []
 
 
+def test_run_budget_replaces_the_daily_one(tmp_path):
+    with Store(tmp_path / "insight.db") as st:
+        st.record_llm_call(task="triage", requested_model="m", status="ok", cost_usd=1.5)     # the day is spent
+        run = st.start_run("lesson")
+        client = FakeClient(_completion('{"title": "a", "score": 1}', cost=0.4))
+        gw = LLMGateway(client, store=st, settings=_settings(), run_id=run, budget_day=1.0, budget_run=0.3)
+        assert gw.structured("lesson_plan", [], Verdict).title == "a"                    # not blocked by the day
+        with pytest.raises(BudgetExceeded, match="run LLM budget"):
+            gw.structured("lesson_plan", [], Verdict)                                     # 0.4 spent >= 0.3
+        assert len(client.payloads) == 1
+
+
 def test_env_override_puts_model_first():
     spec = resolve("triage", _settings(sotawhat_model_triage="z-ai/glm-5.3-flash"))
     assert spec.models[0] == "z-ai/glm-5.3-flash"

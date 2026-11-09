@@ -1,0 +1,7 @@
+# The lessons tools environment (data/tools/lessons/.venv), installed by `sotawhat lessons setup` with
+# `uv pip install --exclude-newer 2026-10-26`: only releases at least two weeks old on 2026-11-09.
+manim==0.22.0
+playwright==1.64.1
+matplotlib==3.11.2
+imageio-ffmpeg==0.6.0
+piper-tts==1.8.0

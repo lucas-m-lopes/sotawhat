@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 APPROVED = ("main", "frontier", "radar")
 ROLE_RANK = {"tag": 0, "mentioned": 1, "used": 2, "main": 3}
 IDEA_STATUS = {"up": "curtida", "down": "rejeitada", "test": "testar", "archive": "engavetada", "built": "construida"}
@@ -264,6 +264,42 @@ CREATE TABLE IF NOT EXISTS weekly_reports(
 );
 """
 
+_SCHEMA_V5 = """
+CREATE TABLE IF NOT EXISTS lessons(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    topic TEXT NOT NULL,
+    entities_json TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'nova',  -- nova | planejada | narrada | renderizada | pronta | entregue | falhou
+    title TEXT,
+    plan_json TEXT,
+    report_json TEXT,                     -- gates, attempts per scene, timings, cost
+    voice TEXT,
+    video_path TEXT,
+    duration_s REAL,
+    size_bytes INTEGER,
+    run_id INTEGER,
+    cost_usd REAL,
+    delivered_at TEXT,
+    requiz_at TEXT,
+    review TEXT,                          -- ok | erro (your check, G8)
+    comparison TEXT,                      -- melhor | empate | pior than the NotebookLM Video Overview
+    error TEXT
+);
+CREATE TABLE IF NOT EXISTS lesson_answers(
+    lesson_id INTEGER NOT NULL,
+    round INTEGER NOT NULL,               -- 0 = with the lesson, 1 = re-quiz days later
+    question INTEGER NOT NULL,
+    chosen INTEGER NOT NULL,
+    correct INTEGER NOT NULL,
+    answered_at TEXT NOT NULL,
+    PRIMARY KEY(lesson_id, round, question)
+);
+"""
+LESSON_FIELDS = ("status", "title", "voice", "video_path", "duration_s", "size_bytes", "run_id", "cost_usd",
+                 "delivered_at", "requiz_at", "review", "comparison", "error")
+
 _LLM_FIELDS = ("run_id", "task", "requested_model", "model", "provider", "generation_id",
                "input_tokens", "output_tokens", "reasoning_tokens", "cached_tokens",
                "cost_usd", "latency_ms", "status", "error")
@@ -296,6 +332,7 @@ class Store:
         self.conn.executescript(_SCHEMA_V2)
         self.conn.executescript(_SCHEMA_V3)
         self.conn.executescript(_SCHEMA_V4)
+        self.conn.executescript(_SCHEMA_V5)
         columns = {row[1] for row in self.conn.execute("PRAGMA table_info(items)")}
         if "cluster_id" not in columns:
             self.conn.execute("ALTER TABLE items ADD COLUMN cluster_id TEXT")
@@ -464,6 +501,11 @@ class Store:
         with self._lock:
             return self.conn.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM llm_calls WHERE created_at >= ?",
                                      (since_iso,)).fetchone()[0]
+
+    def llm_cost_for_run(self, run_id) -> float:
+        with self._lock:
+            return self.conn.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM llm_calls WHERE run_id = ?",
+                                     (run_id,)).fetchone()[0]
 
     def avg_llm_cost(self, task: str, last: int = 200) -> float | None:
         row = self.conn.execute(
@@ -878,3 +920,59 @@ class Store:
             return None
         return {"run_id": row["run_id"], "day": row["day"], "payload": json.loads(row["payload_json"]),
                 "created_at": row["created_at"]}
+
+    # --- lessons (schema 5) -------------------------------------------------
+    def create_lesson(self, topic, entity_ids=()) -> int:
+        with self._lock:
+            cur = self.conn.execute("INSERT INTO lessons(created_at, updated_at, topic, entities_json) VALUES(?,?,?,?)",
+                                    (utcnow(), utcnow(), topic, json.dumps([int(e) for e in entity_ids])))
+            self.conn.commit()
+            return cur.lastrowid
+
+    def update_lesson(self, lesson_id, plan=None, report=None, **fields) -> None:
+        unknown = set(fields) - set(LESSON_FIELDS)
+        if unknown:
+            raise ValueError(f"unknown lesson fields: {sorted(unknown)}")
+        sets, values = ["updated_at = ?"], [utcnow()]
+        for key, value in fields.items():
+            sets.append(f"{key} = ?")
+            values.append(value)
+        for column, value in (("plan_json", plan), ("report_json", report)):
+            if value is not None:
+                sets.append(f"{column} = ?")
+                values.append(json.dumps(value, ensure_ascii=False))
+        with self._lock:
+            self.conn.execute(f"UPDATE lessons SET {', '.join(sets)} WHERE id = ?", values + [lesson_id])
+            self.conn.commit()
+
+    def get_lesson(self, lesson_id):
+        return self.conn.execute("SELECT * FROM lessons WHERE id = ?", (lesson_id,)).fetchone()
+
+    def list_lessons(self, limit=100):
+        return self.conn.execute("SELECT * FROM lessons ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+
+    def taught_entities(self) -> set:
+        """Entities that already have a lesson that did not fail (the selector skips them)."""
+        out = set()
+        for row in self.conn.execute("SELECT entities_json FROM lessons WHERE status != 'falhou'"):
+            out.update(json.loads(row[0] or "[]"))
+        return out
+
+    def record_lesson_answer(self, lesson_id, round_, question, chosen, correct) -> bool:
+        """The first answer to a question counts; returns False when it was already answered."""
+        with self._lock:
+            cur = self.conn.execute("INSERT OR IGNORE INTO lesson_answers(lesson_id, round, question, chosen, correct,"
+                                    " answered_at) VALUES(?,?,?,?,?,?)",
+                                    (lesson_id, round_, question, chosen, int(bool(correct)), utcnow()))
+            self.conn.commit()
+            return cur.rowcount == 1
+
+    def lesson_score(self, lesson_id, round_) -> tuple:
+        row = self.conn.execute("SELECT COALESCE(SUM(correct), 0), COUNT(*) FROM lesson_answers WHERE lesson_id = ?"
+                                " AND round = ?", (lesson_id, round_)).fetchone()
+        return int(row[0]), int(row[1])
+
+    def lessons_due_requiz(self, before_iso):
+        """Delivered before `before_iso` and not re-quizzed yet."""
+        return self.conn.execute("SELECT * FROM lessons WHERE delivered_at IS NOT NULL AND delivered_at <= ? AND"
+                                 " requiz_at IS NULL ORDER BY id", (before_iso,)).fetchall()

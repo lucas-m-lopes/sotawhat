@@ -32,7 +32,7 @@ def test_v1_database_is_migrated_in_place(tmp_path):
     with Store(path) as st:
         names = {r[0] for r in st.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert {"triage", "embeddings", "clusters", "feedback", "deliveries", "classifier_models", "inbox"} <= names
-        assert st.meta_get("schema_version") == "4"
+        assert st.meta_get("schema_version") == "5"
         row = st.conn.execute("SELECT title, cluster_id FROM items WHERE id = 'pmid:1'").fetchone()
         assert tuple(row) == ("Old", None)
 

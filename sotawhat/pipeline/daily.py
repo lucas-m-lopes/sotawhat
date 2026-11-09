@@ -320,6 +320,13 @@ def main_daily(ns) -> int:
             except EmailError as exc:
                 print(f"[e-mail] {exc}", file=sys.stderr)
                 log.error("e-mail: %s", exc)
+        if not ns.no_notify and notifier.configured:     # aulas 3D: the quiz again, 2+ days after each lesson
+            try:
+                from sotawhat.lessons.deliver import requiz_due
+                if (sent := requiz_due(store, notifier)):
+                    print(f"[aulas] re-quiz de {sent} aula(s)")
+            except Exception as exc:  # noqa: BLE001 - the re-quiz never stops the daily run
+                log.warning("re-quiz: %s", exc)
         if not getattr(ns, "no_llm", False):     # the graph stage comes after the digest, never before it
             resolver, mirror = _graph_parts(settings, store, gateway, embedder, config)
             try:

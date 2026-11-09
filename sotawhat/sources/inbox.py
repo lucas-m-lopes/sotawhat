@@ -7,41 +7,27 @@
   https only, and every hop of a redirect must resolve to a public address).
 - These items carry source `manual:telegram`: the triage skips the mute filter and the classifier for them
   and never rejects them (the worst outcome is the radar)."""
-import ipaddress
 import json
 import logging
 import re
-import socket
 from html import unescape
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urlsplit
 
 import httpx
 
 from sotawhat.models import Result
 from sotawhat.sources.base import Source
 from sotawhat.sources.instagram import ACTOR, normalize, post_urls, to_result
+from sotawhat.sources.pages import get_html, new_client, public_host
 from sotawhat.store.db import utcnow
 
 log = logging.getLogger("sotawhat.inbox")
 SOURCE = "manual:telegram"
-MAX_PAGE_BYTES = 2 * 1024 * 1024
 _META = re.compile(r'<meta\s+[^>]*?(?:property|name)=["\'](og:title|og:description|description|twitter:title)["\']'
                    r'[^>]*?content=["\']([^"\']*)["\']', re.I | re.S)
 _META_REV = re.compile(r'<meta\s+[^>]*?content=["\']([^"\']*)["\'][^>]*?(?:property|name)=["\']'
                        r'(og:title|og:description|description|twitter:title)["\']', re.I | re.S)
 _TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.I | re.S)
-
-
-def public_host(url) -> bool:
-    """Only http(s) URLs whose host resolves to public addresses (no SSRF into the local network)."""
-    parts = urlsplit(url)
-    if parts.scheme not in ("http", "https") or not parts.hostname:
-        return False
-    try:
-        infos = socket.getaddrinfo(parts.hostname, parts.port or (443 if parts.scheme == "https" else 80))
-    except OSError:
-        return False
-    return all(ipaddress.ip_address(info[4][0]).is_global for info in infos)
 
 
 def page_summary(html) -> tuple:
@@ -98,8 +84,7 @@ class InboxSource(Source):
             except Exception as exc:  # noqa: BLE001 - the links still become plain items below
                 log.warning("inbox: Apify falhou (%s)", exc)
         resolved = {r.extra["canonical_id"][3:] for r in out}
-        client = self._client or httpx.Client(follow_redirects=False, timeout=20,
-                                              headers={"User-Agent": "Mozilla/5.0 (sotawhat/3.0)"})
+        client = self._client or new_client()
         try:
             for _, url, note in links:
                 codes = [u.rstrip("/").rsplit("/", 1)[-1] for u in post_urls(url)]
@@ -115,30 +100,10 @@ class InboxSource(Source):
         self.store.conn.commit()
         return out[:limit]
 
-    def _page(self, client, url, hops=3) -> str:
-        """The HTML of `url`, following up to `hops` redirects and checking the host of every hop."""
-        for _ in range(hops + 1):
-            if not self.check_host(url):
-                return ""
-            with client.stream("GET", url) as r:
-                if r.is_redirect and r.headers.get("location"):
-                    url = urljoin(url, r.headers["location"])
-                    continue
-                if r.status_code != 200 or "html" not in r.headers.get("content-type", ""):
-                    return ""
-                body, size = [], 0
-                for chunk in r.iter_bytes():
-                    size += len(chunk)
-                    body.append(chunk)
-                    if size > MAX_PAGE_BYTES:
-                        break
-                return b"".join(body).decode(r.encoding or "utf-8", "replace")
-        return ""
-
     def _link(self, client, url, note) -> Result:
         title, description = "", ""
         try:
-            html = self._page(client, url)
+            html = get_html(client, url, self.check_host)
             if html:
                 title, description = page_summary(html)
         except httpx.HTTPError as exc:

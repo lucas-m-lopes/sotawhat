@@ -33,9 +33,9 @@ _BLOCKS = {"p", "div", "br", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "ta
 
 
 class _Text(HTMLParser):
-    def __init__(self):
+    def __init__(self, numbered=True):
         super().__init__(convert_charrefs=True)
-        self.parts, self.links, self.labels = [], {}, {}
+        self.parts, self.links, self.labels, self.numbered = [], {}, {}, numbered
         self._skip, self._href, self._anchor = 0, None, []
 
     def handle_starttag(self, tag, attrs):
@@ -53,7 +53,8 @@ class _Text(HTMLParser):
             number = len(self.links) + 1
             self.links[number] = self._href
             self.labels[number] = " ".join("".join(self._anchor).split())
-            self.parts.append(f" [{number}]")
+            if self.numbered:
+                self.parts.append(f" [{number}]")
             self._href = None
         elif tag in _BLOCKS:
             self.parts.append("\n")
@@ -66,16 +67,16 @@ class _Text(HTMLParser):
             self._anchor.append(data)
 
 
-def _parse(html):
-    parser = _Text()
+def _parse(html, numbered=True):
+    parser = _Text(numbered)
     parser.feed(html or "")
     lines = (" ".join(line.split()) for line in "".join(parser.parts).split("\n"))
     return "\n".join(line for line in lines if line), parser.links, parser.labels
 
 
-def html_to_text(html):
-    """-> (text with "anchor [n]" markers, {n: url})."""
-    text, links, _ = _parse(html)
+def html_to_text(html, numbered=True):
+    """-> (text with "anchor [n]" markers, {n: url}); `numbered=False` leaves the anchors as plain text."""
+    text, links, _ = _parse(html, numbered)
     return text, links
 
 

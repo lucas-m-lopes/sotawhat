@@ -22,6 +22,7 @@ dependencies = [
     "neo4j>=6.0",
     "mcp>=2.3",
     "networkx>=3.4",
+    "trafilatura>=2.3",   # main text of article pages (newsletters whose feed carries only an excerpt)
 ]
 
 [project.optional-dependencies]

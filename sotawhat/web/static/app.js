@@ -497,10 +497,11 @@
   }
 
   // --- views (P4) --------------------------------------------------------------------
-  const VIEWS = { graph: "#view-graph", today: "#view-today", ideas: "#view-ideas", trends: "#view-trends" };
-  const HASHES = { "#grafo": "graph", "#hoje": "today", "#ideias": "ideas", "#tendencias": "trends" };
+  const VIEWS = { graph: "#view-graph", today: "#view-today", ideas: "#view-ideas", trends: "#view-trends",
+                  lessons: "#view-lessons" };
+  const HASHES = { "#grafo": "graph", "#hoje": "today", "#ideias": "ideas", "#tendencias": "trends", "#aulas": "lessons" };
   const TITLES = { graph: "sotawhat · grafo", today: "sotawhat · hoje", ideas: "sotawhat · ideias",
-                   trends: "sotawhat · tendências" };
+                   trends: "sotawhat · tendências", lessons: "sotawhat · aulas" };
   let graphLoaded = false;
 
   function showView(name) {
@@ -523,6 +524,7 @@
     if (name === "graph") ensureGraph();
     else if (name === "today") loadToday();
     else if (name === "ideas") loadIdeas();
+    else if (name === "lessons") loadLessons();
     else loadTrends();
   }
 
@@ -850,6 +852,83 @@
       el("span", { class: "muted grow" }, `${fmtDate(r.started_at)}${r.seconds !== null ? ` · ${Math.round(r.seconds / 60)} min` : " · rodando"}`),
       el("span", { class: "muted" }, `US$ ${num(r.cost_usd || 0, 3)}`),
       r.ok === false ? el("span", { title: r.error }, "falhou") : el("span", {}, r.ok ? "ok" : "…"))));
+  }
+
+  // --- lessons (aulas 3D) -------------------------------------------------------------
+  const LESSON_STATUS = { nova: "nova", planejada: "roteiro pronto", narrada: "narrada", renderizada: "renderizada",
+                          pronta: "pronta", entregue: "entregue", falhou: "parou" };
+  const REVIEW = { ok: "✅ sem erros", erro: "⚠️ tem erro" };
+  const COMPARISON = { melhor: "🏆 melhor que o NotebookLM", empate: "🤝 empate com o NotebookLM", pior: "📉 pior que o NotebookLM" };
+  const CHECKLIST = ["Toda afirmação é rastreável e não é mais forte que a fonte", "Anatomia/orientação/rótulos corretos",
+    "Molécula, alvo e simplificações declaradas", "Ordem causal dos passos correta", "Números, unidades e escalas corretos",
+    "Status regulatório e off-label sinalizados", "Conteúdo de IA bate com os artigos; metáforas rotuladas",
+    "Nenhum dado de paciente", "Licenças e créditos em ordem", "Uso de IA declarado", "Template pedagógico seguido",
+    "Legendas legíveis e paleta segura"];
+  const clock = (s) => `${Math.floor((s || 0) / 60)}:${String(Math.round((s || 0) % 60)).padStart(2, "0")}`;
+
+  function lessonCard(lesson) {
+    const [r0, r1] = lesson.quiz_score || [[0, 0], [0, 0]];
+    const card = el("article", { class: "idea lesson" },
+      el("div", { class: "head" }, el("span", { class: "badge" }, LESSON_STATUS[lesson.status] || lesson.status),
+        meta(`aula #${lesson.id}`, fmtDate(lesson.created_at), lesson.duration_s ? clock(lesson.duration_s) : null,
+             lesson.cost_usd !== null ? `US$ ${num(lesson.cost_usd, 3)}` : null, lesson.voice,
+             r0[1] ? `quiz ${r0[0]}/${r0[1]}` : null, r1[1] ? `re-quiz ${r1[0]}/${r1[1]}` : null,
+             REVIEW[lesson.review], COMPARISON[lesson.comparison])),
+      el("h2", {}, lesson.title),
+      lesson.objective ? el("p", {}, lesson.objective) : null,
+      lesson.error ? el("p", { class: "muted" }, `parou: ${lesson.error} — retome com sotawhat lessons resume ${lesson.id}`) : null,
+      lesson.video ? el("video", { controls: true, preload: "metadata", src: lesson.video, class: "lesson-video" }) : null,
+      lesson.scenes3d.length ? el("div", { class: "chips" }, el("span", { class: "muted" }, "Cenas 3D interativas: "),
+        ...lesson.scenes3d.map((s) => el("a", { class: "chip", href: s.url, target: "_blank", rel: "noopener" }, `${s.n}. ${s.title}`))) : null,
+      lesson.sources_md ? el("p", { class: "muted" }, "Linha de base: suba ",
+        el("a", { href: lesson.sources_md, target: "_blank", rel: "noopener" }, "fontes.md"),
+        " no NotebookLM e gere um Video Overview (Explainer, pt-BR) para comparar.") : null);
+    const more = el("details", {}, el("summary", {}, "roteiro, quiz, portões e checklist"));
+    more.addEventListener("toggle", async () => {
+      if (!more.open || more.dataset.loaded) return;
+      more.dataset.loaded = "1";
+      try { more.append(...lessonDetails(await api(`/api/lessons/${lesson.id}`))); }
+      catch (e) { more.append(el("p", { class: "muted" }, `não carregou (${e.message})`)); }
+    });
+    card.append(more);
+    return card;
+  }
+
+  function lessonDetails(d) {
+    const plan = d.plan || { scenes: [], quiz: [] };
+    const report = d.report || {};
+    const gates = report.gates || {};
+    const scenes = report.scenes || {};
+    const out = [el("h3", {}, "Roteiro"), el("ol", {}, plan.scenes.map((s, i) => {
+      const r = scenes[String(i + 1)] || {};
+      const status = r.fallback ? " · virou slide" : r.attempts ? ` · ${r.attempts} tentativa(s)` : "";
+      return el("li", {}, el("b", {}, `${s.title} `), el("span", { class: "muted" }, `(${s.mode === "three" ? "3D" : "2D"}${status})`),
+                el("ul", {}, s.beats.map((b) => el("li", {}, b.narration, b.source >= 0 ? el("sup", {}, ` [${b.source}]`) : null))));
+    }))];
+    out.push(el("h3", {}, "Quiz"), el("ol", {}, plan.quiz.map((q) => el("li", {}, q.question,
+      el("details", {}, el("summary", {}, "resposta"), el("p", {}, `${"ABCD"[q.answer]}) ${q.options[q.answer]} — ${q.explanation}`))))));
+    const after = gates.G1_after || gates.G1_first || [];
+    out.push(el("h3", {}, "Portões automáticos"), el("ul", {},
+      el("li", {}, `G1 fatos: ${(gates.G1_first || []).length} problema(s) na 1ª checagem, ${after.length} depois da revisão`),
+      ...after.map((p) => el("li", { class: "muted" }, p)),
+      el("li", {}, `G2 roteiro: ${(gates.G2 || []).length ? gates.G2.join("; ") : "ok"}`),
+      el("li", {}, `cenas na 1ª tentativa: ${report.first_try ?? "?"} de ${plan.scenes.length}; slides de reserva: ${report.fallbacks ?? 0}`)));
+    out.push(el("h3", {}, "Checklist da sua revisão (G8)"), el("ol", {}, CHECKLIST.map((c) => el("li", {}, c))));
+    if (d.sources && d.sources.length) out.push(el("h3", {}, "Fontes"), el("ol", { start: 0 }, d.sources.map((s) => {
+      const url = safeUrl(s.url);
+      return el("li", {}, url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer" }, s.title) : s.title, ` (${s.published})`);
+    })));
+    return out;
+  }
+
+  async function loadLessons() {
+    let lessons;
+    try { lessons = await api("/api/lessons"); }
+    catch (e) { $("#lessons-meta").textContent = `Não consegui carregar as aulas (${e.message}).`; return; }
+    $("#lessons-meta").textContent = lessons.length
+      ? `${lessons.length} aula(s) · vídeo narrado, cenas 3D interativas, quiz no Telegram e re-quiz em 2 dias`
+      : "Nenhuma aula ainda: sotawhat lessons make --tema \"…\" (ou --auto, a tendência mais forte da semana).";
+    $("#lessons-list").replaceChildren(...lessons.map(lessonCard));
   }
 
   // --- start -----------------------------------------------------------------------

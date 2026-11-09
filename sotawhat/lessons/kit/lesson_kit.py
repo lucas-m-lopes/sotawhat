@@ -11,8 +11,8 @@ import textwrap
 from pathlib import Path
 
 from manim import *  # noqa: F401,F403 - the scenes use the whole manim namespace through this module
-from manim import (RIGHT, UP, Arrow, BackgroundRectangle, Paragraph, RoundedRectangle, Scene, Square, SVGMobject,
-                   Text, VGroup, config)
+from manim import (DOWN, LEFT, RIGHT, UP, Arrow, BackgroundRectangle, Brace, DecimalNumber, Line, NumberLine,
+                   Paragraph, RoundedRectangle, Scene, Square, SVGMobject, Text, VGroup, config)
 
 config.background_color = "#0f141a"
 FONT = "Segoe UI"
@@ -58,6 +58,67 @@ def MathTex(*parts, color=C_TEXT, font_size=40, **_):
 
 
 Tex = MathTex
+
+
+# Mobjects that use LaTeX inside get text instead (there is no LaTeX here): numbers, axis labels, matrices,
+# Title, BulletedList and brace labels.
+def _number_text(value, **kwargs):
+    kwargs.pop("color", None)
+    return Text(str(value), font_size=kwargs.pop("font_size", 28), color=C_TEXT)
+
+
+DecimalNumber.set_default(mob_class=Text)
+NumberLine.set_default(label_constructor=Text)
+
+
+class Matrix(VGroup):
+    """A matrix of text entries between drawn brackets (manim's Matrix needs LaTeX for its brackets)."""
+
+    def __init__(self, values, h_buff=1.0, v_buff=0.7, font_size=28, color=C_TEXT, **_):
+        super().__init__()
+        self._rows = [[_number_text(v, font_size=font_size) for v in row] for row in values]
+        for r, row in enumerate(self._rows):
+            for c, entry in enumerate(row):
+                entry.set_color(color).move_to([c * h_buff, -r * v_buff, 0])
+        self.entries = VGroup(*[e for row in self._rows for e in row]).center()
+        height, tick = self.entries.height + 0.35, 0.14
+        left = VGroup(Line([0, height / 2, 0], [0, -height / 2, 0]), Line([0, height / 2, 0], [tick, height / 2, 0]),
+                      Line([0, -height / 2, 0], [tick, -height / 2, 0]))
+        right = left.copy().flip(UP)
+        left.next_to(self.entries, LEFT, buff=0.2)
+        right.next_to(self.entries, RIGHT, buff=0.2)
+        self.brackets = VGroup(left, right)
+        self.add(left, self.entries, right)
+
+    def get_entries(self):
+        return self.entries
+
+    def get_rows(self):
+        return VGroup(*[VGroup(*row) for row in self._rows])
+
+    def get_columns(self):
+        return VGroup(*[VGroup(*[row[c] for row in self._rows if c < len(row)])
+                        for c in range(max(len(r) for r in self._rows))])
+
+    def get_brackets(self):
+        return self.brackets
+
+
+def Title(*parts, **_):
+    return title(" ".join(str(p) for p in parts))
+
+
+def BulletedList(*items, font_size=28, **_):
+    return VGroup(*[Text(f"• {item}", font_size=font_size, color=C_TEXT) for item in items]).arrange(
+        DOWN, aligned_edge=LEFT, buff=0.25)
+
+
+def BraceText(mob, text, brace_direction=DOWN, **_):
+    brace = Brace(mob, brace_direction)
+    return VGroup(brace, Text(text, font_size=24, color=C_TEXT).next_to(brace, brace_direction, buff=0.15))
+
+
+BraceLabel = BraceText
 
 
 def title(text, color=C_TEXT):

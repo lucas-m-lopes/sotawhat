@@ -178,3 +178,10 @@ button { font: inherit; color: inherit; }
   .stage { height: 62vh; border-bottom: 1px solid var(--line); }
   .panel { border-left: 0; }
 }
+
+/* lessons (aulas 3D) */
+.lesson video.lesson-video { width: 100%; max-width: 960px; border-radius: 8px; background: #000; margin: 8px 0; display: block; }
+.lesson details { margin-top: 8px; font-size: 13.5px; }
+.lesson details h3 { font-size: 13px; margin: 12px 0 4px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.lesson details ol, .lesson details ul { margin: 4px 0; padding-left: 20px; }
+.lesson .chips { align-items: center; margin: 6px 0; }

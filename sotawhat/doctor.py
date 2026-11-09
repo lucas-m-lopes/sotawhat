@@ -435,6 +435,21 @@ def check_graph(store, max_backlog=50) -> Check:
     return Check("grafo", "ok", detail + (f" · {s['pending_extraction']} na fila" if s["pending_extraction"] else ""))
 
 
+def check_lessons(settings, tools=None) -> Check:
+    """Aulas 3D: the tools environment (Manim, Chromium, FFmpeg, Piper voices) and the voice in use."""
+    from sotawhat.lessons.tools import Tools
+
+    status = (tools or Tools.from_settings(settings)).status()
+    if not status["python"]:
+        return Check("aulas 3D", "warn", "ferramentas ausentes: rode `sotawhat lessons setup` (~1,4 GB em data/tools)")
+    missing = [k for k in ("chromium", "ffmpeg") if not status[k]] + ([] if status["voices"] else ["vozes Piper"])
+    google = ("Chirp 3 HD disponível (GOOGLE_TTS_API_KEY)" if settings.google_tts_api_key
+              else "sem GOOGLE_TTS_API_KEY: só vozes locais (Piper)")
+    if missing:
+        return Check("aulas 3D", "warn", f"falta {', '.join(missing)}: rode `sotawhat lessons setup`")
+    return Check("aulas 3D", "ok", f"Manim, Chromium e FFmpeg ok · vozes {', '.join(status['voices'])} · {google}")
+
+
 def check_web(port, connect=None) -> Check:
     import socket
 
@@ -553,6 +568,7 @@ def main_doctor(ns) -> int:
     checks.append(check_email(settings))
     checks += [check_github(settings), check_hf(settings), check_gmail(settings), check_newsletters(settings)]
     checks += check_instagram(settings)
+    checks.append(check_lessons(settings))
     with Store(settings.db_path) as store:
         checks.append(check_last_run(store))
         checks.append(check_last_weekly(store))

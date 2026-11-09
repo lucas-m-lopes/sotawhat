@@ -177,6 +177,38 @@ After P6, newsletters by RSS (2026-11-09):
   filter that also labels them never doubles the stories. The scheduled daily and weekly runs use
   `pythonw.exe`: with no console window, closing a window can no longer kill a run.
 
+Animated lessons (aulas 3D, F0/F1, 2026-11-09; plan in `docs/superpowers/plans/2026-11-09-aulas-3d-f0-f1.md`,
+research in `docs/research/reports/Aulas didáticas animadas em 3D.md`):
+
+- `sotawhat lessons setup` installs the tools in `data/tools/lessons`:
+  - a uv venv with packages at least two weeks old: Manim 0.22.0, Playwright 1.64.1, matplotlib, Piper and FFmpeg;
+  - Chromium;
+  - the Brazilian Portuguese Piper voices (faber, cadu, jeff; CC0 data).
+- `sotawhat lessons make --tema "Atenção no Transformer" [--entidade 105 …]` (or `--auto`, the strongest weekly
+  trend without a lesson) makes a 3–6 minute lesson:
+  1. The source pack is built from the graph.
+  2. An LLM writes the storyboard, which goes through the G2 lint and the G1 fact gate (one revision round).
+  3. Each sentence is narrated, and its length times its animation.
+  4. An LLM writes each scene as code: Manim for the abstract, three.js only for the spatial.
+  5. The code passes a policy (no files, network, processes or DOM) and is rendered on the PC. A failure goes back
+     for repair, escalates to Kimi K3.1 Pro after two tries and, as a last resort, becomes a slide.
+  6. The MP4 is assembled under 48 MB, with subtitles drawn in the picture.
+- The video goes to Telegram with:
+  - the quiz;
+  - your review buttons (✅ / ⚠️);
+  - the comparison with the NotebookLM Video Overview generated from `fontes.md`.
+
+  The daily run sends the re-quiz two days later.
+- The Aulas tab of the interface shows the videos, the 3D scenes as interactive pages (timeline, narration, free
+  orbit), the storyboard, the gates and the review checklist.
+- Other commands:
+  - `lessons resume N` continues a lesson where it stopped;
+  - `lessons rerender N --voz …` re-narrates without the LLM;
+  - `lessons voices` sends a blind voice test to Telegram (your vote picks the voice);
+  - `lessons send N`, `lessons pack N` and `lessons list` deliver a lesson, export its pack and list the lessons.
+- Voice: Piper by default (local). Google Chirp 3 HD (`google:pt-BR-Chirp3-HD-Charon`) needs `GOOGLE_TTS_API_KEY`.
+  A lesson made from a ledger idea should keep a local voice.
+
 To set it up, copy `.env.example` to `.env` and fill in at least `OPENROUTER_API_KEY`,
 `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Then schedule the runs with
 `powershell -ExecutionPolicy Bypass -File scripts\schedule_daily.ps1 [-Listener] [-Web] [-Weekly]`.

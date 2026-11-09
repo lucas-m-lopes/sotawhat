@@ -5,9 +5,12 @@ A local server still gets requests that other web pages trigger in the browser, 
 - it only binds to 127.0.0.1, and TrustedHostMiddleware refuses any other Host header (DNS rebinding);
 - the writes (votes on items and on ideas) need a JSON body (a cross-site form or a no-cors fetch
   cannot send one) and an Origin that is absent or local.
-P4 adds the ideas page (/api/ideas, /api/ideas/{id}, /api/ideas/vote) and the trends panel (/api/trends)."""
+P4 adds the ideas page (/api/ideas, /api/ideas/{id}, /api/ideas/vote) and the trends panel (/api/trends).
+The lessons (aulas 3D) add /api/lessons and the files of data/lessons under /lessons: the videos and the
+interactive pages of the 3D scenes."""
 import json
 import logging
+import mimetypes
 import os
 import sys
 import threading
@@ -30,6 +33,10 @@ from sotawhat.store.db import Store
 STATIC = Path(__file__).parent / "static"
 LOCAL_HOSTS = ("127.0.0.1", "localhost")
 log = logging.getLogger("sotawhat.web")
+# the Windows registry may map .js to text/plain, and browsers refuse ES modules served that way
+for _type, _ext in (("text/javascript", ".js"), ("text/javascript", ".mjs"), ("text/css", ".css"),
+                    ("audio/wav", ".wav"), ("video/mp4", ".mp4"), ("text/markdown", ".md")):
+    mimetypes.add_type(_type, _ext)
 
 
 class Vote(BaseModel):
@@ -171,7 +178,48 @@ def create_app(db_path, static_dir=STATIC) -> FastAPI:
     def api_trends(request: Request):
         return ledger.trends_view(store(request))
 
+    # --- lessons (aulas 3D) ------------------------------------------------------------
+    lessons_dir = Path(db_path).parent / "lessons"
+    lessons_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/lessons", StaticFiles(directory=lessons_dir), name="lessons")
+
+    @app.get("/api/lessons")
+    def api_lessons(request: Request, limit: int = Query(50, ge=1, le=500)):
+        st = store(request)
+        return [lesson_payload(st, row, lessons_dir) for row in st.list_lessons(limit)]
+
+    @app.get("/api/lessons/{lesson_id}")
+    def api_lesson(lesson_id: int, request: Request):
+        st = store(request)
+        row = st.get_lesson(lesson_id)
+        if row is None:
+            raise HTTPException(404, "aula não encontrada")
+        return lesson_payload(st, row, lessons_dir, detail=True)
+
     return app
+
+
+def lesson_payload(st, row, lessons_dir, detail=False) -> dict:
+    plan = json.loads(row["plan_json"] or "null")
+    report = json.loads(row["report_json"] or "{}")
+    folder = f"{row['id']:03d}"
+    scenes = (report.get("scenes") or {})
+    out = {"id": row["id"], "topic": row["topic"], "title": row["title"] or row["topic"], "status": row["status"],
+           "created_at": row["created_at"], "duration_s": row["duration_s"], "size_bytes": row["size_bytes"],
+           "cost_usd": row["cost_usd"], "voice": row["voice"], "review": row["review"], "comparison": row["comparison"],
+           "error": row["error"], "objective": (plan or {}).get("objective"),
+           "video": f"/lessons/{folder}/aula.mp4" if row["video_path"] and (lessons_dir / folder / "aula.mp4").exists() else None,
+           "sources_md": f"/lessons/{folder}/fontes.md" if (lessons_dir / folder / "fontes.md").exists() else None,
+           "quiz_score": [st.lesson_score(row["id"], 0), st.lesson_score(row["id"], 1)],
+           "scenes3d": [{"n": n, "title": s["title"], "url": f"/lessons/{folder}/scenes/{n:02d}/index.html"}
+                        for n, s in enumerate((plan or {}).get("scenes") or [], 1)
+                        if s["mode"] == "three" and (scenes.get(str(n)) or {}).get("ok")]}
+    if detail:
+        sources = lessons_dir / folder / "sources.json"
+        out.update(plan=plan, report={k: report.get(k) for k in ("gates", "timings", "scenes", "video", "fallbacks",
+                                                                  "first_try", "mode")},
+                   sources=json.loads(sources.read_text(encoding="utf-8"))["sources"] if sources.exists() else [])
+    return out
 
 
 def serve(db_path, port=8765, open_browser=True, host="127.0.0.1"):

@@ -38,8 +38,10 @@ subtitles already exist; your code draws what each sentence describes, in sync.
   TransformFromCopy, Indicate, Circumscribe, Flash, LaggedStart(*anims, lag_ratio=0.2), AnimationGroup,
   `mob.animate.shift(...)/.move_to(...)/.scale(...)/.set_color(...)/.set_opacity(...)`.
 - Shapes: Circle, Square, Rectangle, RoundedRectangle, Line, DashedLine, Arrow, DoubleArrow, Dot, Polygon,
-  NumberLine, Axes (with `axes.plot(lambda x: …, color=…)`), BarChart, Brace (`Brace(mob, DOWN)` + `brace.get_text`
-  is NOT available: put a `label` next to the brace instead).
+  NumberLine, Axes (with `axes.plot(lambda x: …, color=…)`; `include_numbers=True` works), BarChart.
+- These work without LaTeX (the kit draws them with text): DecimalNumber, Integer, `Matrix([[1, 0.5], [0.2, 3]])`
+  (with get_entries/get_rows/get_columns/get_brackets), `BulletedList("a", "b")`, `Title("…")` and
+  `BraceText(mob, "texto")` for a brace with a label (do not call `brace.get_text`).
 - Text: `Text("…", font_size=28, color=…)`; `Paragraph("line 1", "line 2", font_size=24)` for 2–3 lines.
 - Do not use: ShowCreation, TextMobject, TexMobject, ThreeDScene, MovingCameraScene, camera moves, updaters
   with time, `always_redraw`, external assets.

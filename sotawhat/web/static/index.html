@@ -15,6 +15,7 @@
     <a href="#hoje" data-view="today">Hoje</a>
     <a href="#ideias" data-view="ideas">Ideias</a>
     <a href="#tendencias" data-view="trends">Tendências</a>
+    <a href="#aulas" data-view="lessons">Aulas</a>
   </nav>
   <div class="search">
     <input id="search" type="search" placeholder="Buscar entidade ou item…" autocomplete="off" aria-label="Buscar entidade ou item" aria-controls="results">
@@ -84,6 +85,15 @@
   </div>
   <div id="ideas-status" class="segmented" role="radiogroup" aria-label="Situação das ideias"></div>
   <div id="ideas-list" class="cards" aria-live="polite"></div>
+</main>
+<main id="view-lessons" class="page" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Aulas</h1>
+      <p id="lessons-meta" class="muted">carregando…</p>
+    </div>
+  </div>
+  <div id="lessons-list" class="cards" aria-live="polite"></div>
 </main>
 <main id="view-trends" class="page" hidden>
   <div class="page-head">

@@ -37,4 +37,5 @@ include = ["sotawhat*"]
 
 [tool.setuptools.package-data]
 "sotawhat.llm.prompts" = ["*.md"]
-"sotawhat.web" = ["static/*", "static/vendor/*"]
+"sotawhat.web" = ["static/*", "static/vendor/*", "static/vendor/three/*"]
+"sotawhat.lessons" = ["kit/*"]   # runs in the lessons tools environment (data/tools/lessons), not here

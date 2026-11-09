@@ -5,7 +5,9 @@ test. Everything a step produces stays in data/lessons/<id>/, so a step that alr
 import json
 import random
 import shutil
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -22,6 +24,8 @@ from sotawhat.llm.tasks import DEEPSEEK_FLASH, KIMI_PRO, MIMO_PRO
 
 PLAN_MODELS = {"economico": None, "equilibrado": (KIMI_PRO, DEEPSEEK_FLASH, MIMO_PRO)}
 TITLE_S, END_S = 4.0, 4.0
+LLM_TIMEOUT_S = 900.0
+SCENE_WORKERS = 3
 
 
 class LessonError(Exception):
@@ -105,17 +109,28 @@ def make_lesson(settings, store, gateway, tools, lesson_id, voice, mode="economi
     _save(work / "durations.json", durations)
     store.update_lesson(lesson_id, status="narrada")
     lap("narração", t)
-    # 4. scenes -----------------------------------------------------------------------------------
+    # 4. scenes: SCENE_WORKERS at a time (the LLM answers in minutes; the renders interleave) ------
     paths = beat_paths(work / "audio", plan)
-    for n, scene in enumerate(plan.scenes, 1):
+    todo = [n for n in range(1, len(plan.scenes) + 1)
+            if not (report["scenes"].get(str(n)) and (work / "scenes" / f"{n:02d}" / "out.mp4").exists())]
+    lock = threading.Lock()
+
+    def one(n):
+        log(f"cena {n}/{len(plan.scenes)} ({plan.scenes[n - 1].mode}): {plan.scenes[n - 1].title}")
+        result = build_scene(gateway, tools, root, work / "scenes" / f"{n:02d}", kit_dir, cache, plan, n,
+                             durations[n - 1], log=log)
+        with lock:
+            report["scenes"][str(n)] = result
+            _save(work / "report.json", report)
+
+    t = time.monotonic()
+    with ThreadPoolExecutor(max_workers=SCENE_WORKERS) as pool:
+        for future in [pool.submit(one, n) for n in todo]:
+            future.result()             # the first exception (budget, credits) stops the lesson
+    if todo:
+        lap("cenas", t)
+    for n in range(1, len(plan.scenes) + 1):
         scene_dir = work / "scenes" / f"{n:02d}"
-        done = report["scenes"].get(str(n))
-        if not (done and (scene_dir / "out.mp4").exists()):
-            t = time.monotonic()
-            log(f"cena {n}/{len(plan.scenes)} ({scene.mode}): {scene.title}")
-            report["scenes"][str(n)] = build_scene(gateway, tools, root, scene_dir, kit_dir, cache, plan, n,
-                                                   durations[n - 1], log=log)
-            lap("cenas", t)
         seconds = media_seconds(tools, scene_dir / "out.mp4")
         report["scenes"][str(n)]["seconds"] = seconds
         asm.scene_audio(paths[n - 1], durations[n - 1], scene_dir / "audio.wav", video_seconds=seconds)
@@ -167,8 +182,9 @@ def _gateway(settings, store, run_id, previous_cost):
 
     if not settings.openrouter_api_key:
         raise LessonError("OPENROUTER_API_KEY vazio no .env")
+    # a storyboard with high reasoning takes minutes and the answer only comes at the end: 120 s cut it off
     client = OpenRouterClient(settings.openrouter_api_key, base_url=settings.openrouter_base_url,
-                              app_title=settings.openrouter_app_title)
+                              app_title=settings.openrouter_app_title, timeout=LLM_TIMEOUT_S)
     budget = max(0.05, settings.sotawhat_llm_budget_usd_lesson - previous_cost)
     return LLMGateway(client, store=store, settings=settings, run_id=run_id,
                       tasks=load_config(settings.sotawhat_config_dir).llm.get("tasks"), budget_run=budget)

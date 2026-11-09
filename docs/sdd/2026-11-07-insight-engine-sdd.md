@@ -2,12 +2,18 @@
 
 **Tipo:** Software Design Document (SDD) — serve também como *spec* para desenvolvimento orientado a especificação (spec-driven).
 **Data:** 2026-11-07
-**Status:** v2.2 (2026-11-09), com todas as fases (P0–P6) executadas e as newsletters por RSS com texto completo:
+**Status:** v2.3 (2026-11-09), com todas as fases (P0–P6) executadas, as newsletters por RSS com texto completo e as aulas 3D em piloto:
 - respostas do usuário de 2026-11-07 incorporadas: Instagram pessoal, Neo4j no Docker Desktop, LLMs chineses via OpenRouter;
 - medições da P1 incorporadas: modelo de embeddings e deduplicação por título (§6.3, §6.7, D3);
 - decisões de 2026-11-08 incorporadas: digest em duas seções, "IA ∩ Saúde" e "Fronteira de IA" (escolha feita a partir do golden set), e cópia do digest por e-mail (§6.7, §6.11, §16.1);
 - v1.4: o Obsidian sai do projeto, e nada lê nem escreve no vault (§9, D12). A interface própria com o grafo vem para a P3, que passa a ser executada antes da P2. O grafo de entidades fica no SQLite, e o Neo4j vira espelho (§6.3, §11, D16);
 - v1.5: P2 executada (fontes novas como canais com teto diário, triagem v2 com os tipos de item, Gmail por label; §11). A pedido do usuário ("continue a implantação segundo o plano SDD direto até o final"), as fases seguem sem pausa: P4, P5 e P6;
+- v2.3: aulas 3D, fases F0 e F1 do relatório `docs/research/reports/Aulas didáticas animadas em 3D.md`. Os detalhes estão no plano `docs/superpowers/plans/2026-11-09-aulas-3d-f0-f1.md`.
+  - `sotawhat lessons` transforma um tema do grafo numa aula narrada em pt-BR, animada por código escrito pelo LLM e renderizado no PC: Manim no abstrato, three.js no espacial.
+  - Portões: G1 (fatos), G2 (roteiro), G3 (layout e render) e G8 (sua revisão).
+  - Entrega: quiz no Telegram, re-quiz em 2 dias e aba Aulas com as cenas 3D interativas.
+  - O banco vai para o schema 5 (`lessons`, `lesson_answers`).
+  - As ferramentas ficam isoladas em `data/tools/lessons`;
 - v2.2: texto completo das newsletters. Quando o feed traz só um trecho (menos de 1.500 caracteres: MedCity, Out-Of-Pocket, Lilian Weng), o texto principal da página do artigo (trafilatura) substitui o trecho antes do filtro de IA. Cada post guarda até 8.000 caracteres, o que a triagem lê. Páginas que bloqueiam robôs ficam com o trecho (§7.1);
 - v2.1: newsletters por RSS (`config/newsletters.yaml`, 24 ativas: fronteira e IA ∩ saúde, inclusive brasileiras), digests separados em notícias pelo LLM, filtro de termos de IA em inglês e português, `sotawhat newsletters add` para qualquer Substack. O Gmail fica para a Rundown AI; The Batch e AlphaSignal são ignorados no Gmail porque já têm fonte própria. Runs agendados sem janela de console (pythonw), depois que fechar a janela matou o primeiro run semanal (§7.1, §16.3);
 - v2.0: P6 executada. Backup do SQLite, avaliações de triagem, extração e ideias, relatório das metas G1–G4, proposta de calibração, reparo de textos antigos e aba Hoje (§12, §11). O que depende de você está em §16.2;

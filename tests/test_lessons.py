@@ -287,3 +287,21 @@ def test_cli_lessons_arguments():
     assert parse_args(["lessons", "resume", "3"]).id == 3
     with pytest.raises(SystemExit):
         parse_args(["lessons", "send"])
+
+
+def test_doctor_lessons_check(tmp_path):
+    from types import SimpleNamespace
+
+    from sotawhat.doctor import check_lessons
+    from sotawhat.lessons.tools import Tools
+
+    settings = SimpleNamespace(sotawhat_data_dir=tmp_path, google_tts_api_key="")
+    assert check_lessons(settings).status == "warn"                                   # nothing installed
+    tools = Tools(tmp_path / "tools")
+
+    class Ready(Tools):
+        def status(self):
+            return {"python": True, "chromium": True, "ffmpeg": True, "voices": ["faber"]}
+
+    check = check_lessons(settings, tools=Ready(tools.root))
+    assert check.status == "ok" and "faber" in check.detail and "sem GOOGLE_TTS_API_KEY" in check.detail

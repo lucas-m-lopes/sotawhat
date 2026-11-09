@@ -44,3 +44,32 @@ para The Batch (DeepLearning.AI).
 - `newsletters add`: `aisupremacy` → aisupremacy.substack.com/feed; página de tópico do STAT → feed do tópico;
   `interconnects.ai` recusada por já estar na lista.
 - Suíte: 339 testes.
+
+## Adendo 2 (texto completo, 2026-11-09)
+
+O usuário pediu o texto completo ("pode fazer o texto completo das newsletters também").
+
+- Medição dos 24 feeds ativos (4 entradas mais novas de cada):
+  - a maioria já traz o post inteiro (2 mil a 145 mil caracteres);
+  - só trazem trecho o Out-Of-Pocket (40–80 caracteres), a MedCity AI (250–480) e a Lilian Weng (500–860);
+  - algumas entradas do Second Opinion, Health API Guy, AuntMinnie e Medicina S/A também vêm curtas.
+- Regra: com menos de 1.500 caracteres no feed, o leitor (`sotawhat/sources/pages.py`) busca a página e extrai o texto principal com trafilatura 2.3, que tira menus, rodapés e comentários e mantém os links.
+  - O texto da página só substitui o trecho quando é maior.
+  - O filtro de IA da saúde lê esse texto, não o teaser de poucas palavras.
+  - Digests curtos são separados a partir da página.
+- O leitor é o mesmo da captura manual (P5):
+  - só lê hosts públicos e confere cada salto de redirect (nada de SSRF para 127.0.0.1);
+  - aceita só `200 text/html`, até 2 MB e 20 s;
+  - nunca levanta exceção, e a falha deixa o trecho.
+- Cada post guarda até 8.000 caracteres (antes eram 1.500), o mesmo limite que a triagem lê. Isso dá mais texto à triagem e à extração do grafo, a cerca de US$ 0,0003 a mais por post.
+- Verificação real com estado temporário, sem LLM:
+  - IA: 5 itens em 6 s;
+  - saúde: 9 itens em 17 s;
+  - 9 páginas lidas, de 0,3 a 1,1 s cada;
+  - MedCity: de cerca de 300 para 5–9 mil caracteres;
+  - Out-Of-Pocket: de cerca de 60 para cerca de 15 mil (8 mil guardados);
+  - AuntMinnie responde 403 a robôs e fica com o trecho;
+  - Health API Guy (post pago) dá só a prévia.
+- Efeito colateral aceito: a página do Out-Of-Pocket abre com um anúncio do curso "AI Agents in Healthcare Ops 101". Por isso todo post dele passa no filtro de termos e a triagem decide com o texto completo. São 2–3 posts por semana.
+- Dependências fixadas em versões com pelo menos duas semanas de PyPI na instalação local: regex 2026.9.29, python-dateutil 2.9.0.post0, dateparser 1.4.3, lxml_html_clean 0.4.5, tzdata 2026.5.
+- Suíte: 344 testes.

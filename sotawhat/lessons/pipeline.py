@@ -118,7 +118,7 @@ def make_lesson(settings, store, gateway, tools, lesson_id, voice, mode="economi
     def one(n):
         log(f"cena {n}/{len(plan.scenes)} ({plan.scenes[n - 1].mode}): {plan.scenes[n - 1].title}")
         result = build_scene(gateway, tools, root, work / "scenes" / f"{n:02d}", kit_dir, cache, plan, n,
-                             durations[n - 1], log=log)
+                             durations[n - 1], log=log, cost_mode=mode)
         with lock:
             report["scenes"][str(n)] = result
             _save(work / "report.json", report)

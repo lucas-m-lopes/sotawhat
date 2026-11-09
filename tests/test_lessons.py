@@ -171,8 +171,9 @@ def test_scene_is_repaired_then_escalated_then_rendered(tmp_path, monkeypatch):
                                log=lambda *_: None)
     assert report["ok"] and report["attempts"] == 4 and not report["fallback"]
     assert "política de código" in report["errors"][0] and "NameError" in report["errors"][1]
-    assert [c[2][0] for c in gw.calls] == [coder.PRIMARY["manim"][0], coder.PRIMARY["manim"][0],
-                                           coder.ESCALATE[0], coder.ESCALATE[0]]     # escalated after 2 failures
+    other = coder.ESCALATE["economico"]["manim"][0]
+    assert [c[2][0] for c in gw.calls] == [coder.PRIMARY["manim"][0], coder.PRIMARY["manim"][0], other, other]
+    assert other != coder.PRIMARY["manim"][0] and coder.ESCALATE["equilibrado"]["manim"][0].startswith("moonshotai/")
     assert renders == [False, False, True]                                         # lenient only on the last try
     assert "O render falhou" in gw.calls[-1][1][-1]["content"]
     beats = json.loads((tmp_path / "s1" / "scene.json").read_text(encoding="utf-8"))["beats"]

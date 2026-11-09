@@ -43,6 +43,8 @@ subtitles already exist; your code draws what each sentence describes, in sync.
   (with get_entries/get_rows/get_columns/get_brackets), `BulletedList("a", "b")`, `Title("…")` and
   `BraceText(mob, "texto")` for a brace with a label (do not call `brace.get_text`).
 - Text: `Text("…", font_size=28, color=…)`; `Paragraph("line 1", "line 2", font_size=24)` for 2–3 lines.
+- Points are 3D: `[x, y, 0]` or `np.array([x, y, 0])`, never `[x, y]`. `mob.get_center()`, `get_left()` etc. return
+  arrays (index [0] for x, [1] for y); numbers are not subscriptable. `Grid.cell(r, c)` takes two integers.
 - Do not use: ShowCreation, TextMobject, TexMobject, ThreeDScene, MovingCameraScene, camera moves, updaters
   with time, `always_redraw`, external assets.
 - Diagrams beat decoration: arrows that show flow, colors that show grouping, highlights (Indicate,

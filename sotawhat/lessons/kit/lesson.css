@@ -9,5 +9,5 @@ html, body { margin: 0; background: #0f141a; color: #f2f2f2; font-family: "Segoe
 #ui input[type=range] { width: min(60vw, 640px); }
 #ui button { font: inherit; padding: 4px 12px; border-radius: 6px; border: 1px solid #3a4452; background: #1b2330; color: inherit; cursor: pointer; }
 body.capture #stage { width: 1920px; height: 1080px; max-width: none; margin: 0; }
-body.capture #sub { font-size: 36px; bottom: 30px; }
+body.capture #sub { font-size: 44px; bottom: 26px; padding: 6px 20px; }
 body.capture #ui { display: none; }

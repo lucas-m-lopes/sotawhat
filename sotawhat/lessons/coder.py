@@ -1,7 +1,7 @@
 # sotawhat/lessons/coder.py
 """One scene, from storyboard to video: the LLM writes the code (Manim or three.js), the policy and the renderer
-judge it, and the error goes back for a repair. After two failures the scene escalates to a stronger model; on the
-last attempt layout problems only warn. A scene that never renders becomes a deterministic slide (title and the
+judge it, and the error goes back for a repair. After two failures the scene escalates to another model family
+(Kimi K3.1 Pro in the balanced scenario); on the last attempt layout problems only warn. A scene that never renders becomes a deterministic slide (title and the
 scene's terms), so the lesson still comes out, and the report says so."""
 import json
 from pathlib import Path
@@ -13,7 +13,10 @@ from sotawhat.llm.prompts import load as load_prompt
 from sotawhat.llm.tasks import DEEPSEEK_FLASH, KIMI_PRO, MIMO_PRO
 
 PRIMARY = {"manim": (DEEPSEEK_FLASH, MIMO_PRO), "three": (MIMO_PRO, DEEPSEEK_FLASH)}
-ESCALATE = (KIMI_PRO, MIMO_PRO)
+# after two failures the scene goes to another family; Kimi K3.1 Pro only in the balanced scenario: in the pilot two
+# Kimi repairs cost US$ 0.26 of a US$ 0.33 lesson
+ESCALATE = {"economico": {"manim": (MIMO_PRO, DEEPSEEK_FLASH), "three": (DEEPSEEK_FLASH, MIMO_PRO)},
+            "equilibrado": {"manim": (KIMI_PRO, MIMO_PRO), "three": (KIMI_PRO, MIMO_PRO)}}
 PROMPTS = {"manim": "lesson_manim_v1", "three": "lesson_three_v1"}
 MAX_ATTEMPTS = 4
 
@@ -34,7 +37,24 @@ def brief(plan, n, durations) -> str:
     lines += ["", f"{len(scene.beats)} frases (beats), nesta ordem:"]
     for k, (beat, seconds) in enumerate(zip(scene.beats, durations), 1):
         lines.append(f"{k}. [{seconds:.1f} s] narração: {beat.narration}\n   visual: {beat.visual}")
-    return "\n".join(lines)
+    return "\n".join(lines) + "\n\n" + skeleton(scene, durations)
+
+
+def skeleton(scene, durations) -> str:
+    """The frame the code must fill: one beat per sentence (a wrong count was the most common failure)."""
+    if scene.mode == "manim":
+        body = "".join(f"        # frase {k}: {b.narration[:70]}\n        self.beat(...)\n"
+                       for k, b in enumerate(scene.beats, 1))
+        return (f"Esqueleto obrigatório (exatamente {len(scene.beats)} chamadas a self.beat, uma por frase):\n"
+                "from lesson_kit import *\n\n\nclass Cena(LessonScene):\n    def construct(self):\n" + body)
+    starts, acc = [], 0.0
+    for d in durations:
+        starts.append((acc, acc + d))
+        acc += d
+    body = "".join(f"      // frase {k} = beats[{k - 1}] ({a:.1f}–{b:.1f} s): {beat.narration[:60]}\n"
+                   for k, (beat, (a, b)) in enumerate(zip(scene.beats, starts), 1))
+    return ("Esqueleto obrigatório:\nexport default function build(kit) {\n  // crie os objetos aqui\n  return {\n"
+            "    update(t) {\n" + body + "    },\n  };\n}")
 
 
 def _ask(gateway, messages, models) -> str:
@@ -59,7 +79,8 @@ def slide_code(scene) -> str:
         "            shown.add(item)\n            self.beat(FadeIn(item, shift=UP * 0.2))\n")
 
 
-def build_scene(gateway, tools, lessons_root, scene_dir, kit_dir, cache_dir, plan, n, durations, log=print) -> dict:
+def build_scene(gateway, tools, lessons_root, scene_dir, kit_dir, cache_dir, plan, n, durations, log=print,
+                cost_mode="economico") -> dict:
     """-> {"mode", "ok", "attempts", "errors", "models", "fallback", "warnings"}; the video is scene_dir/out.mp4."""
     scene = plan.scenes[n - 1]
     scene_dir = Path(scene_dir)
@@ -99,7 +120,7 @@ def build_scene(gateway, tools, lessons_root, scene_dir, kit_dir, cache_dir, pla
             log(f"  cena {n} ({mode}) falhou na tentativa {attempt}: {str(exc).splitlines()[-1][:160] if str(exc) else '?'}")
             if attempt == MAX_ATTEMPTS:
                 break
-            models = PRIMARY[mode] if attempt < 2 else ESCALATE
+            models = PRIMARY[mode] if attempt < 2 else ESCALATE[cost_mode][mode]
             report["models"].append(models[0])
             fix = messages + [{"role": "assistant", "content": json.dumps({"code": code}, ensure_ascii=False)},
                               {"role": "user", "content": f"O render falhou:\n{exc}\n\nCorrija a causa e devolva o "

@@ -6,8 +6,9 @@ import pytest
 from sotawhat.lessons import eleven
 from sotawhat.lessons import hyperframes as hfm
 from sotawhat.lessons.motion import spoken_decimals, two_digits
-from sotawhat.lessons.storyboard import (Action, Bar, Edge, FormulaPart, Node, Patches, SceneBoard, Step, Storyboard,
-                                         Vector3D, clean_narration, cue_in, validate)
+from sotawhat.lessons.storyboard import (Action, Axes, Bar, Column, Edge, Event, FormulaPart, Node, Patches, Row,
+                                         SceneBoard, Series, Step, Storyboard, Vector3D, Volume, clean_narration, cue_in,
+                                         roc_points, trapezoid, validate)
 
 
 def alignment(text, step=0.1):
@@ -192,3 +193,60 @@ def test_narration_bills_only_the_scenes_it_generated(tmp_path, monkeypatch):
     nar = eleven.narrate(el, [["Uma cena pronta."], ["Outra nova."]], tmp_path, "ffmpeg", intro=1.0, progress=lambda *_: None)
     assert nar.billed_chars == len("Outra nova.") + 3
     assert nar.credits == len("Uma cena pronta.") + 3 + len("Outra nova.") + 3
+
+
+# --- storyboard v2: chart, timeline, compare, volume3d --------------------------------------------------------------
+
+
+def test_a_roc_curve_is_drawn_from_its_auc():
+    pts = roc_points(0.94)
+    assert pts[0] == [0.0, 0.0] and pts[-1] == [1.0, 1.0]
+    assert all(b[1] >= a[1] for a, b in zip(pts, pts[1:]))              # a ROC never goes down
+    assert abs(trapezoid(pts) - 0.94) < 0.015
+    scene = _scene(template="chart", axes=Axes(x_label="1 − especificidade", y_label="sensibilidade", x_min=0,
+                                               x_max=1, y_min=0, y_max=1),
+                   series=[Series(id="roc", label="modelo", role="info", points=[[0.5, 0.2]], auc=0.94)],
+                   steps=[Step(beat=0, actions=[_act("show", ["roc"]), _act("area", ["roc"], text="AUC 0,94")])])
+    assert validate(Storyboard(scenes=[scene]), [["A curva sobe rápido."]]) == []
+    assert len(scene.series[0].points) == 15
+
+
+def test_chart_points_are_sorted_and_kept_inside_the_axes():
+    scene = _scene(template="chart", axes=Axes(x_label="dados", y_label="erro", x_min=0, x_max=0, y_min=0, y_max=0),
+                   series=[Series(id="a", label="treino", role="query", points=[[3, 0.2], [1, 0.9], [2, 0.4], [2, 0.5],
+                                                                               [4]], auc=0)],
+                   steps=[Step(beat=0, actions=[_act("show", ["a"])])])
+    assert validate(Storyboard(scenes=[scene]), [["O erro cai."]]) == []
+    assert scene.series[0].points == [[1, 0.9], [2, 0.5], [3, 0.2]]          # sorted, one y per x, pairs only
+    ax = scene.axes
+    assert (ax.x_min, ax.x_max, ax.y_min, ax.y_max) == (1, 3, 0.0, 0.9)        # derived from the points
+    bad = _scene(template="chart", series=[Series(id="b", label="x", role="query", points=[[1, 1]], auc=0)])
+    assert any("chart precisa" in p for p in validate(Storyboard(scenes=[bad]), [["Uma frase."]]))
+
+
+def test_compare_cells_follow_the_columns_and_timelines_need_two_events():
+    scene = _scene(template="compare", columns=[Column(id="cnn", title="convolução", role="value"),
+                                                Column(id="vit", title="atenção", role="query")],
+                   rows=[Row(id="campo", label="campo de visão", cells=["local"]),
+                         Row(id="dados", label="dados", cells=["poucos", "muitos", "demais"])],
+                   steps=[Step(beat=0, actions=[_act("show", ["cnn", "vit"]), _act("pick", ["campo", "vit"])])])
+    assert validate(Storyboard(scenes=[scene]), [["A atenção vê tudo."]]) == []
+    assert [r.cells for r in scene.rows] == [["local", ""], ["poucos", "muitos"]]
+    lone = _scene(template="timeline", events=[Event(id="e1", when="1972", label="primeira TC", gloss="", role="info")])
+    assert any("timeline precisa" in p for p in validate(Storyboard(scenes=[lone]), [["Em 1972."]]))
+
+
+def test_volume_defaults_and_the_planned_template_is_required():
+    scene = _scene(template="volume3d", volume=Volume(organ="nenhum", finding="nódulo", modality="nenhuma", slices=0),
+                   steps=[Step(beat=0, actions=[_act("slice", value=1.7)])])
+    problems = validate(Storyboard(scenes=[scene]), [["O corte passa."]], planned=["chart"])
+    assert problems == ["cena 1: use o modelo de cena do plano, chart (veio volume3d)"]
+    assert (scene.volume.organ, scene.volume.modality, scene.volume.slices) == ("corpo", "tomografia", 16)
+    assert scene.steps[0].actions[0].value == 1.0
+
+
+def test_storyboards_of_the_first_prototype_still_load():
+    old = {"scene": 1, "template": "graph", "nodes": [], "edges": [], "bars": [], "vectors": [], "formula": [],
+           "patches": {"image": "nenhuma", "rows": 0, "cols": 0, "focus_row": 0, "focus_col": 0}, "steps": []}
+    board = SceneBoard.model_validate(old)
+    assert board.series == [] and board.volume.organ == "nenhum"

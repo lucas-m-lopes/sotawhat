@@ -46,6 +46,18 @@ IA, economia de tokens, geração de aulas, enfim..."
     - A varredura diária faz isso para até 300 repositórios sem contagem de uma semana atrás. O
       `sotawhat radar backfill` faz para todos de uma vez.
     - O `doctor` testa o token.
+  - **Adendo 2 (2026-11-10, noite):** o token clássico não serviu.
+    - Desde julho de 2026 o GitHub só lista quem deu estrela para administradores e colaboradores do repositório
+      (changelog de 2026-06-30). O GraphQL devolveu a lista vazia, sem erro, e a REST deu 404. Nenhum escopo muda
+      isso para repositórios de terceiros.
+    - O primeiro `radar backfill` gravou 11.746 contagens planas (todas as semanas com 0), porque não checava a lista
+      vazia. As linhas foram apagadas.
+    - Em 2026-09-04 o GitHub abriu o `GET /repos/{owner}/{repo}/stargazers/history`: as estrelas de cada dia, em
+      semanas que começam no domingo, sem dizer quem deu. Responde com o `GITHUB_TOKEN`, e até sem token (60 pedidos
+      por hora). Uma chamada por repositório cobre as últimas semanas.
+    - `history.py` agora usa esse endpoint. A contagem do dia d é a última contagem real menos as estrelas dadas
+      depois de d. Uma resposta vazia ou fora do formato para a rodada em vez de gravar contagens erradas.
+    - O `GITHUB_STARS_TOKEN` saiu do código, e o `doctor` testa o endpoint com o `GITHUB_TOKEN`.
 - **npm e PyPI** guardam histórico diário de downloads: `api.npmjs.org/downloads/range/<período>/<pacote>` e
   `pypistats.org/api/packages/<pacote>/overall`. O crescimento semana contra semana sai já no primeiro relatório.
 - **A busca do GitHub da P2** pega só repositórios criados nos últimos 7 dias e passa pela triagem de IA ∩ saúde. Ela

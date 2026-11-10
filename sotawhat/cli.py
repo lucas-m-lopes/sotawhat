@@ -123,7 +123,7 @@ def parse_args(argv):
     p_radar.add_argument("radar_action", choices=["scan", "report", "backfill"],
                          help="scan: discovery and today's stars (run daily does it); report: measures, judge and "
                               "the section of the weekly report, on demand (run weekly does it on Sundays); backfill: "
-                              "the star history of the last --dias days (needs GITHUB_STARS_TOKEN)")
+                              "the star history of the last --dias days (GITHUB_TOKEN)")
     p_radar.add_argument("--no-notify", action="store_true", help="report: do not send it to Telegram")
     p_radar.add_argument("--dias", type=int, default=14, help="backfill: days of star history (default 14)")
 

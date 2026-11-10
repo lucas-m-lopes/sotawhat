@@ -41,8 +41,7 @@ class Settings(BaseSettings):
     embeddings_model: str = "google/embeddinggemma-300m"
 
     crossref_mailto: str = ""
-    github_token: str = ""            # P2: GitHub search (30 req/min with a token, 10 without)
-    github_stars_token: str = ""      # radar: classic PAT without scopes, to read who starred and when (GraphQL)
+    github_token: str = ""            # P2 and the radar: GitHub search (30 req/min with a token, 10 without), star history
     hf_token: str = ""                # P2: Hugging Face Hub (higher rate limit)
     openalex_email: str = ""          # P4 prior art: OpenAlex polite pool (falls back to CROSSREF_MAILTO)
     exa_api_key: str = ""             # P4 prior art: Exa market layer (empty = layer "não verificado")

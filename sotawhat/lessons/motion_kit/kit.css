@@ -1,0 +1,164 @@
+/* sotawhat lessons · HyperFrames kit — look: "night science magazine".
+   Ground: deep ink with one local glow and grain (no full-screen linear gradient: it bands under H.264).
+   Type: Fraunces (display, numbers that land) + Manrope (labels, captions). Colour = role, as the narration says
+   it: query azul, key verde, value laranja, score amarelo, peso roxo, saída vermelha, token/embedding cinza. */
+@font-face { font-family: "Manrope"; font-weight: 400; src: url("../fonts/manrope-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Manrope"; font-weight: 500; src: url("../fonts/manrope-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Manrope"; font-weight: 600; src: url("../fonts/manrope-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "Manrope"; font-weight: 700; src: url("../fonts/manrope-latin-700-normal.woff2") format("woff2"); }
+@font-face { font-family: "Manrope"; font-weight: 800; src: url("../fonts/manrope-latin-800-normal.woff2") format("woff2"); }
+@font-face { font-family: "Fraunces"; font-weight: 400; src: url("../fonts/fraunces-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Fraunces"; font-weight: 600; src: url("../fonts/fraunces-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "Fraunces"; font-weight: 400; font-style: italic; src: url("../fonts/fraunces-latin-400-italic.woff2") format("woff2"); }
+@font-face { font-family: "Fraunces"; font-weight: 600; font-style: italic; src: url("../fonts/fraunces-latin-600-italic.woff2") format("woff2"); }
+
+:root {
+  --ground: #0a101e; --ground-glow: #16264a; --ink: #eef2f7; --muted: #9aa8bf; --faint: #5b6b86;
+  --panel: #101a2d; --panel-hi: #16233b; --line: #22324f;
+  --token: #a9b6cc; --embedding: #c9d2e0; --query: #4ea1ff; --key: #3ddc97; --value: #ff9f45; --score: #ffd54a;
+  --weight: #b48cff; --output: #ff5c70; --neutral: #8f9cb4; --alert: #ff6f91; --info: #2dd4d0;
+  --display: "Fraunces", Georgia, serif; --sans: "Manrope", Arial, sans-serif;
+}
+
+.mk-r-token { --c: var(--token); } .mk-r-embedding { --c: var(--embedding); } .mk-r-query { --c: var(--query); }
+.mk-r-key { --c: var(--key); } .mk-r-value { --c: var(--value); } .mk-r-score { --c: var(--score); }
+.mk-r-weight { --c: var(--weight); } .mk-r-output { --c: var(--output); } .mk-r-neutral { --c: var(--neutral); }
+.mk-r-alert { --c: var(--alert); } .mk-r-info { --c: var(--info); }
+
+/* ---- ground ------------------------------------------------------------------------------------------- */
+.mk-ground { position: absolute; inset: 0; background: var(--ground); overflow: hidden; }
+.mk-glow-a { position: absolute; width: 1500px; height: 1100px; left: 160px; top: -180px; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(40, 70, 140, 0.42), rgba(22, 38, 74, 0.18) 55%, transparent 100%); }
+.mk-glow-b { position: absolute; width: 900px; height: 700px; left: 1100px; top: 520px; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(45, 212, 208, 0.10), transparent 100%); }
+.mk-dots { position: absolute; inset: 0; opacity: 0.22;
+  background-image: radial-gradient(circle at 1px 1px, rgba(154, 168, 191, 0.55) 1px, transparent 1.4px);
+  background-size: 40px 40px; }
+.mk-vignette { position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(3, 6, 14, 0.75) 100%); }
+.mk-grain { position: absolute; inset: 0; opacity: 0.06; mix-blend-mode: screen; }
+.mk-progress { position: absolute; left: 0; top: 0; height: 4px; width: 1920px; transform-origin: 0 50%;
+  background: linear-gradient(90deg, rgba(78, 161, 255, 0.9), rgba(45, 212, 208, 0.9)); }
+
+/* ---- scene shell -------------------------------------------------------------------------------------- */
+.mk-scene { position: absolute; inset: 0; color: var(--ink); font-family: var(--sans); }
+.mk-head { position: absolute; left: 116px; top: 62px; display: flex; align-items: baseline; gap: 22px; }
+.mk-head-num { font: italic 600 64px/1 var(--display); color: rgba(154, 168, 191, 0.55); letter-spacing: -0.02em; }
+.mk-head-title { font: 700 30px/1.15 var(--sans); color: var(--ink); letter-spacing: -0.005em; }
+.mk-head-title span { display: inline-block; }
+.mk-stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+.mk-panel { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 960px 520px; }
+
+/* ---- graph nodes -------------------------------------------------------------------------------------- */
+.mk-node { position: absolute; left: 0; top: 0; }
+.mk-node-in { position: relative; }
+.mk-halo { position: absolute; left: -26px; top: -26px; right: -26px; bottom: -26px; border-radius: 40px;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--c) 48%, transparent), transparent);
+  opacity: 0; }
+.mk-card { position: relative; padding: 18px 28px 20px; border-radius: 20px; background: var(--panel);
+  border: 2px solid color-mix(in srgb, var(--c) 80%, transparent);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.07),
+              0 0 32px color-mix(in srgb, var(--c) 16%, transparent); }
+.mk-card::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 50%; border-radius: 18px 18px 0 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--c) 10%, transparent), transparent); pointer-events: none; }
+.mk-label { position: relative; font: 700 38px/1.08 var(--sans); color: var(--ink); white-space: nowrap; letter-spacing: -0.012em; }
+.mk-label sub { font-size: 0.62em; vertical-align: -0.28em; }
+.mk-gloss { position: relative; margin-top: 7px; font: 500 22px/1.2 var(--sans); color: var(--muted); white-space: nowrap; }
+.mk-swap { position: absolute; left: 0; top: 0; white-space: nowrap; }
+
+.mk-token .mk-card { border-radius: 999px; padding: 14px 34px 16px;
+  background: color-mix(in srgb, var(--c) 14%, var(--panel)); }
+.mk-token .mk-card::before { border-radius: 999px 999px 0 0; }
+
+.mk-vector .mk-vlabel { font: 800 17px/1 var(--sans); letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--c); text-align: center; margin-bottom: 12px; white-space: nowrap; }
+.mk-vector .mk-card { padding: 14px 30px; border-radius: 16px; }
+.mk-vcell { position: relative; font: 600 30px/1.32 var(--sans); font-variant-numeric: tabular-nums; text-align: right;
+  color: var(--ink); white-space: nowrap; }
+.mk-vector .mk-gloss { text-align: center; margin-top: 10px; }
+
+.mk-matrix .mk-card { display: flex; align-items: center; gap: 22px; }
+.mk-mgrid { display: grid; grid-template-columns: repeat(3, 15px); grid-gap: 4px; }
+.mk-mgrid i { display: block; width: 15px; height: 15px; border-radius: 3px; background: var(--c); }
+
+.mk-stack .mk-card { z-index: 3; }
+.mk-stack-sheet { position: absolute; left: 0; top: 0; right: 0; bottom: 0; border-radius: 20px; background: var(--panel);
+  border: 2px solid color-mix(in srgb, var(--c) 45%, transparent); }
+
+.mk-stat { text-align: center; }
+.mk-stat .mk-statnum { font: 600 120px/0.95 var(--display); color: var(--c); letter-spacing: -0.03em;
+  text-shadow: 0 0 40px color-mix(in srgb, var(--c) 35%, transparent); white-space: nowrap; }
+.mk-stat .mk-gloss { font: 700 24px/1.2 var(--sans); letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+
+/* ---- edges -------------------------------------------------------------------------------------------- */
+.mk-edges { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: visible; }
+.mk-edge { fill: none; stroke-width: 4; stroke-linecap: round; }
+.mk-edges g { filter: drop-shadow(0 0 5px rgba(140, 170, 255, 0.22)); }
+.mk-flowdot { filter: drop-shadow(0 0 6px currentColor); }
+.mk-elabel { position: absolute; left: 0; top: 0; padding: 5px 14px 6px; border-radius: 999px; white-space: nowrap;
+  font: 700 24px/1 var(--sans); font-variant-numeric: tabular-nums; color: #0a101e;
+  background: var(--c); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); }
+
+/* ---- notes and formula -------------------------------------------------------------------------------- */
+.mk-note { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 12px; padding: 12px 22px 13px 18px;
+  border-radius: 14px; background: rgba(16, 26, 45, 0.92); border: 1.5px solid color-mix(in srgb, var(--c) 55%, transparent);
+  font: 600 25px/1.15 var(--sans); color: var(--ink); white-space: nowrap; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35); }
+.mk-note i { display: block; width: 10px; height: 10px; border-radius: 50%; background: var(--c);
+  box-shadow: 0 0 12px var(--c); flex: none; }
+.mk-formula { position: absolute; left: 0; top: 168px; width: 1920px; text-align: center; font-size: 46px; color: var(--ink); }
+.mk-formula .mk-fpart { display: inline-block; padding: 2px 6px; border-radius: 10px; }
+.mk-formula .katex { font-size: 1em; }
+
+/* ---- bars --------------------------------------------------------------------------------------------- */
+.mk-bars { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+.mk-item { position: absolute; top: 0; width: 220px; }
+.mk-tile { position: absolute; left: 20px; width: 180px; height: 120px; border-radius: 22px; background: var(--panel);
+  border: 2px solid color-mix(in srgb, var(--c) 85%, transparent); display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35), 0 0 34px color-mix(in srgb, var(--c) 18%, transparent); }
+.mk-tile b { font: 600 56px/1 var(--display); font-variant-numeric: tabular-nums; color: var(--c); }
+.mk-bar { position: absolute; left: 40px; width: 140px; border-radius: 16px 16px 6px 6px; transform-origin: 50% 100%;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--weight) 95%, white 5%), color-mix(in srgb, var(--weight) 55%, var(--panel)));
+  box-shadow: 0 0 40px color-mix(in srgb, var(--weight) 30%, transparent); }
+.mk-pct { position: absolute; left: 0; width: 220px; text-align: center; font: 600 46px/1 var(--display);
+  font-variant-numeric: tabular-nums; color: var(--ink); }
+.mk-itemlabel { position: absolute; left: 0; width: 220px; text-align: center; font: 700 30px/1.1 var(--sans); color: var(--ink); }
+.mk-baseline { position: absolute; height: 2px; background: rgba(154, 168, 191, 0.35); }
+.mk-chip { position: absolute; left: 0; top: 0; padding: 10px 22px 12px; border-radius: 999px; white-space: nowrap;
+  font: 700 28px/1 var(--sans); color: var(--ink); background: rgba(16, 26, 45, 0.95);
+  border: 1.5px solid color-mix(in srgb, var(--c) 70%, transparent); }
+
+.mk-chip-big { font: 600 40px/1 var(--display); padding: 12px 28px 14px; }
+
+/* ---- patches ------------------------------------------------------------------------------------------ */
+.mk-img { position: absolute; left: 0; top: 0; }
+.mk-tilep { position: absolute; left: 0; top: 0; border-radius: 4px; overflow: hidden;
+  outline: 1.5px solid rgba(238, 242, 247, 0); }
+.mk-tilep canvas { display: block; }
+.mk-tileline { position: absolute; inset: 0; border: 1.5px solid rgba(238, 242, 247, 0.6); border-radius: 4px; }
+.mk-tilecap { position: absolute; left: 0; top: 0; white-space: nowrap; font: 700 15px/1 var(--sans); letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--ink); padding: 4px 8px; border-radius: 6px; background: rgba(10, 16, 30, 0.72); }
+.mk-ring { position: absolute; left: 0; top: 0; border-radius: 10px; border: 4px solid var(--c);
+  box-shadow: 0 0 26px var(--c), inset 0 0 18px color-mix(in srgb, var(--c) 40%, transparent); }
+.mk-window { position: absolute; left: 0; top: 0; border-radius: 14px; border: 3px dashed var(--c);
+  background: color-mix(in srgb, var(--c) 10%, transparent); }
+
+/* ---- 3D overlay labels -------------------------------------------------------------------------------- */
+.mk-canvas3d { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+.mk-tag3d { position: absolute; left: 0; top: 0; padding: 8px 16px 10px; border-radius: 12px; white-space: nowrap;
+  font: 700 28px/1 var(--sans); color: var(--ink); background: rgba(10, 16, 30, 0.78);
+  border: 2px solid color-mix(in srgb, var(--c) 80%, transparent); }
+.mk-score3d { position: absolute; left: 0; top: 0; padding: 7px 14px 9px; border-radius: 999px; white-space: nowrap;
+  font: 700 26px/1 var(--sans); font-variant-numeric: tabular-nums; color: #0a101e; background: var(--score);
+  box-shadow: 0 0 24px rgba(255, 213, 74, 0.45); }
+
+/* ---- intro and captions ------------------------------------------------------------------------------- */
+.mk-intro { position: absolute; left: 160px; right: 160px; top: 330px; }
+.mk-kicker { font: 800 20px/1 var(--sans); letter-spacing: 0.22em; text-transform: uppercase; color: var(--info); }
+.mk-title { margin-top: 26px; font: 600 84px/1.04 var(--display); letter-spacing: -0.025em; color: var(--ink); max-width: 1500px; }
+.mk-title span, .mk-sub span { display: inline-block; }
+.mk-sub { margin-top: 30px; font: 500 30px/1.35 var(--sans); color: var(--muted); max-width: 1300px; }
+.mk-caps { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+.mk-capgroup { position: absolute; left: 0; width: 1920px; bottom: 64px; text-align: center; opacity: 0; }
+.mk-capbox { display: inline-block; padding: 12px 26px 14px; border-radius: 16px; background: rgba(5, 9, 18, 0.66);
+  font: 600 42px/1.25 var(--sans); color: var(--ink); letter-spacing: -0.005em; }
+.mk-capbox span { display: inline-block; }

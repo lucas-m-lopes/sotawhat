@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     sotawhat_lesson_voice: str = ""
     sotawhat_llm_budget_usd_lesson: float = 0.60
     sotawhat_lesson_max_mb: int = 48  # Telegram cloud Bot API: 50 MB per video
+    # lessons rendered with HyperFrames: ElevenLabs narration (your plan's credits; key only in .env)
+    elevenlabs_api_key: str = ""
+    sotawhat_elevenlabs_voice: str = "UQ3s9h7N3CVJBL2USizn"   # Klaus, pt-BR, in your ElevenLabs library
+    sotawhat_elevenlabs_model: str = "eleven_v4"
 
     # Neo4j mirror of the entity graph (P3, D16); empty password = mirror off (the interface works anyway)
     neo4j_uri: str = "bolt://localhost:7687"

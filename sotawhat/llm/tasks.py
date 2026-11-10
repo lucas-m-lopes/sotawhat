@@ -42,6 +42,9 @@ DEFAULT_TASKS = {
     "lesson_code_3d": TaskSpec((MIMO_PRO, GLM_FLASH), "low", 24000),
     "lesson_fix": TaskSpec((MIMO_PRO, GLM_FLASH), "low", 24000),                  # sees the frames
     "lesson_critic": TaskSpec((MIMO_FLASH, GLM_FLASH), "low", 6000),             # G4: looks at the frames of a scene
+    # HyperFrames lessons: the LLM no longer draws; it picks a scene template per scene and fills its data and the
+    # action of each sentence (sotawhat/lessons/storyboard.py). Structure, not code: a cheap model with reasoning
+    "lesson_storyboard": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO), "high", 32000),
     "smoke": TaskSpec((DEEPSEEK_FLASH,), "low", 600),
 }
 

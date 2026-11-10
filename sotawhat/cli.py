@@ -4,7 +4,7 @@ import sys
 
 _SUBCOMMANDS = {"search", "run", "ideate", "doctor", "feedback", "eval", "serve", "serve-mcp", "graph", "instagram",
                 "newsletters", "backup", "calibrate", "repair", "lessons"}
-_LESSON_ID_ACTIONS = ("resume", "rerender", "send", "pack")
+_LESSON_ID_ACTIONS = ("resume", "rerender", "send", "pack", "hf")
 
 def parse_args(argv):
     # Backward compat: `sotawhat <keyword...> [N]` with no subcommand -> search.
@@ -63,9 +63,9 @@ def parse_args(argv):
                         help="post: each post is an item; digest: each issue is split into its stories by the LLM")
     p_news.add_argument("--name", default=None, help="short name (default: from the address)")
 
-    p_lessons = sub.add_parser("lessons", help="aulas 3D narradas: setup, voices, make, resume, rerender, send, pack, list")
-    p_lessons.add_argument("lessons_action", choices=["setup", "voices", "make", "resume", "rerender", "send", "pack", "list"])
-    p_lessons.add_argument("id", nargs="?", type=int, help="the lesson number (resume, rerender, send, pack)")
+    p_lessons = sub.add_parser("lessons", help="aulas 3D narradas: setup, voices, make, resume, rerender, send, pack, list, hf")
+    p_lessons.add_argument("lessons_action", choices=["setup", "voices", "make", "resume", "rerender", "send", "pack", "list", "hf"])
+    p_lessons.add_argument("id", nargs="?", type=int, help="the lesson number (resume, rerender, send, pack; hf: the source lesson)")
     p_lessons.add_argument("--tema", help="topic of the lesson (make)")
     p_lessons.add_argument("--entidade", type=int, action="append", help="graph entity id; repeat for several")
     p_lessons.add_argument("--auto", action="store_true", help="the strongest weekly trend that has no lesson yet")
@@ -73,7 +73,8 @@ def parse_args(argv):
     p_lessons.add_argument("--modo", choices=["economico", "equilibrado"], default="economico",
                            help="equilibrado: Kimi K3.1 Pro writes the storyboard")
     p_lessons.add_argument("--sem-envio", dest="no_send", action="store_true", help="do not send it to Telegram")
-    p_lessons.add_argument("--refazer", default="", help="resume: scenes to make again, e.g. 2,5")
+    p_lessons.add_argument("--refazer", default="", help="resume: scenes to make again, e.g. 2,5; hf: steps (storyboard,voz)")
+    p_lessons.add_argument("--aula", type=int, default=None, help="hf: resume this HyperFrames lesson instead of a new one")
 
     p_backup = sub.add_parser("backup", help="copy data/insight.db to data/backups (P6)")
     p_backup.add_argument("--keep", type=int, default=8, help="copies to keep (default 8)")

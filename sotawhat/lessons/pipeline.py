@@ -317,6 +317,10 @@ def main_lessons(ns) -> int:
         log("ferramentas das aulas incompletas: rode `sotawhat lessons setup`")
         return 2
     with Store(settings.db_path) as store:
+        if ns.lessons_action == "hf":       # HyperFrames: kit templates, ElevenLabs voice (sotawhat/lessons/motion.py)
+            from sotawhat.lessons.motion import make_hf_lesson
+            redo = {x.strip() for x in (ns.refazer or "").split(",") if x.strip()}
+            return make_hf_lesson(settings, store, ns.id, lesson_id=ns.aula, deliver=not ns.no_send, redo=redo, log=log)
         if ns.lessons_action == "list":
             print_list(store, log)
             return 0

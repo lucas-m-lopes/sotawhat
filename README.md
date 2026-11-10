@@ -154,6 +154,11 @@ Phase P6 hardens it and measures the SDD goals:
   without `--apply`.
 - `sotawhat repair cjk` rewrites old triage texts that still had Chinese characters (from the model used
   before the P1 bake-off), keeping every decision.
+- `sotawhat repair names [--dry-run]` fixes technique and problem names that the singular rule before 2026-11-10
+  cut ("AI bias" → "AI bia", "CAMS" → "CAM", "mixture of experts" → "mixture of expert"). It reads the raw names
+  kept in the extractions, moves names and keys to the current rule (only the head noun goes singular; acronyms,
+  symbols and words such as "bias" keep their s) and reports a key that already belongs to another entity instead
+  of merging it.
 - The interface gains the Hoje tab: the latest digest with its votes and the recent runs.
 
 After P6, newsletters by RSS (2026-11-09):

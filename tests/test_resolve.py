@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from sotawhat.configfiles import ConfigError, load_aliases
-from sotawhat.graph.resolve import Resolver, make_judge, normalize, split_acronym
+from sotawhat.graph.resolve import Resolver, display_name, make_judge, normalize, split_acronym
 from sotawhat.items import Item
 from sotawhat.llm.schemas import Extraction, SameEntity
 from sotawhat.store.db import Store
@@ -68,6 +68,30 @@ def test_normalize_and_split_acronym():
     assert split_acronym("Food and Drug Administration (FDA)") == ("Food and Drug Administration", "FDA")
     assert split_acronym("MedGemma 1.5 (Google)") == ("MedGemma 1.5", None)       # not an acronym: dropped
     assert split_acronym("GPT-4o") == ("GPT-4o", None)
+
+
+@pytest.mark.parametrize("plural, singular", [
+    # words that only look plural, acronyms and words with symbols keep their s (all seen in real extractions)
+    ("AI bias", "AI bias"), ("algorithmic biases", "algorithmic bias"), ("k-means", "k-means"),
+    ("pancreas", "pancreas"), ("dental caries", "dental caries"), ("ARDS", "ARDS"), ("CAMS", "CAMS"),
+    ("UPLC-MS/MS", "UPLC-MS/MS"), ("Harness-S", "Harness-S"), ("Alzheimer's", "Alzheimer's"),
+    # the head noun is the word before the first preposition, else the last word
+    ("mixture-of-experts", "mixture-of-experts"), ("Mixture of Transformers", "Mixture of Transformers"),
+    ("attacks on LLMs", "attack on LLMs"), ("state-of-the-art models", "state-of-the-art model"),
+    ("LLMs", "LLM"), ("AI-agents", "AI-agent"), ("filas de espera", "fila de espera"),
+    # -es plurals lose the whole ending, -ies plurals become -y, a few Greek and Latin ones are listed
+    ("Gaussian processes", "Gaussian process"), ("image patches", "image patch"), ("bounding boxes", "bounding box"),
+    ("3D meshes", "3D mesh"), ("KV caches", "KV cache"), ("migraine headaches", "migraine headache"),
+    ("respiratory viruses", "respiratory virus"), ("meta-analyses", "meta-analysis"), ("hypotheses", "hypothesis"),
+    ("missed diagnoses", "missed diagnosis"), ("Diagnostic Criteria", "Diagnostic Criterion"),
+    ("third-party cookies", "third-party cookie"), ("pressure injuries", "pressure injury"),
+    ("rare diseases", "rare disease"), ("claim denials", "claim denial"),
+])
+def test_the_head_noun_goes_singular_and_nothing_else(plural, singular):
+    assert display_name(plural, "problem") == singular
+    assert display_name(singular, "problem") == singular                          # idempotent
+    assert normalize(plural, "problem") == normalize(singular, "problem")        # both forms meet in one entity
+    assert display_name(plural, "model") == plural                               # only techniques and problems
 
 
 def test_seed_aliases_and_acronyms_lead_to_one_entity(tmp_path):

@@ -35,8 +35,24 @@ CATEGORY_AXES = {"domains": ("domain", tx.DOMAINS), "problem_types": ("problem_t
 ENTITY_CATEGORY = {"technique": ("technique_family", tx.TECHNIQUES), "model": ("technique_family", tx.TECHNIQUES),
                    "problem": ("problem_type", tx.PROBLEMS)}
 SINGULAR_TYPES = {"technique", "problem"}
+# words that end in s without being plurals (acronyms, short words and words with symbols are kept anyway)
 NOT_PLURAL = {"diabetes", "herpes", "measles", "rabies", "scabies", "mumps", "series", "species", "news", "lens",
-              "aids", "lupus"}
+              "aids", "lupus", "bias", "atlas", "alias", "canvas", "pancreas", "caries", "chaos", "ethos", "cosmos",
+              "means"}
+ES_PLURAL = {"bias", "lens", "atlas", "alias", "canvas", "gas", "bus", "virus", "status", "bonus", "campus", "census",
+             "consensus", "corpus", "sinus", "fetus", "focus", "plexus", "nexus", "apparatus", "syllabus"}  # "biases"
+CHE_WORDS = {"cache", "niche", "headache", "toothache", "earache", "backache", "stomachache", "heartache",
+             "avalanche", "moustache", "psyche", "tranche", "cliche", "quiche"}       # "caches" → "cache", not "cach"
+IE_WORDS = {"cookie", "movie", "calorie", "selfie", "zombie", "rookie"}               # "cookies" → "cookie"
+IRREGULAR = {"diagnoses": "diagnosis", "prognoses": "prognosis", "metastases": "metastasis", "stenoses": "stenosis",
+             "thromboses": "thrombosis", "crises": "crisis", "axes": "axis", "matrices": "matrix", "indices": "index",
+             "vertices": "vertex", "cortices": "cortex", "criteria": "criterion", "phenomena": "phenomenon",
+             "foci": "focus", "nuclei": "nucleus", "stimuli": "stimulus", "thrombi": "thrombus", "emboli": "embolus",
+             "vertebrae": "vertebra"}
+PREPOSITIONS = {"of", "for", "in", "on", "with", "to", "from", "by", "via", "at", "as", "about", "after", "before",
+                "during", "under", "over", "across", "between", "among", "against", "without", "within", "into",
+                "through", "toward", "towards", "per", "versus", "vs", "de", "da", "do", "das", "dos", "em", "para",
+                "com"}
 GENERIC = {"ai", "artificial intelligence", "machine learning", "ml", "deep learning", "model", "ai model",
            "algorithm", "method", "framework", "system", "ai system", "tool", "ai tool", "dataset", "data",
            "study", "patient", "clinician", "doctor", "physician", "nurse", "hospital", "healthcare",
@@ -62,31 +78,55 @@ def group(type_) -> str:
 
 
 def _singular(word) -> str:
+    """One word in the singular, keeping its case. Short words, acronyms ("ARDS", "CAMS"), words with digits or
+    symbols ("Harness-S", "Alzheimer's") and words that only look plural ("bias", "diabetes") stay as they are."""
     lower = word.lower()
-    if len(word) <= 3 or lower in NOT_PLURAL:
+    if len(word) <= 3 or not word.isalpha() or word.isupper() or lower in NOT_PLURAL:
         return word
+    if lower in IRREGULAR:
+        return word[0] + IRREGULAR[lower][1:]
     if lower.endswith("ies"):
-        return word[:-3] + "y"
+        return word[:-1] if lower[:-1] in IE_WORDS else word[:-3] + "y"
+    if lower.endswith(("yses", "heses")):                                  # analyses, hypotheses
+        return word[:-2] + "is"
+    if lower.endswith("es") and (lower[:-2] in ES_PLURAL or lower.endswith(("sses", "xes", "shes"))
+                                 or (lower.endswith("ches") and lower[:-1] not in CHE_WORDS)):
+        return word[:-2]
     if lower.endswith("s") and not lower.endswith(("ss", "us", "is", "ics")):
         return word[:-1]
     return word
 
 
+def _preposition(word) -> bool:
+    return word.lower() in PREPOSITIONS and not word.isupper()                 # "AS" is a disease, not "as"
+
+
+def display_name(name, type_) -> str:
+    """The name with whitespace collapsed and, for techniques and problems, its head noun in the singular. The
+    head is the word before the first preposition ("attacks on LLMs" → "attack on LLMs", "mixture of experts"
+    keeps its experts), else the last word. The parts of a hyphenated last word count as words
+    ("mixture-of-experts", "AI-agents" → "AI-agent"); earlier compounds do not ("state-of-the-art models")."""
+    words = name.split()
+    if type_ not in SINGULAR_TYPES or not words:
+        return " ".join(words)
+    units = [[w] for w in words[:-1]] + [words[-1].split("-")]
+    flat = [(i, j) for i, parts in enumerate(units) for j in range(len(parts))]
+    stops = [k for k, (i, j) in enumerate(flat) if _preposition(units[i][j])]
+    head = stops[0] - 1 if stops else len(flat) - 1
+    if head >= 0:
+        i, j = flat[head]
+        lead, core, tail = re.fullmatch(r"(\W*)(.*?)(\W*)", units[i][j], re.S).groups()
+        units[i][j] = lead + _singular(core) + tail
+    return " ".join("-".join(parts) for parts in units)
+
+
 def normalize(name, type_=None) -> str:
-    text = unicodedata.normalize("NFKD", name or "")
+    """The identity key of a name: the display name without case, accents, punctuation or a leading "the"."""
+    text = unicodedata.normalize("NFKD", display_name(name or "", type_))
     text = "".join(c for c in text if not unicodedata.combining(c)).lower().replace("&", " and ")
     words = re.sub(r"[\W_]+", " ", text).split()
     if len(words) > 1 and words[0] == "the":
         words = words[1:]
-    if type_ in SINGULAR_TYPES and words:
-        words[-1] = _singular(words[-1])
-    return " ".join(words)
-
-
-def display_name(name, type_) -> str:
-    words = name.split()
-    if type_ in SINGULAR_TYPES and words:
-        words[-1] = _singular(words[-1])
     return " ".join(words)
 
 

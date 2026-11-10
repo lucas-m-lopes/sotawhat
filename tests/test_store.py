@@ -62,3 +62,16 @@ def test_llm_cost_since_and_unknown_field_guard(tmp_path):
             assert "prompt" in str(exc)
         else:
             raise AssertionError("unknown field accepted")
+
+
+def test_an_early_v6_store_gets_the_card_column(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "insight.db"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE radar_picks(run_id INTEGER NOT NULL, day TEXT NOT NULL, full_name TEXT NOT NULL, rank INTEGER,"
+                " front TEXT, score REAL, metrics_json TEXT NOT NULL, verdict_json TEXT, PRIMARY KEY(run_id, full_name))")
+    con.commit()
+    con.close()
+    with Store(db) as st:
+        assert "card_json" in {row[1] for row in st.conn.execute("PRAGMA table_info(radar_picks)")}

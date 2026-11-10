@@ -386,6 +386,8 @@ class Store:
             self.conn.execute("ALTER TABLE items ADD COLUMN cluster_id TEXT")
         if "graph_synced_at" not in columns:
             self.conn.execute("ALTER TABLE items ADD COLUMN graph_synced_at TEXT")
+        if "card_json" not in {row[1] for row in self.conn.execute("PRAGMA table_info(radar_picks)")}:
+            self.conn.execute("ALTER TABLE radar_picks ADD COLUMN card_json TEXT")    # an early v6 store
         self.conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('schema_version', ?)",
                           (str(SCHEMA_VERSION),))
         self.conn.commit()

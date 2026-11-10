@@ -211,12 +211,13 @@ def _gateway(settings, store, run_id, previous_cost, mode="economico"):
     return gateway
 
 
-def run_lesson(settings, store, tools, lesson_id, voice, mode, deliver, log=print) -> int:
+def run_lesson(settings, store, tools, lesson_id, voice, mode, deliver, log=print, fresh_budget=False) -> int:
+    """`fresh_budget`: the lesson cap counts from zero (scenes you asked to redo), not from what was spent."""
     from sotawhat.llm.gateway import BudgetExceeded, LLMFailure
     from sotawhat.llm.openrouter import InsufficientCredits
 
     lesson = store.get_lesson(lesson_id)
-    previous = json.loads(lesson["report_json"] or "{}").get("cost_usd") or 0.0
+    previous = 0.0 if fresh_budget else json.loads(lesson["report_json"] or "{}").get("cost_usd") or 0.0
     run_id = store.start_run("lesson")
     gateway = _gateway(settings, store, run_id, previous, mode)
     try:
@@ -360,6 +361,6 @@ def main_lessons(ns) -> int:
             log(f"refazendo as cenas {', '.join(map(str, redo))}")
         deliver = ns.lessons_action in ("make", "resume") and not ns.no_send
         return run_lesson(settings, store, tools, lesson_id, voice, getattr(ns, "modo", "economico") or "economico",
-                          deliver, log=log)
+                          deliver, log=log, fresh_budget=bool(getattr(ns, "refazer", "")))
 
 

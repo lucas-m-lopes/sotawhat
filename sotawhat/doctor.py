@@ -435,6 +435,36 @@ def check_graph(store, max_backlog=50) -> Check:
     return Check("grafo", "ok", detail + (f" · {s['pending_extraction']} na fila" if s["pending_extraction"] else ""))
 
 
+def check_radar(settings, store, now=None) -> Check:
+    """The tools radar (2026-11-10): its fronts, how many repositories it follows, the days of star counts and the last
+    scan with its errors."""
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    from sotawhat.configfiles import ConfigError
+    from sotawhat.radar.config import load_radar
+
+    name = "radar de ferramentas"
+    try:
+        cfg = load_radar(settings.sotawhat_config_dir / "tools_radar.yaml")
+    except ConfigError as exc:
+        return Check(name, "warn", str(exc))
+    tracked = store.conn.execute("SELECT COUNT(*) FROM radar_repos").fetchone()[0]
+    days = store.conn.execute("SELECT COUNT(DISTINCT day) FROM radar_stars").fetchone()[0]
+    last = store.meta_get("radar_scanned_at")
+    if not last:
+        return Check(name, "warn", f"{len(cfg.fronts)} frentes · nunca varrido (o run daily varre; ou `sotawhat radar scan`)")
+    detail = f"{len(cfg.fronts)} frentes · {tracked} repositórios · {days} dias de retrato · varrido em {last[:16]}"
+    errors = json.loads(store.meta_get("radar_errors") or "{}")
+    if not settings.github_token:
+        return Check(name, "warn", detail + " · sem GITHUB_TOKEN (só 10 buscas por minuto)")
+    if (now or datetime.now(timezone.utc)) - datetime.fromisoformat(last) > timedelta(hours=36):
+        return Check(name, "warn", detail + " · a varredura diária está atrasada")
+    if errors:
+        return Check(name, "warn", detail + f" · {len(errors)} erros: " + "; ".join(list(errors)[:3]))
+    return Check(name, "ok", detail)
+
+
 def check_lessons(settings, tools=None, hf=None) -> Check:
     """Aulas: the HyperFrames engine of the new lessons (HyperFrames, FFmpeg, the ElevenLabs key) and the Manim
     environment that lessons 1–5 still use (Manim, Chromium, Piper voices)."""
@@ -586,6 +616,7 @@ def main_doctor(ns) -> int:
         checks.append(check_golden("tests/evals/triage/golden_v1.jsonl"))
         checks.append(check_graph(store))
         checks.append(check_neo4j(settings, store))
+        checks.append(check_radar(settings, store))
         if ns.llm:
             if settings.openrouter_api_key:
                 overrides = llm_config["tasks"] if llm_config else None

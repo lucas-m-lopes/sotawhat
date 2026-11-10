@@ -24,7 +24,8 @@ from sotawhat.llm.openrouter import InsufficientCredits
 from sotawhat.llm.prompts import load as load_prompt
 from sotawhat.llm.schemas import CommunityLabel, MetaReview
 from sotawhat.notify.telegram import LIMIT, esc
-from sotawhat.pipeline.deliver import _CSS, _MAIL, _clip, idea_keyboard, item_key, num
+from sotawhat.pipeline.deliver import _CSS, _MAIL, _clip, idea_keyboard, item_key, num, tool_keyboard
+from sotawhat.radar import report as radar_report
 
 log = logging.getLogger("sotawhat.weekly")
 AXIS_LABELS = {"valor": "valor", "viabilidade_tecnica": "técnica", "viabilidade_negocio": "negócio",
@@ -54,6 +55,7 @@ class WeeklyReport:
     cost_usd: float = 0.0
     notes: list = field(default_factory=list)
     payload: dict = field(default_factory=dict)
+    radar: dict | None = None      # the tools radar section (2026-11-10)
 
 
 def scale(config, n):
@@ -139,7 +141,8 @@ def build_payload(report, store) -> dict:
             "stats": {"candidates": ideation.candidates if ideation else 0, "drafts": ideation.drafts if ideation else 0,
                       "kept": len(ideation.kept) if ideation else 0, "critiqued": ideation.critiqued if ideation else 0,
                       "cost_usd": round(report.cost_usd, 4), "stopped": ideation.stopped if ideation else None},
-            "notes": report.notes + (ideation.warnings[:5] if ideation else []), "error": report.error}
+            "notes": report.notes + (ideation.warnings[:5] if ideation else []), "error": report.error,
+            "radar": report.radar}
 
 
 def _title(payload) -> str:
@@ -228,6 +231,8 @@ def render_markdown(payload) -> str:
     for n, idea in enumerate(payload["ideas"], 1):
         out += [f"### {n}. {idea['title']}", f"**{num(idea['score'])}** · {_meta(idea)}", ""]
         out += [f"- **{label}:** {text}" for label, text in _rows(idea)] + [""]
+    if payload.get("radar"):
+        out += radar_report.section_markdown(payload["radar"])
     if payload["trends"]:
         out += ["## Em alta (7 dias contra os 28 anteriores)", ""]
         out += [f"- {t['name']} ({_type(t['type'])}): {t['recent']} itens na semana, {t['baseline']} antes"
@@ -259,6 +264,8 @@ def _html(payload, s, card="div") -> list:
                     f"<p {s['meta']}><b>{num(idea['score'])}</b> · {esc(_meta(idea))}</p>"
                     + "".join(f"<p {s['p']}><b>{esc(label)}:</b> {esc(text)}</p>" for label, text in _rows(idea))
                     + f"</{card}>")
+    if payload.get("radar"):
+        body += radar_report.section_html(payload["radar"], s, card)
     if payload["trends"]:
         body.append(f"<h2 {s['h2']}>Em alta (7 dias contra os 28 anteriores)</h2><ul>" + "".join(
             f"<li {s['li']}>{esc(t['name'])} <span {s['meta']}>({esc(_type(t['type']))}) {t['recent']} na semana, "
@@ -343,6 +350,7 @@ def telegram_messages(payload) -> list:
         if idea.get("dossie"):
             lines.append(f"🧪 piloto: {esc(_clip(idea['dossie']['piloto_90d'], 350))}")
         messages.append({"text": "\n".join(lines), "idea": idea["id"]})
+    messages += [{"text": m["text"], "idea": None, "tool": m["tool"]} for m in radar_report.messages(payload.get("radar"))]
     return messages
 
 
@@ -357,7 +365,13 @@ def send_weekly(notifier, store, payload, run_id, pause=0.4, sleep=time.sleep) -
             row = {"key": item_key(item_id), "item_id": item_id}
             delivery = store.record_delivery(run_id, payload["day"], item_id, row["key"], "idea", sent)
             markup = idea_keyboard(row)
-        result = notifier.send_message(message["text"], reply_markup=markup, disable_notification=message["idea"] is not None)
+        elif message.get("tool") is not None:                       # the tools radar
+            item_id = radar_report.TOOL_PREFIX + message["tool"]
+            row = {"key": item_key(item_id), "item_id": item_id}
+            delivery = store.record_delivery(run_id, payload["day"], item_id, row["key"], "tool", sent)
+            markup = tool_keyboard(row)
+        quiet = message["idea"] is not None or message.get("tool") is not None
+        result = notifier.send_message(message["text"], reply_markup=markup, disable_notification=quiet)
         if delivery is not None:
             store.mark_delivered([delivery], notifier.chat_id, result.get("message_id"))
         sent += 1
@@ -368,7 +382,7 @@ def send_weekly(notifier, store, payload, run_id, pause=0.4, sleep=time.sleep) -
 
 # --- runs ---------------------------------------------------------------------------------
 def run_weekly(store, gateway, embedder, ideation_config, searcher=None, mirror=None, now=None, theme=None,
-               mode="economico", kind="weekly", seed=None, workers=4) -> WeeklyReport:
+               mode="economico", kind="weekly", seed=None, workers=4, radar=None) -> WeeklyReport:
     """kind "weekly": the whole Sunday job; kind "ideate": the idea engine only (no mirror sync, no labels and
     no meta-review: the stored rules are used). The seed defaults to the run id, so lenses, personas and the
     serendipity pairs change from one run to the next."""
@@ -410,6 +424,12 @@ def run_weekly(store, gateway, embedder, ideation_config, searcher=None, mirror=
     except Exception as exc:  # noqa: BLE001 - the run must always be closed and reported
         log.exception("%s run failed", kind)
         report.ok, report.error = False, f"{type(exc).__name__}: {exc}"
+    if kind == "weekly" and radar is not None:      # the tools radar: (run_id, now, notes) -> its section
+        try:
+            report.radar = radar(report.run_id, now, report.notes)
+        except Exception as exc:  # noqa: BLE001 - the radar never stops the weekly report
+            log.exception("radar")
+            report.notes.append(f"radar: {type(exc).__name__}: {str(exc)[:160]}")
     stats = {"trends": len(report.trends), "communities": len(report.communities), "theme": theme, "mode": mode,
              "ideation": report.ideation.as_dict() if report.ideation else None, "notes": report.notes}
     store.finish_run(report.run_id, ok=report.ok, stats=stats, error=report.error)
@@ -509,8 +529,12 @@ def _main(ns, kind) -> int:
                             github_token=settings.github_token, exa_key=settings.exa_api_key)
         started = time.monotonic()
         try:
+            radar = None
+            if kind == "weekly":
+                from sotawhat.radar.commands import weekly_step
+                radar = weekly_step(settings, store, gateway)
             report = run_weekly(store, gateway, get_embedder(settings), ideation_config, searcher=searcher,
-                                mirror=mirror, theme=getattr(ns, "tema", None), mode=mode, kind=kind)
+                                mirror=mirror, theme=getattr(ns, "tema", None), mode=mode, kind=kind, radar=radar)
         finally:
             if mirror is not None:
                 mirror.close()

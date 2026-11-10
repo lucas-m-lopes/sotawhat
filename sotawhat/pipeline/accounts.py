@@ -22,6 +22,7 @@ from sotawhat.llm.schemas import AccountBatch
 from sotawhat.sources.instagram import ACTOR, USERNAME, load_accounts
 
 PRICE = 0.0027          # US$ per Apify result (Free plan, measured 2026-11-08)
+BATCH = 40              # profiles per Apify run: 65 took 662 s on 2026-11-10, past the client's 600 s wait
 HEADER = """# config/instagram_accounts.yaml - contas do Instagram varridas no run diário (P5, SDD §7.2).
 # Gerado por `sotawhat instagram import following.json`; revise à vontade:
 #   enabled: true  -> entra na varredura diária (Apify, só contas públicas)
@@ -45,18 +46,48 @@ def parse_following(path) -> list:
     return names
 
 
-def fetch_profiles(apify, names, max_usd) -> dict:
-    """username -> {"full_name", "bio", "private", "followers", "category_name"}."""
-    raw = apify.run(ACTOR, {"directUrls": [f"https://www.instagram.com/{n}/" for n in names], "resultsType": "details"},
-                    max_usd=max_usd, max_items=len(names))
-    out = {}
-    for p in raw:
-        name = p.get("username")
-        if name:
-            out[name] = {"full_name": p.get("fullName") or "", "bio": (p.get("biography") or "")[:400],
-                         "private": bool(p.get("private")), "followers": p.get("followersCount"),
-                         "category_name": p.get("businessCategoryName") or ""}
-    return out
+def _profile(p) -> dict:
+    return {"full_name": p.get("fullName") or "", "bio": (p.get("biography") or "")[:400],
+            "private": bool(p.get("private")), "followers": p.get("followersCount"),
+            "category_name": p.get("businessCategoryName") or ""}
+
+
+def profiles_of(items) -> dict:
+    """username -> {"full_name", "bio", "private", "followers", "category_name"} from the scraper's results."""
+    return {p["username"]: _profile(p) for p in items if p.get("username")}
+
+
+def fetch_profiles(apify, names, batch=BATCH, cache=None, save=None, out=print) -> dict:
+    """The profiles of `names`, `batch` per Apify run (about 10 s each, so a run stays inside the client's wait).
+    Names already in `cache` are not fetched again, and after each run the cache is handed to `save`, so an import
+    that stops resumes where it was; a run that outlives the wait keeps what it fetched."""
+    profiles, todo = dict(cache or {}), [n for n in names if n not in (cache or {})]
+    for start in range(0, len(todo), batch):
+        chunk = todo[start:start + batch]
+        raw = apify.run(ACTOR, {"directUrls": [f"https://www.instagram.com/{n}/" for n in chunk], "resultsType": "details"},
+                        max_usd=round(len(chunk) * PRICE * 1.2 + 0.05, 2), max_items=len(chunk), partial=True)
+        profiles.update(profiles_of(raw))
+        if save is not None:
+            save(profiles)
+        if len(todo) > batch:
+            out(f"[apify] perfis {start + len(chunk)}/{len(todo)}")
+    return {n: profiles[n] for n in names if n in profiles}
+
+
+def read_cache(path) -> dict:
+    if path is None or not Path(path).exists():
+        return {}
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def write_cache(path, profiles) -> None:
+    if path is not None:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_text(json.dumps(profiles, ensure_ascii=False), encoding="utf-8")
 
 
 def classify(gateway, profiles, batch=20, notes=None) -> dict:
@@ -113,26 +144,40 @@ def write_accounts(path, accounts) -> None:
     path.write_text(HEADER + body, encoding="utf-8")
 
 
-def run_import(settings, following, apify, gateway, notifier=None, max_enabled=50, limit=None, yes=False, out=print) -> int:
-    """The whole `sotawhat instagram import`, with its dependencies given (the tests never read the real .env)."""
+def run_import(settings, following, apify, gateway, notifier=None, max_enabled=50, limit=None, yes=False, out=print,
+               cache_path=None, salvage=None) -> int:
+    """The whole `sotawhat instagram import`, with its dependencies given (the tests never read the real .env).
+    `cache_path` keeps every profile fetched, so a stopped import resumes without paying twice; `salvage` (an Apify
+    run id) adds the profiles that an earlier, aborted run had already fetched."""
     path = Path(settings.sotawhat_config_dir) / "instagram_accounts.yaml"
     names = parse_following(following)
     existing = load_accounts(path)
     known = {a["username"] for a in existing}
     new = [n for n in names if n not in known][:limit or None]
-    cost = len(new) * PRICE
-    out(f"{len(names)} contas seguidas · {len(new)} novas para classificar · busca dos perfis no Apify ≈ US$ {cost:.2f} "
-        "(plano Free: US$ 5/mês)")
+    cache = read_cache(cache_path)
+    if salvage:
+        if not apify.configured:
+            out("[apify] APIFY_TOKEN vazio no .env")
+            return 2
+        saved = profiles_of(apify.items(salvage))
+        cache.update(saved)
+        write_cache(cache_path, cache)
+        out(f"[apify] {len(saved)} perfis recuperados do run {salvage}")
+    todo = [n for n in new if n not in cache]
+    cost = len(todo) * PRICE
+    out(f"{len(names)} contas seguidas · {len(new)} novas para classificar"
+        + (f" ({len(new) - len(todo)} perfis já buscados)" if len(todo) < len(new) else "")
+        + f" · busca dos perfis no Apify ≈ US$ {cost:.2f} (plano Free: US$ 5/mês)")
     if not new:
         out(f"nada novo: {path} já tem todas as contas")
         return 0
     if not yes:
         out("nada foi feito: rode de novo com --yes para buscar os perfis e classificar")
         return 0
-    if not apify.configured:
+    if todo and not apify.configured:
         out("[apify] APIFY_TOKEN vazio no .env")
         return 2
-    profiles = fetch_profiles(apify, new, max_usd=round(cost * 1.2 + 0.05, 2))
+    profiles = fetch_profiles(apify, new, cache=cache, save=lambda p: write_cache(cache_path, p), out=out)
     notes = []
     verdicts = classify(gateway, profiles, notes=notes) if gateway is not None else {}
     accounts = build_accounts(existing, new, profiles, verdicts, max_enabled)
@@ -179,7 +224,9 @@ def main_instagram(ns) -> int:
         try:
             return run_import(settings, ns.file, ApifyClient(settings.apify_token), gateway,
                               TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id),
-                              max_enabled=ns.max, limit=ns.limit, yes=ns.yes)
+                              max_enabled=ns.max, limit=ns.limit, yes=ns.yes,
+                              cache_path=settings.sotawhat_data_dir / "state" / "instagram_profiles.json",
+                              salvage=getattr(ns, "recuperar", None))
         except (ApifyError, ConfigError, OSError, ValueError) as exc:
             print(f"[instagram] {exc}", file=sys.stderr)
             return 1

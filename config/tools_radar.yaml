@@ -1,0 +1,64 @@
+# config/tools_radar.yaml — radar de ferramentas: skills, plugins, MCPs e afins em alta no GitHub, fora da medicina.
+# Plano: docs/superpowers/plans/2026-11-10-radar-ferramentas.md.
+#   `sotawhat radar scan` (no run daily): descobre pelas buscas abaixo e pelo Hacker News e tira o retrato das estrelas.
+#   `sotawhat radar report` (no run weekly): mede a semana, pede o veredito ao juiz e entrega o relatório.
+# Cada busca segue a sintaxe da busca de repositórios do GitHub (tópicos, termos, `in:name,description`). O radar soma
+# a cada uma os filtros de estrelas, de atividade ou de idade dos limites.
+fronts:
+  skills_mcp:
+    label: "Skills, plugins e MCPs"
+    queries:
+      - "topic:mcp-server"
+      - "topic:model-context-protocol"
+      - "topic:mcp"
+      - "topic:claude-code"
+      - "topic:claude-skills"
+      - "topic:agent-skills"
+      - "topic:claude-code-plugin"
+      - "claude code skills in:name,description"
+  agents_evals:
+    label: "Arquitetura de agentes e evals"
+    queries:
+      - "topic:ai-agents"
+      - "topic:agent-framework"
+      - "topic:multi-agent"
+      - "topic:llm-evaluation"
+      - "topic:llm-observability"
+      - "topic:evals"
+  tokens_context:
+    label: "Economia de tokens e contexto"
+    queries:
+      - "topic:context-engineering"
+      - "topic:prompt-caching"
+      - "topic:prompt-compression"
+      - "topic:llm-router"
+      - "topic:token-optimization"
+      - "llm context compression in:name,description"
+  lessons_media:
+    label: "Aulas: vídeo, animação e voz"
+    queries:
+      - "topic:manim"
+      - "topic:remotion"
+      - "topic:motion-graphics"
+      - "topic:text-to-speech"
+      - "topic:video-generation"
+      - "explainer video generation in:name,description"
+limits:
+  active_min_stars: 50        # busca "ativos": estrelas mínimas e push nos últimos N dias
+  active_pushed_days: 14
+  new_created_days: 45        # busca "novos que sobem": criados nos últimos N dias, com estrelas mínimas
+  new_min_stars: 20
+  per_query: 30               # repositórios por busca
+  search_pause_s: 2.2         # a busca do GitHub aceita 30 pedidos por minuto
+  track_max: 400              # retratos por dia
+  forget_days: 60             # sai do radar quem nenhuma busca trouxe nesse tempo
+  hn_days: 7
+  hn_min_points: 20
+  judge_top: 30               # candidatos que vão ao juiz por semana
+  report_top: 10              # ferramentas no relatório
+  per_front: 4                # no máximo por frente
+  min_relevance: 3            # relevância mínima (0–5) para entrar no relatório
+  min_stars_week: 30          # sinal mínimo para ser medido: estrelas na semana,
+  min_downloads_week: 1000    # ou downloads (npm + PyPI) na semana,
+  min_hn_points: 50           # ou pontos no Hacker News
+  test_after_days: 14         # "testar a partir de": a última release mais N dias (a regra das dependências)

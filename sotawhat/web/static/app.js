@@ -498,10 +498,12 @@
 
   // --- views (P4) --------------------------------------------------------------------
   const VIEWS = { graph: "#view-graph", today: "#view-today", ideas: "#view-ideas", trends: "#view-trends",
-                  lessons: "#view-lessons" };
-  const HASHES = { "#grafo": "graph", "#hoje": "today", "#ideias": "ideas", "#tendencias": "trends", "#aulas": "lessons" };
+                  lessons: "#view-lessons", tools: "#view-tools" };
+  const HASHES = { "#grafo": "graph", "#hoje": "today", "#ideias": "ideas", "#tendencias": "trends", "#aulas": "lessons",
+                   "#ferramentas": "tools" };
   const TITLES = { graph: "sotawhat · grafo", today: "sotawhat · hoje", ideas: "sotawhat · ideias",
-                   trends: "sotawhat · tendências", lessons: "sotawhat · aulas" };
+                   trends: "sotawhat · tendências", lessons: "sotawhat · aulas",
+                   tools: "sotawhat · ferramentas" };
   let graphLoaded = false;
 
   function showView(name) {
@@ -525,6 +527,7 @@
     else if (name === "today") loadToday();
     else if (name === "ideas") loadIdeas();
     else if (name === "lessons") loadLessons();
+    else if (name === "tools") loadTools();
     else loadTrends();
   }
 
@@ -800,6 +803,91 @@
       : [el("p", { class: "muted" }, "Sem lacunas: faltam técnicas ou problemas na janela de 90 dias.")]));
     $("#rules-box").hidden = !(d.rules || []).length;
     $("#rules-list").replaceChildren(...(d.rules || []).map((r) => el("li", {}, r)));
+  }
+
+  // --- tools radar (2026-11-10) -----------------------------------------------------
+  const TOOL_VOTES = [["test", "🧪 testar"], ["up", "👍"], ["down", "👎"], ["archive", "🗄️ depois"]];
+  const int = (n) => (n === null || n === undefined ? "–" : Number(n).toLocaleString("pt-BR"));
+
+  function sparkline(history) {   // the stars of the last 30 days
+    if (!history || history.length < 2) return null;
+    const values = history.map((h) => h[1]);
+    const lo = Math.min(...values);
+    const hi = Math.max(...values);
+    const w = 120;
+    const h = 28;
+    const y = (v) => (hi === lo ? h / 2 : h - 2 - ((v - lo) * (h - 4)) / (hi - lo));
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    for (const [k, v] of [["viewBox", `0 0 ${w} ${h}`], ["width", w], ["height", h], ["class", "spark"], ["role", "img"],
+                          ["aria-label", `estrelas: ${int(values[0])} → ${int(values[values.length - 1])} em ${history.length} dias`]]) {
+      svg.setAttribute(k, String(v));
+    }
+    const line = document.createElementNS(ns, "polyline");
+    line.setAttribute("points", values.map((v, i) => `${((i * w) / (values.length - 1)).toFixed(1)},${y(v).toFixed(1)}`).join(" "));
+    line.setAttribute("fill", "none");
+    line.setAttribute("stroke", "currentColor");
+    line.setAttribute("stroke-width", "1.5");
+    svg.append(line);
+    return svg;
+  }
+
+  function toolSignal(p) {
+    const parts = [`★ ${int(p.stars)}`];
+    if (p.week !== null && p.week !== undefined) parts.push(`+${int(p.week)} na semana${p.estimated ? " (estimativa)" : ""}`);
+    if (p.downloads !== null && p.downloads !== undefined) parts.push(`${int(p.downloads)} downloads na semana`);
+    if (p.hn_points) parts.push(`HN ${p.hn_points} pts`);
+    return parts.join(" · ");
+  }
+
+  function toolVoteButtons(p) {
+    const box = el("div", { class: "votes", role: "group", "aria-label": `Votar em ${p.name}` });
+    for (const [value, label] of TOOL_VOTES) {
+      box.append(el("button", { class: "vote", type: "button", title: label, "aria-pressed": String(p.vote === value),
+                                onclick: async () => {
+        try {
+          const res = await api("/api/radar/vote", { method: "POST", headers: { "content-type": "application/json" },
+                                                     body: JSON.stringify({ repo: p.name, value }) });
+          box.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-pressed", String(TOOL_VOTES[i][0] === res.vote)));
+        } catch (e) {
+          box.append(el("span", { class: "error" }, " erro ao votar"));
+        }
+      } }, label));
+    }
+    return box;
+  }
+
+  function toolCard(p) {
+    const url = safeUrl(p.url);
+    return el("div", { class: "item" },
+      el("div", { class: "head" }, el("span", { class: "badge" }, p.front_label),
+        el("span", { class: "meta" }, `relevância ${p.relevance}/5 · ${p.kind} · ${p.license || "licença ?"}`)),
+      el("div", { class: "tool-title" },
+        url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer" }, `${p.rank}. ${p.name}`) : el("b", {}, p.name),
+        sparkline(p.history)),
+      el("p", { class: "meta" }, toolSignal(p)),
+      el("p", {}, p.what),
+      p.why ? el("div", { class: "why" }, el("b", {}, "Por que serve: "), p.why) : null,
+      (p.risks || []).length ? el("p", { class: "muted" }, `Riscos: ${p.risks.join("; ")}`) : null,
+      el("p", { class: "muted" }, p.test_from ? `Testar a partir de ${fmtDate(p.test_from)} (release de ${fmtDate(p.release_at)})`
+        : "Sem release: fixe um commit com mais de 2 semanas"),
+      toolVoteButtons(p));
+  }
+
+  async function loadTools() {
+    let d;
+    try { d = await api("/api/radar"); } catch (e) {
+      $("#tools-meta").textContent = `Não consegui carregar o radar (${e.message}).`;
+      return;
+    }
+    const scan = d.scanned_at ? `varrido em ${fmtDate(d.scanned_at)}` : "ainda não varrido (sotawhat radar scan)";
+    $("#tools-meta").textContent = d.day
+      ? `Radar de ${fmtDate(d.day)} · ${d.picks.length} ferramentas · ${int(d.tracked)} repositórios acompanhados · `
+        + `${d.days} dias de retrato · ${scan}.`
+      : `Ainda sem relatório do radar (sotawhat run weekly, domingo; ou sotawhat radar report) · `
+        + `${int(d.tracked)} repositórios acompanhados · ${scan}.`;
+    $("#tools-list").replaceChildren(...(d.picks.length ? d.picks.map(toolCard)
+      : [el("p", { class: "muted" }, "Nenhuma ferramenta no radar ainda.")]));
   }
 
   // --- today (P6) --------------------------------------------------------------------

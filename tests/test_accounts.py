@@ -30,10 +30,14 @@ class FakeApify:
     def __init__(self):
         self.calls = []
 
-    def run(self, actor, payload, max_usd=0.15, max_items=None):
+    def run(self, actor, payload, max_usd=0.15, max_items=None, partial=False):
         self.calls.append((actor, payload, max_usd, max_items))
         wanted = {u.rstrip("/").rsplit("/", 1)[-1] for u in payload["directUrls"]}
         return [p for p in PROFILES if p["username"] in wanted]
+
+    def items(self, run_id):
+        self.calls.append(("items", run_id))
+        return [PROFILES[0]]
 
 
 class FakeGateway:
@@ -125,6 +129,28 @@ def test_enabled_cap_and_budget_stop(tmp_path):
     notes = []
     verdicts = acc.classify(FakeGateway(budget_after=1), profiles, batch=2, notes=notes)
     assert set(verdicts) == {"medai.br", "airesearch"} and notes[0].startswith("classificação interrompida")
+
+
+def test_profiles_go_in_batches_with_a_cache_and_an_aborted_run_is_salvaged(tmp_path, monkeypatch):
+    path, settings = _setup(tmp_path)
+    cache = tmp_path / "state" / "instagram_profiles.json"
+    apify, lines = FakeApify(), []
+    monkeypatch.setattr(acc, "BATCH", 2)
+    fetched = acc.fetch_profiles(apify, ["medai.br", "airesearch", "tia.maria"], batch=2, cache={},
+                                 save=lambda p: acc.write_cache(cache, p), out=lines.append)
+    assert set(fetched) == {"medai.br", "airesearch", "tia.maria"} and len(apify.calls) == 2   # 2 + 1
+    assert [len(c[1]["directUrls"]) for c in apify.calls] == [2, 1] and lines == ["[apify] perfis 2/3", "[apify] perfis 3/3"]
+    assert set(acc.read_cache(cache)) == {"medai.br", "airesearch", "tia.maria"}
+    # the import: what the aborted run fetched comes back free, the cache is not fetched again
+    cache.unlink()
+    apify = FakeApify()
+    assert acc.run_import(settings, path, apify, FakeGateway(), out=lines.append, cache_path=cache, salvage="r1") == 0
+    assert apify.calls == [("items", "r1")] and "1 perfis recuperados do run r1" in lines[-3]
+    assert "(1 perfis já buscados)" in lines[-2] and not (settings.sotawhat_config_dir / "instagram_accounts.yaml").exists()
+    assert acc.run_import(settings, path, apify, FakeGateway(), yes=True, out=lines.append, cache_path=cache) == 0
+    urls = [u for c in apify.calls[1:] for u in c[1]["directUrls"]]
+    assert "https://www.instagram.com/medai.br/" not in urls and len(urls) == 3
+    assert len(load_accounts(settings.sotawhat_config_dir / "instagram_accounts.yaml")) == 4
 
 
 def test_cli_instagram_import():

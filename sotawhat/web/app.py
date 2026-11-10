@@ -6,6 +6,7 @@ A local server still gets requests that other web pages trigger in the browser, 
 - the writes (votes on items and on ideas) need a JSON body (a cross-site form or a no-cors fetch
   cannot send one) and an Origin that is absent or local.
 P4 adds the ideas page (/api/ideas, /api/ideas/{id}, /api/ideas/vote) and the trends panel (/api/trends).
+The tools radar (2026-11-10) adds /api/radar and /api/radar/vote.
 The lessons (aulas 3D) add /api/lessons and the files of data/lessons under /lessons: the videos and the
 interactive pages of the 3D scenes."""
 import json
@@ -48,6 +49,11 @@ class IdeaVote(BaseModel):
     idea_id: int
     value: Literal["up", "down", "test", "archive", "built"]
     note: str | None = Field(default=None, max_length=300)
+
+
+class ToolVote(BaseModel):
+    repo: str = Field(min_length=3, max_length=200, pattern=r"^[A-Za-z0-9-]+/[A-Za-z0-9_.-]+$")
+    value: Literal["test", "up", "down", "archive"]
 
 
 async def json_body(request: Request) -> dict:
@@ -177,6 +183,24 @@ def create_app(db_path, static_dir=STATIC) -> FastAPI:
     @app.get("/api/trends")
     def api_trends(request: Request):
         return ledger.trends_view(store(request))
+
+    # --- tools radar (2026-11-10) -------------------------------------------------------
+    @app.get("/api/radar")
+    def api_radar(request: Request):
+        from sotawhat.radar.report import radar_view
+        return radar_view(store(request))
+
+    @app.post("/api/radar/vote")
+    async def api_radar_vote(request: Request):
+        try:
+            vote = ToolVote.model_validate(await json_body(request))
+        except ValidationError as exc:
+            raise HTTPException(422, f"voto inválido: {exc}") from None
+        st, key = store(request), vote.repo.lower()
+        if st.conn.execute("SELECT 1 FROM radar_picks WHERE full_name = ? LIMIT 1", (key,)).fetchone() is None:
+            raise HTTPException(404, "ferramenta fora do radar")
+        st.add_feedback("tool", key, vote.value, "web")
+        return {"repo": key, "vote": vote.value}
 
     # --- lessons (aulas 3D) ------------------------------------------------------------
     lessons_dir = Path(db_path).parent / "lessons"

@@ -209,6 +209,21 @@ class CommunityLabel(_Portuguese):
     resumo: str = Field(description="2–3 frases: o que a comunidade reúne e o que mudou")
 
 
+class RadarVerdict(_Portuguese):
+    """The radar judge's view of one repository (task `radar`, 2026-11-10)."""
+    repo: str = Field(description="o dono/repo exatamente como veio")
+    frente: str = Field(description="a chave de uma das frentes dadas, ou 'fora'")
+    tipo: Literal["skill", "plugin", "mcp_server", "biblioteca", "framework", "aplicativo", "lista", "outro"]
+    relevancia: Literal[0, 1, 2, 3, 4, 5]
+    o_que_faz: str = Field(description="1 frase, pt-BR")
+    por_que_serve: str = Field(description="1–2 frases, pt-BR: o que muda no stack do leitor; vazio se 'fora'")
+    riscos: list[str] = Field(description="até 3 itens curtos, pt-BR")
+
+
+class RadarBatch(BaseModel):
+    veredictos: list[RadarVerdict]
+
+
 class SameEntity(BaseModel):
     """Entity-resolution judge (task `resolve`)."""
     same: bool

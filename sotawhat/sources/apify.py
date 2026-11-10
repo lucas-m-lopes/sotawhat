@@ -41,8 +41,9 @@ class ApifyClient:
             raise ApifyError(f"Apify {r.status_code}: {r.text[:200]}")
         return r.json()
 
-    def run(self, actor, payload, max_usd=0.15, max_items=None) -> list:
-        """Runs `actor` (e.g. "apify~instagram-scraper") with `payload` and returns its dataset items."""
+    def run(self, actor, payload, max_usd=0.15, max_items=None, partial=False) -> list:
+        """Runs `actor` (e.g. "apify~instagram-scraper") with `payload` and returns its dataset items. With `partial`, a
+        run that is aborted or times out returns what it fetched (paid already) instead of raising."""
         if not self.configured:
             raise ApifyError("APIFY_TOKEN vazio")
         params = {"maxTotalChargeUsd": f"{max_usd:.2f}", "waitForFinish": 60}
@@ -55,13 +56,29 @@ class ApifyClient:
             while run["status"] not in TERMINAL:
                 if self._clock() > deadline:
                     self._call(client, "POST", f"/actor-runs/{run['id']}/abort")
+                    if partial:
+                        return self._items(client, run)
                     raise ApifyError(f"Apify: o run {run['id']} passou de {self.wait_seconds} s e foi abortado")
                 run = self._call(client, "GET", f"/actor-runs/{run['id']}", params={"waitForFinish": 60})["data"]
-            if run["status"] != "SUCCEEDED":
+            if run["status"] != "SUCCEEDED" and not (partial and run["status"] in ("ABORTED", "TIMED-OUT")):
                 raise ApifyError(f"Apify: o run {run['id']} terminou como {run['status']}")
-            items = self._call(client, "GET", f"/datasets/{run['defaultDatasetId']}/items",
-                               params={"clean": "true", "format": "json"})
-            return items if isinstance(items, list) else []
+            return self._items(client, run)
+        finally:
+            if self._client is None:
+                client.close()
+
+    def _items(self, client, run) -> list:
+        items = self._call(client, "GET", f"/datasets/{run['defaultDatasetId']}/items",
+                           params={"clean": "true", "format": "json"})
+        return items if isinstance(items, list) else []
+
+    def items(self, run_id) -> list:
+        """The dataset items of an earlier run, e.g. one aborted after it had fetched (and charged) some results."""
+        if not self.configured:
+            raise ApifyError("APIFY_TOKEN vazio")
+        client = self._open()
+        try:
+            return self._items(client, self._call(client, "GET", f"/actor-runs/{run_id}")["data"])
         finally:
             if self._client is None:
                 client.close()

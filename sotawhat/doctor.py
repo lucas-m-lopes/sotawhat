@@ -364,7 +364,7 @@ def check_instagram(settings, apify=None) -> list:
     """P5: the Apify plan (usage of the cycle) and the accounts file with the last scan."""
     from sotawhat.configfiles import ConfigError
     from sotawhat.sources.apify import ApifyClient, ApifyError
-    from sotawhat.sources.instagram import load_accounts
+    from sotawhat.sources.instagram import daily_shares, load_accounts
 
     checks = []
     apify = apify or ApifyClient(settings.apify_token)
@@ -393,8 +393,10 @@ def check_instagram(settings, apify=None) -> list:
         last = max(v for k, v in state.items() if k.startswith("since_"))[:16].replace("T", " ")
     except (OSError, ValueError):
         last = "nunca"
+    shares = daily_shares(accounts, settings.instagram_max_usd_run)
     detail = (f"{len(on)} de {len(accounts)} na varredura (IA {sum(a['category'] == 'ia' for a in on)}, saúde "
-              f"{sum(a['category'] == 'saude' for a in on)}) · última varredura {last}")
+              f"{sum(a['category'] == 'saude' for a in on)}) · teto do dia US$ {settings.instagram_max_usd_run:.2f} "
+              f"(IA {shares['ia']:.2f}, saúde {shares['saude']:.2f}) · última varredura {last}")
     return checks + [Check("contas do Instagram", "ok" if on else "warn", detail)]
 
 

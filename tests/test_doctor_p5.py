@@ -18,7 +18,8 @@ class Apify:
 
 
 def _settings(tmp_path):
-    return SimpleNamespace(apify_token="t", sotawhat_config_dir=tmp_path, sotawhat_data_dir=tmp_path)
+    return SimpleNamespace(apify_token="t", sotawhat_config_dir=tmp_path, sotawhat_data_dir=tmp_path,
+                           instagram_max_usd_run=0.10)
 
 
 def test_check_instagram(tmp_path):
@@ -36,7 +37,8 @@ def test_check_instagram(tmp_path):
     (tmp_path / "state" / "instagram.json").write_text(json.dumps({"since_ia": "2026-11-08T07:01:00+00:00",
                                                                    "since_saude": "2026-11-08T07:02:00+00:00"}))
     ok = check_instagram(settings, Apify())[1]
-    assert ok.status == "ok" and ok.detail == "2 de 3 na varredura (IA 1, saúde 1) · última varredura 2026-11-08 07:02"
+    assert ok.status == "ok" and ok.detail == ("2 de 3 na varredura (IA 1, saúde 1) · teto do dia US$ 0.10 "
+                                               "(IA 0.05, saúde 0.05) · última varredura 2026-11-08 07:02")
     (tmp_path / "instagram_accounts.yaml").write_text("accounts:\n- {username: 'x y', category: ia}\n", encoding="utf-8")
     assert check_instagram(settings, Apify())[1].status == "fail"
     assert "accounts" in TASKS and "vision" in TASKS

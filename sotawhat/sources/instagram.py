@@ -6,6 +6,8 @@
   in the medical one.
 - The window starts at a watermark (the last successful scan, at most `max_days` back), so a failed day
   loses nothing and no post is paid twice. Pinned posts that come back are dropped by their shortcode.
+- INSTAGRAM_MAX_USD_RUN is the cap of the daily run, shared by the two categories (`daily_shares`). The account
+  order turns every day, so when the cap cuts a scan it is not always the same accounts that are left out.
 - Every post goes through `describer` (images and, if installed, the reel transcript) in the same run,
   because the CDN URLs expire. No Meta app and no Instagram login are ever used (T4 stays off)."""
 import json
@@ -21,6 +23,7 @@ ACTOR = "apify~instagram-scraper"
 CATEGORIES = ("ia", "saude")
 POST_URL = re.compile(r"https?://(?:www\.)?instagram\.com/(?:[A-Za-z0-9_.]+/)?(p|reel|reels|tv)/([A-Za-z0-9_-]{5,})")
 USERNAME = re.compile(r"^[A-Za-z0-9_.]{1,30}$")
+FLOOR_USD = 0.02            # the least share of the daily cap a category with accounts gets (≈ 7 posts)
 
 
 def load_accounts(path) -> list:
@@ -40,6 +43,20 @@ def load_accounts(path) -> list:
             raise ConfigError(f"{path.name}: @{acc['username']}: `category` deve ser ia, saude ou fora")
         out.append(acc)
     return out
+
+
+def daily_shares(accounts, max_usd, floor=FLOOR_USD) -> dict:
+    """The daily cap split between the categories by their enabled accounts, in cents. A category with accounts gets at
+    least `floor` (when the cap allows it), and the largest takes the rest, so the shares add up to the cap."""
+    counts = {c: sum(1 for a in accounts if a.get("enabled") and a.get("category") == c) for c in CATEGORIES}
+    total, cents = sum(counts.values()), round(max_usd * 100)
+    if not total or cents <= 0:
+        return dict.fromkeys(CATEGORIES, 0.0)
+    least = min(round(floor * 100), cents // sum(1 for n in counts.values() if n))
+    shares = {c: max(round(cents * n / total), least) if n else 0 for c, n in counts.items()}
+    largest = max(CATEGORIES, key=counts.get)
+    shares[largest] = cents - sum(v for c, v in shares.items() if c != largest)
+    return {c: v / 100 for c, v in shares.items()}
 
 
 def post_urls(text) -> list:
@@ -110,22 +127,22 @@ class InstagramSource(Source):
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         self.state_path.write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
 
-    def accounts(self) -> list:
-        return [a["username"] for a in load_accounts(self.accounts_path)
-                if a.get("enabled") and a["category"] == self.category]
-
     def fetch(self, limit):
-        names = self.accounts()
-        if not names or not self.apify.configured:
+        accounts = load_accounts(self.accounts_path)
+        names = [a["username"] for a in accounts if a.get("enabled") and a["category"] == self.category]
+        budget = daily_shares(accounts, self.max_usd)[self.category]
+        if not names or budget <= 0 or not self.apify.configured:
             return []
         now = self._now or datetime.now(timezone.utc)
+        turn = now.date().toordinal() % len(names)
+        names = names[turn:] + names[:turn]               # when the cap cuts a run, other accounts are left out each day
         state = self._state()
         mark = state.get(f"since_{self.category}")
         since = max(datetime.fromisoformat(mark), now - timedelta(days=self.max_days)) if mark else now - timedelta(days=1)
         payload = {"directUrls": [f"https://www.instagram.com/{u}/" for u in names], "resultsType": "posts",
                    "resultsLimit": self.per_account, "onlyPostsNewerThan": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
                    "addParentData": False}
-        raw = self.apify.run(ACTOR, payload, max_usd=self.max_usd, max_items=len(names) * self.per_account)
+        raw = self.apify.run(ACTOR, payload, max_usd=budget, max_items=len(names) * self.per_account)
         order = list(state.get("seen") or [])             # oldest first, so the trim drops the oldest
         seen = set(order)
         out = []

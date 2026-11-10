@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import pytest
 
 from sotawhat.configfiles import ConfigError
-from sotawhat.sources.instagram import InstagramSource, load_accounts, normalize, post_urls
+from sotawhat.sources.instagram import InstagramSource, daily_shares, load_accounts, normalize, post_urls
 
 NOW = datetime(2026, 11, 8, 12, 0, tzinfo=timezone.utc)
 SIDECAR = {"shortCode": "C1abcDEF", "type": "Sidecar", "ownerUsername": "medai.br", "ownerFullName": "Med AI",
@@ -71,7 +71,8 @@ def test_scan_uses_the_watermark_describes_and_skips_seen_posts(tmp_path):
     results = source.fetch(10)
     actor, payload, max_usd, max_items = apify.calls[0]
     assert actor == "apify~instagram-scraper" and payload["directUrls"] == ["https://www.instagram.com/medai.br/"]
-    assert payload["onlyPostsNewerThan"] == "2026-11-07T12:00:00Z" and max_items == 3 and max_usd == 0.15
+    assert payload["onlyPostsNewerThan"] == "2026-11-07T12:00:00Z" and max_items == 3
+    assert max_usd == 0.08                     # its share of the day's 0.15: one account each, "ia" takes the odd cent
     assert [r.extra["canonical_id"] for r in results] == ["ig:C1abcDEF", "ig:R2reel"] and described == ["C1abcDEF", "R2reel"]
     first = results[0]
     assert first.title == "@medai.br: Novo paper: LLM triagem no PS" and "[conteúdo visual] um gráfico" in first.abstract
@@ -85,3 +86,31 @@ def test_scan_uses_the_watermark_describes_and_skips_seen_posts(tmp_path):
     far.fetch(10)
     assert apify.calls[2][1]["onlyPostsNewerThan"] == "2026-11-17T12:00:00Z"   # never more than 3 days back
     assert InstagramSource(FakeApify([]), tmp_path / "none.yaml", tmp_path / "s.json", "ia").fetch(10) == []
+
+
+def test_the_daily_cap_is_shared_and_the_account_order_turns(tmp_path):
+    def accounts(ia, saude):
+        return ([{"username": f"i{n}", "category": "ia", "enabled": True} for n in range(ia)]
+                + [{"username": f"s{n}", "category": "saude", "enabled": True} for n in range(saude)]
+                + [{"username": "off", "category": "ia", "enabled": False}, {"username": "x", "category": "fora"}])
+    assert daily_shares(accounts(45, 5), 0.10) == {"ia": 0.08, "saude": 0.02}     # the floor, and "ia" the rest
+    assert daily_shares(accounts(45, 5), 0.15) == {"ia": 0.13, "saude": 0.02}
+    assert daily_shares(accounts(20, 20), 0.15) == {"ia": 0.07, "saude": 0.08}
+    assert daily_shares(accounts(5, 0), 0.10) == {"ia": 0.10, "saude": 0.0}
+    assert daily_shares(accounts(45, 5), 0.01) == {"ia": 0.01, "saude": 0.0}      # never more than the cap
+    assert daily_shares(accounts(0, 0), 0.10) == {"ia": 0.0, "saude": 0.0}
+    for ia, saude, cap in ((45, 5, 0.10), (3, 9, 0.15), (1, 1, 0.03), (7, 2, 0.5)):
+        assert round(sum(daily_shares(accounts(ia, saude), cap).values()), 2) == cap
+    path = _accounts(tmp_path, "accounts:\n" + "".join(f"- {{username: {a['username']}, category: {a['category']}, "
+                                                       f"enabled: {str(a.get('enabled', False)).lower()}}}\n"
+                                                       for a in accounts(3, 1)))
+    apify = FakeApify([])
+    days = [datetime(2026, 11, 8 + n, 12, 0, tzinfo=timezone.utc) for n in range(2)]
+    for day in days:
+        InstagramSource(apify, path, tmp_path / f"{day.day}.json", "ia", max_usd=0.10, now=day).fetch(10)
+    first, second = ([u.rstrip("/").rsplit("/", 1)[1] for u in call[1]["directUrls"]] for call in apify.calls)
+    assert sorted(first) == ["i0", "i1", "i2"] and second == first[1:] + first[:1]   # the next account goes first
+    assert [call[2] for call in apify.calls] == [0.08, 0.08]
+    poor = FakeApify([])
+    assert InstagramSource(poor, path, tmp_path / "p.json", "saude", max_usd=0.01, now=NOW).fetch(10) == []
+    assert poor.calls == []                                                      # a zero share does not run

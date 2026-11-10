@@ -125,9 +125,10 @@ Phase P5 adds Instagram and the manual capture (SDD §7.2, §7.7), with no Meta 
   the page title and description. What you send skips the mute filter and the classifier and is never
   rejected (the radar at worst); a post the scan had already stored becomes yours and is triaged again.
 - Daily scan of the public accounts in `config/instagram_accounts.yaml` through the Apify Instagram scraper
-  (`APIFY_TOKEN`; the Free plan gives US$ 5/month and a post costs US$ 0.0027). Each run has a charge cap
-  (`INSTAGRAM_MAX_USD_RUN`) and starts where the last one stopped. "ia" accounts feed the general profile,
-  "saude" accounts the medical one.
+  (`APIFY_TOKEN`; the Free plan gives US$ 5/month and a post costs US$ 0.0027). `INSTAGRAM_MAX_USD_RUN` caps the
+  whole day: the "ia" and "saude" scans share it by their enabled accounts (at least US$ 0.02 each), and the
+  account order turns every day, so a scan cut by the cap does not always leave out the same accounts. Each scan
+  starts where the last one stopped. "ia" accounts feed the general profile, "saude" accounts the medical one.
 - To build the list, export "Seguidores e seguindo" as JSON in the Accounts Center and run
   `sotawhat instagram import following.json [--max 50] [--limit N] --yes`. Without `--yes` it only shows the
   plan and the Apify cost. It fetches the profiles, sorts them into IA, saúde or fora with a cheap model, and

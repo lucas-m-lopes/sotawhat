@@ -1,4 +1,6 @@
 """HyperFrames lessons: ElevenLabs alignment, storyboard validation, timing of actions and captions."""
+import json
+
 import pytest
 
 from sotawhat.lessons import eleven
@@ -129,3 +131,64 @@ def test_slots_run_from_one_scene_to_the_next():
 def test_formula_parts_are_kept_in_the_schema():
     part = FormulaPart(id="qk", tex="q \\cdot k")
     assert part.model_dump() == {"id": "qk", "tex": "q \\cdot k"}
+
+
+# --- ElevenLabs credits -------------------------------------------------------------------------------------------
+def _speech_client(text, headers=None):
+    import base64
+    import httpx
+
+    def handler(request):
+        return httpx.Response(200, headers=headers or {}, json={
+            "audio_base64": base64.b64encode(b"ID3").decode(), "alignment": alignment(text)})
+    return httpx.Client(base_url=eleven.API, transport=httpx.MockTransport(handler))
+
+
+def test_credits_come_from_the_response_header_or_the_characters_sent():
+    text = "O token chega."
+    _, _, credits = eleven.ElevenLabs("k", client=_speech_client(text, {"character-cost": "16"})).speak(text)
+    assert credits == 16
+    _, _, credits = eleven.ElevenLabs("k", client=_speech_client(text)).speak(text)
+    assert credits == len(text)
+    assert eleven.credits_usd(2730) == 0.455 and eleven.credits_usd(100, 22, 121000) == 0.0182
+
+
+class _FakeEleven:
+    def __init__(self):
+        self.calls = 0
+
+    def speak(self, text, *args, **kw):
+        self.calls += 1
+        return b"ID3", alignment(text), len(text) + 3
+
+
+def _fake_wav(monkeypatch):
+    def to_wav(ffmpeg, mp3, wav, lead_in=0.35):
+        eleven.silence(wav, 1.0)
+        return 1.0
+    monkeypatch.setattr(eleven, "to_wav", to_wav)
+
+
+def test_scene_cache_keeps_what_the_generation_cost(tmp_path, monkeypatch):
+    _fake_wav(monkeypatch)
+    el, sentences = _FakeEleven(), ["O token chega.", "Vira vetor."]
+    first = eleven.speak_scene(el, sentences, tmp_path, "ffmpeg", "cena01")
+    again = eleven.speak_scene(el, sentences, tmp_path, "ffmpeg", "cena01")
+    assert el.calls == 1 and (first.cached, again.cached) == (False, True)
+    assert first.credits == again.credits == len(" ".join(sentences)) + 3
+    # the first cache files hold the alignment alone: their cost is the characters
+    old = tmp_path / "old"
+    old.mkdir()
+    key = eleven.cache_key("Fim.", eleven.DEFAULT_VOICE, eleven.DEFAULT_MODEL, eleven.SETTINGS)
+    (old / f"cena02-{key}.mp3").write_bytes(b"ID3")
+    (old / f"cena02-{key}.json").write_text(json.dumps(alignment("Fim.")), encoding="utf-8")
+    assert eleven.speak_scene(el, ["Fim."], old, "ffmpeg", "cena02").credits == 4 and el.calls == 1
+
+
+def test_narration_bills_only_the_scenes_it_generated(tmp_path, monkeypatch):
+    _fake_wav(monkeypatch)
+    el = _FakeEleven()
+    eleven.speak_scene(el, ["Uma cena pronta."], tmp_path, "ffmpeg", "cena01")
+    nar = eleven.narrate(el, [["Uma cena pronta."], ["Outra nova."]], tmp_path, "ffmpeg", intro=1.0, progress=lambda *_: None)
+    assert nar.billed_chars == len("Outra nova.") + 3
+    assert nar.credits == len("Uma cena pronta.") + 3 + len("Outra nova.") + 3

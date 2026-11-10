@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     elevenlabs_api_key: str = ""
     sotawhat_elevenlabs_voice: str = "UQ3s9h7N3CVJBL2USizn"   # Klaus, pt-BR, in your ElevenLabs library
     sotawhat_elevenlabs_model: str = "eleven_v4"
+    # the price of a credit in the lesson report: what you pay a month ÷ the credits of the month (not the balance
+    # the account shows, which adds up to 2 months of rollover)
+    sotawhat_elevenlabs_plan_usd: float = 5.0
+    sotawhat_elevenlabs_plan_credits: int = 30000
 
     # Neo4j mirror of the entity graph (P3, D16); empty password = mirror off (the interface works anyway)
     neo4j_uri: str = "bolt://localhost:7687"

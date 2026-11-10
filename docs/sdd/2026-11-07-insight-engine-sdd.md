@@ -2,7 +2,14 @@
 
 **Tipo:** Software Design Document (SDD) — serve também como *spec* para desenvolvimento orientado a especificação (spec-driven).
 **Data:** 2026-11-07
-**Status:** v2.3 (2026-11-09), com todas as fases (P0–P6) executadas, as newsletters por RSS com texto completo e as aulas 3D em piloto:
+**Status:** v2.4 (2026-11-10), com todas as fases (P0–P6) executadas, as newsletters por RSS com texto completo e as aulas no motor HyperFrames:
+- v2.4: aulas no motor HyperFrames. Você aprovou a aula 6 em 2026-11-10 ("Absolute cinema! ficou excelente.") e pediu a migração.
+  - `sotawhat lessons make` agora planeja com modelos de cena (`lesson_plan_v3`): cada cena tem um modelo e um exemplo único atravessa a aula. Os modelos são `graph`, `bars`, `chart`, `timeline`, `compare`, `vectors3d`, `patches` e `volume3d`.
+  - O storyboard vem antes da voz.
+  - A narração é da ElevenLabs (v4, voz Klaus), e o HyperFrames renderiza o vídeo.
+  - O custo da aula soma LLM e voz, em US$ e em R$ pela PTAX do Banco Central (`sotawhat/fx.py`).
+  - As aulas 1–5 seguem no motor Manim, retomáveis.
+  - Plano: `docs/superpowers/plans/2026-11-10-aulas-motor-hyperframes.md`;
 - respostas do usuário de 2026-11-07 incorporadas: Instagram pessoal, Neo4j no Docker Desktop, LLMs chineses via OpenRouter;
 - medições da P1 incorporadas: modelo de embeddings e deduplicação por título (§6.3, §6.7, D3);
 - decisões de 2026-11-08 incorporadas: digest em duas seções, "IA ∩ Saúde" e "Fronteira de IA" (escolha feita a partir do golden set), e cópia do digest por e-mail (§6.7, §6.11, §16.1);

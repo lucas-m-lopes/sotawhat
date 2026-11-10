@@ -169,6 +169,10 @@ def copy_assets(hf, project, wav) -> None:
     shutil.copy2(m / "gsap" / "dist" / "gsap.min.js", assets / "lib")
     for name in ("three.module.js", "three.core.js"):
         shutil.copy2(m / "three" / "build" / name, assets / "lib")
+    # the marching cubes of three's addons (volume3d), with its bare `from 'three'` pointed at the copy above
+    cubes = (m / "three" / "examples" / "jsm" / "objects" / "MarchingCubes.js").read_text(encoding="utf-8")
+    (assets / "lib" / "MarchingCubes.js").write_text(cubes.replace("from 'three';", "from './three.module.js';"),
+                                                     encoding="utf-8")
     katex = assets / "lib" / "katex"
     if not katex.exists():
         katex.mkdir()
@@ -206,9 +210,13 @@ def compose(hf, project, plan, board, nar, lesson_id) -> dict:
                 "nodes": [x.model_dump() for x in bscene.nodes], "edges": [x.model_dump() for x in bscene.edges],
                 "bars": [x.model_dump() for x in bscene.bars], "vectors": [x.model_dump() for x in bscene.vectors],
                 "patches": bscene.patches.model_dump(), "formula": [x.model_dump() for x in bscene.formula],
+                "axes": bscene.axes.model_dump(), "series": [x.model_dump() for x in bscene.series],
+                "events": [x.model_dump() for x in bscene.events], "columns": [x.model_dump() for x in bscene.columns],
+                "rows": [x.model_dump() for x in bscene.rows], "volume": bscene.volume.model_dump(),
                 "actions": scene_actions(bscene, nscene, start)}
-        if bscene.template == "vectors3d":
-            script = (f'import {{ mount3d }} from "./assets/kit/scene3d.js"; mount3d("{cid}", {_js(data)}, {start});')
+        if bscene.template in ("vectors3d", "volume3d"):
+            mount = "mount3d" if bscene.template == "vectors3d" else "mountVolume"
+            script = (f'import {{ {mount} }} from "./assets/kit/scene3d.js"; {mount}("{cid}", {_js(data)}, {start});')
             (project / "compositions" / f"{cid}.html").write_text(_scene_file(cid, script, module=True), encoding="utf-8")
         else:
             (project / "compositions" / f"{cid}.html").write_text(_scene_file(cid, f'MK.scene("{cid}", {_js(data)});'),

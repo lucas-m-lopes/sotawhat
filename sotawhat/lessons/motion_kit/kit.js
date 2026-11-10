@@ -750,6 +750,401 @@
     if (!imageOn) showImage(0.4);
   }
 
+  /* ---- chart: curves on two axes (ROC + AUC, learning curves, dose-response) ---------------------------------- */
+  function niceStep(range, n) {
+    const raw = range / Math.max(1, n), mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+    return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * mag;
+  }
+  function ticksOf(a, b, n) {
+    const step = niceStep(b - a, n), out = [];
+    for (let v = Math.ceil(a / step - 1e-9) * step; v <= b + step * 1e-6; v += step) out.push(+v.toFixed(10));
+    const dec = step >= 1 ? 0 : Math.min(3, Math.ceil(-Math.log10(step) - 1e-9) + (String(step).includes("25") ? 1 : 0));
+    return { values: out, dec };
+  }
+  function monotone(xs, ys) {   // Fritsch–Carlson tangents: a smooth curve that never overshoots its points
+    const n = xs.length, d = [], m = new Array(n).fill(0);
+    for (let i = 0; i < n - 1; i++) d.push((ys[i + 1] - ys[i]) / ((xs[i + 1] - xs[i]) || 1e-9));
+    if (n === 2) { m[0] = m[1] = d[0]; return m; }
+    m[0] = d[0]; m[n - 1] = d[n - 2];
+    for (let i = 1; i < n - 1; i++) m[i] = d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2;
+    for (let i = 0; i < n - 1; i++) {
+      if (d[i] === 0) { m[i] = m[i + 1] = 0; continue; }
+      const a = m[i] / d[i], b = m[i + 1] / d[i], s = a * a + b * b;
+      if (s > 9) { const t = 3 / Math.sqrt(s); m[i] = t * a * d[i]; m[i + 1] = t * b * d[i]; }
+    }
+    return m;
+  }
+
+  function chart(ctx) {
+    const { data, T } = ctx;
+    const ax = data.axes || {}, list = data.series || [];
+    const square = ax.x_min === 0 && ax.x_max === 1 && ax.y_min === 0 && ax.y_max === 1;   // ROC-like: a squarer plot
+    const top = ctx.area.y0 + 30, bot = 770, wid = square ? Math.round((bot - top) * 1.35) : 1060;
+    const P = { x0: 990 - wid / 2, x1: 990 + wid / 2, y0: top, y1: bot };
+    const xr = (ax.x_max - ax.x_min) || 1, yr = (ax.y_max - ax.y_min) || 1;
+    const sx = (x) => P.x0 + ((x - ax.x_min) / xr) * (P.x1 - P.x0);
+    const sy = (y) => P.y1 - ((y - ax.y_min) / yr) * (P.y1 - P.y0);
+    const dx = (px) => ax.x_min + ((px - P.x0) / (P.x1 - P.x0)) * xr;
+    const layer = el("div", "mk-chart", ctx.stage);
+    const svg = svgEl("svg", { class: "mk-edges", viewBox: `0 0 ${W} ${H}` }, layer);
+    const defs = svgEl("defs", {}, svg);
+    const frame = [];
+    const xt = ticksOf(ax.x_min, ax.x_max, 5), yt = ticksOf(ax.y_min, ax.y_max, 5);
+    for (const v of xt.values) {
+      if (v > ax.x_min + 1e-9) frame.push(svgEl("line", { x1: sx(v), y1: P.y0, x2: sx(v), y2: P.y1, class: "mk-gridline" }, svg));
+      const t = el("div", "mk-tick", layer, num(v, xt.dec));
+      t.style.left = (sx(v) - t.offsetWidth / 2) + "px"; t.style.top = (P.y1 + 16) + "px"; frame.push(t);
+    }
+    for (const v of yt.values) {
+      if (v > ax.y_min + 1e-9) frame.push(svgEl("line", { x1: P.x0, y1: sy(v), x2: P.x1, y2: sy(v), class: "mk-gridline" }, svg));
+      const t = el("div", "mk-tick", layer, num(v, yt.dec));
+      t.style.left = (P.x0 - 18 - t.offsetWidth) + "px"; t.style.top = (sy(v) - t.offsetHeight / 2) + "px"; frame.push(t);
+    }
+    frame.push(svgEl("path", { d: `M ${P.x0} ${P.y0 - 14} L ${P.x0} ${P.y1} L ${P.x1 + 14} ${P.y1}`, class: "mk-axis" }, svg));
+    const xl = el("div", "mk-axlabel", layer, esc(ax.x_label || ""));
+    xl.style.left = ((P.x0 + P.x1) / 2 - xl.offsetWidth / 2) + "px"; xl.style.top = (P.y1 + 62) + "px";
+    const yl = el("div", "mk-axlabel mk-axlabel-y", layer, esc(ax.y_label || ""));
+    yl.style.left = (P.x0 - 96 - yl.offsetWidth / 2) + "px"; yl.style.top = ((P.y0 + P.y1) / 2 - yl.offsetHeight / 2) + "px";
+    frame.push(xl, yl);
+    frame.forEach((f) => T.init(f, { opacity: 0 }));
+
+    const curves = {};
+    list.forEach((s) => {
+      const pts = (s.points || []).filter((p) => p.length >= 2);
+      if (pts.length < 2) return;
+      const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]), m = monotone(xs, ys);
+      let d = `M ${sx(xs[0])} ${sy(ys[0])}`;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const h = xs[i + 1] - xs[i];
+        d += ` C ${sx(xs[i] + h / 3)} ${sy(ys[i] + (m[i] * h) / 3)}, ${sx(xs[i + 1] - h / 3)} ${sy(ys[i + 1] - (m[i + 1] * h) / 3)}, ${sx(xs[i + 1])} ${sy(ys[i + 1])}`;
+      }
+      const color = ROLE[s.role] || ROLE.neutral;
+      const gid = `${ctx.id}-area-${s.id}`;
+      const grad = svgEl("linearGradient", { id: gid, x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
+      svgEl("stop", { offset: "0", "stop-color": color, "stop-opacity": "0.42" }, grad);
+      svgEl("stop", { offset: "1", "stop-color": color, "stop-opacity": "0.05" }, grad);
+      const area = svgEl("path", { d: `${d} L ${sx(xs[xs.length - 1])} ${P.y1} L ${sx(xs[0])} ${P.y1} Z`, fill: `url(#${gid})` }, svg);
+      const g = svgEl("g", {}, svg);
+      const path = svgEl("path", { d, class: "mk-curve", stroke: color }, g);
+      const ref = s.role === "neutral";                     // a reference line (chance, baseline): dotted, no draw-on
+      if (ref) path.setAttribute("stroke-dasharray", "2 14");
+      const len = path.getTotalLength();
+      if (!ref) path.setAttribute("stroke-dasharray", `${len} ${len + 40}`);
+      const dot = svgEl("circle", { cx: sx(xs[xs.length - 1]), cy: sy(ys[ys.length - 1]), r: 9, fill: color, class: "mk-flowdot" }, g);
+      dot.style.color = color;
+      const tag = el("div", `mk-seriestag mk-r-${s.role}`, layer, esc(s.label));
+      T.init(area, { opacity: 0 });
+      T.init(path, ref ? { opacity: 0 } : { strokeDashoffset: len, opacity: 0 });
+      T.init(dot, { opacity: 0, scale: 0.4, transformOrigin: "50% 50%" }); T.init(tag, { opacity: 0, y: 8 });
+      const at = (x) => {     // y on the drawn curve (the same Hermite segments)
+        let i = 0;
+        while (i < xs.length - 2 && x > xs[i + 1]) i++;
+        const h = (xs[i + 1] - xs[i]) || 1e-9, t = Math.max(0, Math.min(1, (x - xs[i]) / h));
+        const t2 = t * t, t3 = t2 * t;
+        return (2 * t3 - 3 * t2 + 1) * ys[i] + (t3 - 2 * t2 + t) * h * m[i] + (-2 * t3 + 3 * t2) * ys[i + 1] + (t3 - t2) * h * m[i + 1];
+      };
+      curves[s.id] = { s, ref, path, len, dot, tag, area, at, xs, ys, color, shown: false, els: [path, dot, tag] };
+    });
+    const all = Object.values(curves);
+
+    // labels go on the curves, where nothing else is: candidates along each curve, above or below it
+    const placed = [];
+    const inPlot = (r) => r.x >= P.x0 + 8 && r.x + r.w <= P.x1 - 8 && r.y >= P.y0 - 6 && r.y + r.h <= P.y1 - 8;
+    const crosses = (r, skip) => all.some((o) => {
+      if (o === skip) return false;
+      for (let k = 0; k <= 16; k++) {
+        const py = sy(o.at(dx(r.x + (r.w * k) / 16)));
+        if (py > r.y - 6 && py < r.y + r.h + 6) return true;
+      }
+      return false;
+    });
+    const hitsPlaced = (r) => placed.some((p) => overlap(r, p, 10));
+    const neighbour = (c, x, side) => {     // the next curve (or the axis) above or below c at x, in data units
+      const y = c.at(x);
+      let best = side > 0 ? ax.y_max : ax.y_min;
+      for (const o of all) {
+        if (o === c) continue;
+        const oy = o.at(x);
+        if (side > 0 ? oy > y && oy < best : oy < y && oy > best) best = oy;
+      }
+      return best;
+    };
+    const place = (w, h, cands) => {
+      let best = null;
+      for (const c of cands) {
+        const r = { x: c.x, y: c.y, w, h };
+        if (!inPlot(r)) continue;
+        const score = c.score - (hitsPlaced(r) ? 1e4 : 0) - (crosses(r, null) ? 2e3 : 0);
+        if (!best || score > best.score) best = { r, score };
+      }
+      return best ? best.r : null;
+    };
+    for (const c of all) {
+      const w = c.tag.offsetWidth, h = c.tag.offsetHeight, cands = [];
+      for (let k = 0; k <= 14; k++) {
+        const x = ax.x_min + xr * (0.12 + (0.76 * k) / 14), px = sx(x), py = sy(c.at(x));
+        let hi = Infinity, lo = -Infinity;          // the curve's screen y across the label's width
+        for (let q = 0; q <= 8; q++) { const yy = sy(c.at(dx(px - w / 2 + (w * q) / 8))); hi = Math.min(hi, yy); lo = Math.max(lo, yy); }
+        for (const side of [1, -1]) {
+          const room = Math.abs(sy(neighbour(c, x, side)) - py);
+          const prefer = c.ref ? -Math.abs(k / 14 - 0.8) * 120 : -Math.abs(k / 14 - 0.45) * 60;
+          cands.push({ x: px - w / 2, y: side > 0 ? hi - h - 16 : lo + 16, score: Math.min(room, 260) + prefer, own: c });
+        }
+      }
+      const r = place(w, h, cands) || { x: P.x1 + 30, y: sy(c.ys[c.ys.length - 1]) - h / 2, w, h };
+      placed.push(r);
+      c.tag.style.left = r.x + "px"; c.tag.style.top = r.y + "px";
+    }
+
+    const note = notes(Object.assign({}, ctx, { obstacles: [{ x: P.x0, y: P.y0, w: P.x1 - P.x0, h: P.y1 - P.y0 }] }));
+    const F = formula(ctx, data.formula);
+    let frameOn = false;
+    const showFrame = (at) => {
+      if (frameOn) return; frameOn = true;
+      frame.forEach((f, i) => T.to(f, { opacity: 1 }, Math.max(0, at) + Math.min(0.5, i * 0.025), 0.45, "power2.out"));
+    };
+    const draw = (c, at) => {
+      if (c.shown) return; c.shown = true;
+      showFrame(at - 0.4);
+      if (c.ref) T.to(c.path, { opacity: 0.75 }, at, 0.6, "power2.out");
+      else { T.to(c.path, { opacity: 1 }, at, 0.05, "none"); T.to(c.path, { strokeDashoffset: 0 }, at, 1.5, "power2.inOut"); }
+      T.to(c.dot, { opacity: 1, scale: 1 }, at + (c.ref ? 0.4 : 1.35), 0.35, "back.out(2)");
+      T.to(c.tag, { opacity: 1, y: 0 }, at + (c.ref ? 0.5 : 1.2), 0.4, "expo.out");
+    };
+    const pick = (a) => (a.ids.length ? a.ids.map((i) => curves[i]).filter(Boolean) : all);
+    for (const a of data.actions) {
+      const at = a.t, sel = pick(a);
+      if (a.do === "show") {
+        showFrame(at);
+        if (a.ids.length) sel.forEach((c, i) => draw(c, at + 0.25 + i * 0.5));
+      } else if (a.do === "area") {
+        const c = sel.find((x) => !x.ref) || sel[0];
+        if (!c) continue;
+        draw(c, at - 1.2);
+        T.to(c.area, { opacity: 1 }, at, 0.9, "power2.out");
+        const text = a.text || (c.s.auc ? `AUC ${num(c.s.auc, 2)}` : "");
+        if (!text) continue;
+        const chip = el("div", `mk-chip mk-chip-big mk-r-${c.s.role}`, layer, esc(text));
+        const w = chip.offsetWidth, h = chip.offsetHeight, cands = [];
+        for (let k = 0; k <= 16; k++) {      // the chip sits in the widest part of the area under the curve
+          const x = ax.x_min + xr * (0.1 + (0.8 * k) / 16), y0 = sy(c.at(x)), y1 = sy(neighbour(c, x, -1));
+          cands.push({ x: sx(x) - w / 2, y: (y0 + y1) / 2 - h / 2, score: Math.min(y1 - y0, 400) - Math.abs(k / 16 - 0.55) * 80, own: c });
+        }
+        const r = place(w, h, cands) || { x: sx(ax.x_min + xr * 0.6) - w / 2, y: (P.y0 + P.y1) / 2, w, h };
+        placed.push(r);
+        chip.style.left = r.x + "px"; chip.style.top = r.y + "px";
+        T.init(chip, { opacity: 0, scale: 0.85 }); T.to(chip, { opacity: 1, scale: 1 }, at + 0.35, 0.5, "back.out(1.6)");
+      } else if (a.do === "mark") {
+        const c = sel.find((x) => !x.ref) || sel[0];
+        if (!c) continue;
+        draw(c, at - 1.2);
+        const x = Math.min(ax.x_max, Math.max(ax.x_min, a.value)), y = c.at(x), px = sx(x), py = sy(y);
+        const guide = svgEl("path", { d: `M ${P.x0} ${py} L ${px} ${py} L ${px} ${P.y1}`, class: "mk-guide", stroke: c.color }, svg);
+        const dot = svgEl("circle", { cx: px, cy: py, r: 11, fill: "#0a101e", stroke: c.color, "stroke-width": 5 }, svg);
+        T.init(guide, { opacity: 0 }); T.init(dot, { opacity: 0, scale: 0.3, transformOrigin: "50% 50%" });
+        T.to(guide, { opacity: 0.85 }, at, 0.5, "power2.out"); T.to(dot, { opacity: 1, scale: 1 }, at + 0.1, 0.4, "back.out(2.2)");
+        if (a.text) {
+          const chip = el("div", `mk-note mk-r-${c.s.role}`, layer, `<i></i>${esc(a.text)}`);
+          const w = chip.offsetWidth, h = chip.offsetHeight;
+          const cands = [[px + 26, py - h - 16], [px + 26, py + 16], [px - w - 26, py - h - 16], [px - w - 26, py + 16]]
+            .map(([cx, cy], k) => ({ x: cx, y: cy, score: -k * 10, own: c }));
+          const r = place(w, h, cands) || { x: px + 26, y: py - h - 16, w, h };
+          placed.push(r);
+          chip.style.left = r.x + "px"; chip.style.top = r.y + "px";
+          T.init(chip, { opacity: 0, y: 8 }); T.to(chip, { opacity: 1, y: 0 }, at + 0.3, 0.45, "expo.out");
+        }
+      } else if (a.do === "focus" || a.do === "dim" || a.do === "unfocus") {
+        const keep = new Set(sel.map((c) => c.s.id));
+        for (const c of all) {
+          if (!c.shown) continue;
+          const op = a.do === "unfocus" ? 1 : a.do === "focus" ? (keep.has(c.s.id) ? 1 : 0.22) : (keep.has(c.s.id) ? 0.22 : null);
+          if (op === null) continue;
+          c.els.forEach((e) => T.to(e, { opacity: op }, at, 0.45, "power2.out"));
+        }
+      } else if (a.do === "pulse") {
+        sel.forEach((c) => { T.to(c.dot, { scale: 1.9 }, at, 0.3, "power2.out"); T.to(c.dot, { scale: 1 }, at + 0.32, 0.6, "power3.out"); });
+      } else if (a.do === "note") {
+        const c = a.ids.length ? curves[a.ids[0]] : null;
+        const rect = c ? { x: sx(c.xs[c.xs.length - 1]) - 10, y: sy(c.ys[c.ys.length - 1]) - 10, w: 20, h: 20 } : null;
+        note(a, rect, c ? c.s.role : "info");
+      } else if (a.do === "formula") formulaAction(ctx, F, a);
+    }
+    if (!frameOn) showFrame(0.4);
+    if (!all.some((c) => c.shown)) all.forEach((c, i) => draw(c, 1.0 + i * 0.6));     // curves no sentence named
+  }
+
+  /* ---- timeline: events in time order -------------------------------------------------------------------- */
+  function timeline(ctx) {
+    const { data, T } = ctx;
+    const evs = data.events || [], n = evs.length;
+    const X0 = 250, X1 = 1670, Y = Math.round((ctx.area.y0 + 862) / 2) + 10;
+    const xs = evs.map((_, i) => (n > 1 ? X0 + (i * (X1 - X0)) / (n - 1) : (X0 + X1) / 2));
+    const layer = el("div", "mk-timeline", ctx.stage);
+    const L0 = X0 - 70, L1 = X1 + 70;
+    const line = el("div", "mk-tline", layer);
+    line.style.left = L0 + "px"; line.style.top = (Y - 2.5) + "px"; line.style.width = (L1 - L0) + "px";
+    T.init(line, { scaleX: 0, opacity: 1 });
+    const zig = n >= 3;
+    const slot = n > 1 ? (X1 - X0) / (n - 1) : 600;
+    const items = evs.map((e, i) => {
+      const up = zig && i % 2 === 0;
+      const dot = el("div", `mk-tdot mk-r-${e.role}`, layer);
+      dot.style.left = (xs[i] - 15) + "px"; dot.style.top = (Y - 15) + "px";
+      const halo = el("div", `mk-halo mk-r-${e.role}`, layer);
+      halo.style.left = (xs[i] - 46) + "px"; halo.style.top = (Y - 46) + "px"; halo.style.width = "92px"; halo.style.height = "92px";
+      halo.style.right = "auto"; halo.style.bottom = "auto"; halo.style.borderRadius = "50%";
+      const card = el("div", `mk-tcard mk-r-${e.role}`, layer);
+      el("div", "mk-twhen", card, esc(e.when));
+      el("div", "mk-tlabel", card, esc(e.label));
+      if (e.gloss) el("div", "mk-tgloss", card, esc(e.gloss));
+      const w = Math.min(Math.max(240, (zig ? 2 * slot : slot) - 40), 460);
+      card.style.width = w + "px";
+      const left = Math.min(Math.max(xs[i] - w / 2, 130), W - 130 - w);
+      card.style.left = left + "px";
+      const stemLen = 46, h = card.offsetHeight;
+      const top = up ? Y - stemLen - 14 - h : Y + stemLen + 14;
+      card.style.top = top + "px";
+      const stem = el("div", `mk-tstem mk-r-${e.role}`, layer);
+      stem.style.left = (xs[i] - 1) + "px"; stem.style.top = (up ? Y - stemLen - 8 : Y + 14) + "px"; stem.style.height = stemLen + "px";
+      stem.style.transformOrigin = up ? "50% 100%" : "50% 0%";
+      T.init(dot, { opacity: 0, scale: 0.2 }); T.init(halo, { opacity: 0 }); T.init(stem, { scaleY: 0, opacity: 1 });
+      T.init(card, { opacity: 0, y: up ? 14 : -14, filter: "blur(6px)" });
+      return { e, i, dot, halo, card, stem, rect: { x: left, y: top, w, h }, shown: false };
+    });
+    const note = notes(Object.assign({}, ctx, { obstacles: items.map((it) => it.rect).concat([{ x: L0, y: Y - 20, w: L1 - L0, h: 40 }]) }));
+    const F = formula(ctx, data.formula);
+    let reach = 0;
+    const grow = (x, at) => {
+      const f = Math.min(1, (x - L0 + 70) / (L1 - L0));
+      if (f <= reach) return;
+      T.to(line, { scaleX: f }, at, 0.7, "power2.inOut");
+      reach = f;
+    };
+    const showItem = (it, at) => {
+      if (it.shown) return; it.shown = true;
+      grow(xs[it.i], at);
+      T.to(it.dot, { opacity: 1, scale: 1 }, at + 0.45, 0.4, "back.out(2.2)");
+      T.to(it.stem, { scaleY: 1 }, at + 0.6, 0.3, "power2.out");
+      T.to(it.card, { opacity: 1, y: 0, filter: "blur(0px)" }, at + 0.75, 0.5, "expo.out");
+    };
+    for (const a of data.actions) {
+      const at = a.t;
+      const sel = a.ids.length ? items.filter((it) => a.ids.includes(it.e.id)) : items;
+      if (a.do === "show") {
+        const todo = sel.filter((it) => !it.shown);
+        todo.forEach((it, k) => showItem(it, at + k * (a.ids.length ? 0.35 : 0.55)));
+      } else if (a.do === "focus" || a.do === "dim" || a.do === "unfocus") {
+        const keep = new Set(sel.map((it) => it.e.id));
+        for (const it of items) {
+          if (!it.shown) continue;
+          const on = a.do === "unfocus" || (a.do === "focus" ? keep.has(it.e.id) : !keep.has(it.e.id));
+          [it.card, it.dot, it.stem].forEach((x) => T.to(x, { opacity: on ? 1 : 0.25 }, at, 0.45, "power2.out"));
+          T.to(it.halo, { opacity: a.do === "focus" && keep.has(it.e.id) ? 0.8 : 0 }, at, 0.45, "power2.out");
+        }
+      } else if (a.do === "pulse") {
+        sel.forEach((it) => {
+          showItem(it, at - 0.8);
+          T.to(it.halo, { opacity: 0.95 }, at, 0.3); T.to(it.halo, { opacity: 0.25 }, at + 0.5, 0.7);
+          T.to(it.dot, { scale: 1.45 }, at, 0.3, "power2.out"); T.to(it.dot, { scale: 1 }, at + 0.32, 0.5, "power3.out");
+        });
+      } else if (a.do === "note") {
+        const it = a.ids.length ? items.find((x) => x.e.id === a.ids[0]) : null;
+        note(a, it ? it.rect : null, it ? it.e.role : "info");
+      } else if (a.do === "formula") formulaAction(ctx, F, a);
+    }
+    if (!items.some((it) => it.shown)) items.forEach((it, k) => showItem(it, 0.5 + k * 0.5));
+  }
+
+  /* ---- compare: alternatives side by side on the same attributes ------------------------------------------- */
+  function compare(ctx) {
+    const { data, T } = ctx;
+    const cols = (data.columns || []).slice(0, 3), rows = (data.rows || []).slice(0, 5);
+    const nc = Math.max(1, cols.length), nr = Math.max(1, rows.length);
+    const LX0 = 150, LX1 = 520, CX0 = 560, CX1 = 1770, gap = 34;
+    const cw = (CX1 - CX0 - gap * (nc - 1)) / nc;
+    const headH = 104, rh = Math.min(132, (850 - ctx.area.y0 - 20 - headH - 24) / nr);
+    const top = Math.max(ctx.area.y0 + 20, Math.round((ctx.area.y0 + 862) / 2 - (headH + 24 + rh * nr) / 2));
+    const layer = el("div", "mk-compare", ctx.stage);
+    const colEls = cols.map((c, j) => {
+      const x = CX0 + j * (cw + gap);
+      const card = el("div", `mk-ccol mk-r-${c.role}`, layer);
+      card.style.left = x + "px"; card.style.top = top + "px"; card.style.width = cw + "px";
+      card.style.height = (headH + 24 + rh * nr) + "px";
+      const head = el("div", "mk-chead", card, esc(c.title));
+      head.style.height = headH + "px";
+      const halo = el("div", `mk-halo mk-r-${c.role}`, card);
+      T.init(card, { opacity: 0, y: 18, filter: "blur(6px)", height: headH + 24 }); T.init(halo, { opacity: 0 });
+      return { c, j, x, card, halo, shown: false, rows: 0 };
+    });
+    const rowEls = rows.map((r, i) => {
+      const y = top + headH + 12 + i * rh;
+      const label = el("div", "mk-crowlabel", layer, esc(r.label));
+      label.style.left = LX0 + "px"; label.style.width = (LX1 - LX0) + "px";
+      label.style.top = (y + rh / 2 - label.offsetHeight / 2) + "px";
+      const rule = el("div", "mk-crule", layer);
+      rule.style.left = LX0 + "px"; rule.style.width = (CX1 - LX0) + "px"; rule.style.top = (y + rh) + "px";
+      if (i === nr - 1) rule.style.display = "none";
+      const cells = cols.map((c, j) => {
+        const cell = el("div", "mk-ccell", layer, esc((r.cells || [])[j] || "—"));
+        cell.style.left = colEls[j].x + "px"; cell.style.width = cw + "px"; cell.style.top = y + "px"; cell.style.height = rh + "px";
+        T.init(cell, { opacity: 0, y: 10 });
+        return cell;
+      });
+      T.init(label, { opacity: 0, x: -12 }); T.init(rule, { opacity: 0, scaleX: 0 });
+      return { r, i, y, label, rule, cells, shown: false };
+    });
+    const note = notes(Object.assign({}, ctx, { obstacles: [{ x: LX0, y: top, w: CX1 - LX0, h: headH + rh * nr + 24 }] }));
+    const F = formula(ctx, data.formula);
+    const showCol = (ce, at) => { if (ce.shown) return; ce.shown = true; T.to(ce.card, { opacity: 1, y: 0, filter: "blur(0px)" }, at, 0.55, "expo.out"); };
+    const showRow = (re, at) => {
+      if (re.shown) return; re.shown = true;
+      colEls.forEach((ce, j) => showCol(ce, at - 0.3 + j * 0.05));
+      colEls.forEach((ce) => {               // the cards grow down to the lowest row shown
+        const need = Math.max(ce.rows, re.i + 1);
+        if (need > ce.rows) { T.to(ce.card, { height: headH + 24 + rh * need }, at - 0.05, 0.55, "power3.out"); ce.rows = need; }
+      });
+      T.to(re.label, { opacity: 1, x: 0 }, at, 0.45, "expo.out");
+      T.to(re.rule, { opacity: 1, scaleX: 1 }, at + 0.1, 0.6, "power2.out");
+      re.cells.forEach((cell, j) => T.to(cell, { opacity: 1, y: 0 }, at + 0.15 + j * 0.12, 0.45, "expo.out"));
+    };
+    for (const a of data.actions) {
+      const at = a.t;
+      const cs = colEls.filter((ce) => a.ids.includes(ce.c.id)), rs = rowEls.filter((re) => a.ids.includes(re.r.id));
+      if (a.do === "show") {
+        if (!a.ids.length) { colEls.forEach((ce, j) => showCol(ce, at + j * 0.12)); rowEls.forEach((re, i) => showRow(re, at + 0.4 + i * 0.35)); }
+        cs.forEach((ce, k) => showCol(ce, at + k * 0.15));
+        rs.forEach((re, k) => showRow(re, at + k * 0.3));
+      } else if (a.do === "pick") {
+        const re = rs[0], ce = cs[0];
+        if (!re || !ce) continue;
+        showRow(re, at - 0.6);
+        const box = el("div", `mk-cpick mk-r-${ce.c.role}`, layer, "<i>✓</i>");
+        box.style.left = (ce.x + 10) + "px"; box.style.top = (re.y + 8) + "px"; box.style.width = (cw - 20) + "px"; box.style.height = (rh - 16) + "px";
+        T.init(box, { opacity: 0, scale: 0.92 }); T.to(box, { opacity: 1, scale: 1 }, at, 0.45, "back.out(1.7)");
+      } else if (a.do === "focus" || a.do === "dim" || a.do === "unfocus") {
+        const rowIds = new Set(rs.map((re) => re.r.id)), colIds = new Set(cs.map((ce) => ce.c.id));
+        for (const re of rowEls) {
+          if (!re.shown) continue;
+          re.cells.forEach((cell, j) => {
+            const hit = rowIds.has(re.r.id) || colIds.has(cols[j].id);
+            const op = a.do === "unfocus" ? 1 : a.do === "focus" ? (hit ? 1 : 0.25) : (hit ? 0.25 : 1);
+            T.to(cell, { opacity: op }, at, 0.45, "power2.out");
+          });
+          const op = a.do === "unfocus" ? 1 : a.do === "focus" ? (rowIds.has(re.r.id) || !rowIds.size ? 1 : 0.3) : (rowIds.has(re.r.id) ? 0.3 : 1);
+          T.to(re.label, { opacity: op }, at, 0.45, "power2.out");
+        }
+        colEls.forEach((ce) => T.to(ce.halo, { opacity: a.do === "focus" && colIds.has(ce.c.id) ? 0.55 : 0 }, at, 0.45, "power2.out"));
+      } else if (a.do === "pulse") {
+        cs.forEach((ce) => { T.to(ce.halo, { opacity: 0.8 }, at, 0.3); T.to(ce.halo, { opacity: 0 }, at + 0.5, 0.7); });
+        rs.forEach((re) => re.cells.forEach((cell) => { T.to(cell, { scale: 1.08 }, at, 0.3, "power2.out"); T.to(cell, { scale: 1 }, at + 0.32, 0.5, "power3.out"); }));
+      } else if (a.do === "note") {
+        const re = rs[0];
+        note(a, re ? { x: LX0, y: re.y, w: CX1 - LX0, h: rh } : null, cs[0] ? cs[0].c.role : "info");
+      } else if (a.do === "formula") formulaAction(ctx, F, a);
+    }
+    if (!colEls.some((ce) => ce.shown)) { colEls.forEach((ce, j) => showCol(ce, 0.4 + j * 0.12)); rowEls.forEach((re, i) => showRow(re, 0.8 + i * 0.35)); }
+  }
+
   /* ---- scene entry ------------------------------------------------------------------------------------------- */
   function scene(id, data) {
     fontsReady().then(() => {
@@ -762,7 +1157,7 @@
       const ctx = { id, data, T, stage: layer, layer, area };
       T.init(layer, { opacity: 1, filter: "blur(0px)" });
       header(T, layer, data.num, data.title);
-      const build = { graph, bars, patches }[data.template] || graph;
+      const build = { graph, bars, patches, chart, timeline, compare }[data.template] || graph;
       build(ctx);
       exit(T, layer, data.dur);
       tl.set({}, {}, data.dur);       // the timeline spans the whole slot
@@ -838,5 +1233,6 @@
     });
   }
 
-  window.MK = { rootOf, scene, ground, intro, captions, fontsReady, header, exit, notes, Track, ROLE, rng, hash, num, esc, el, appear, vanish };
+  window.MK = { rootOf, scene, ground, intro, captions, fontsReady, header, exit, notes, formula, formulaAction, Track,
+    ROLE, rng, hash, num, esc, el, svgEl, appear, vanish };
 })();

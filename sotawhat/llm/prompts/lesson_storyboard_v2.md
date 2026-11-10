@@ -86,7 +86,7 @@ The kit builds a synthetic volume (never a real patient): `volume.organ` (`pulm√
   (outlines the focus patch).
 - volume3d: `show` (the slices appear one after another, as the scanner acquires them), `stack` (the separated
   slices close into one volume: reconstruction), `slice` (a plane cuts the volume at height `value` from 0 to 1,
-  and the cut appears beside it as a 2D image), `segment` (the organ lights up in every slice and its 3D surface
+  and the cut appears beside it as a 2D image; `value` 0 cuts through the finding), `segment` (the organ lights up in every slice and its 3D surface
   appears), `focus` (the finding glows and the camera comes closer).
 
 `formula` (optional, any template): a short formula split in parts, each a KaTeX snippet with an id, e.g.

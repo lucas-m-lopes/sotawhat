@@ -134,7 +134,7 @@ class Action(_Portuguese):
     text: str = Field(description="label: o novo texto; note, area e mark: a anotação (até 44 caracteres); "
                                   "outros: vazio")
     value: float = Field(description="scale: o divisor (ex.: 8 para raiz de 64); mark: o x do ponto; slice: a "
-                                     "altura do corte de 0 a 1; outros: 0")
+                                     "altura do corte de 0 a 1 (0 = pelo achado); outros: 0")
     cue: str = Field(description="uma palavra da frase; a ação começa quando ela é dita (vazio = início da frase)")
 
 

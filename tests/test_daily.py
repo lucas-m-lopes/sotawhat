@@ -78,7 +78,7 @@ def test_summary_escapes_html_and_links_new_items(tmp_path):
         text = render_summary(run_daily(st, {"geral": [FakeSource("arxiv", [evil])]}, today=DAY))
     assert "&lt;script&gt;" in text and "<script>" not in text
     assert '<a href="https://arxiv.org/abs/2511.00009">' in text
-    assert "run diário 2026-11-08" in to_plain(text)
+    assert "✅ 🛰️ SOTA What · run diário 08/11/2026" in to_plain(text)
 
 
 def test_unexpected_error_closes_run_as_failed(tmp_path, monkeypatch):

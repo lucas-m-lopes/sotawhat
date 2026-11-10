@@ -224,10 +224,12 @@ def test_the_week_judge_picks_and_the_section(tmp_path):
         rows = st.conn.execute("SELECT full_name, rank, card_json FROM radar_picks WHERE run_id = ?", (run,)).fetchall()
         assert len(rows) == 6 and sorted(r["rank"] for r in rows if r["rank"]) == [1, 2, 3]
         md = "\n".join(rr.section_markdown(radar))
-        assert "### 1. [s/one](https://github.com/s/one) · Skills, plugins e MCPs" in md and "relevância 4/5" in md
+        assert "### 1. [s/one](https://github.com/s/one) · 🔌 Skills, plugins e MCPs" in md and "relevância 4/5" in md
         assert "+400 na semana" in md and "a partir de 2026-11-24" in md
         texts = rr.messages(radar)
         assert len(texts) == 4 and texts[0]["tool"] is None and texts[1]["tool"] == "s/one" and "🧪 testar" in texts[1]["text"]
+        assert texts[0]["text"].startswith("🧰 <b>Ferramentas em alta</b>")
+        assert texts[1]["text"].startswith("🔌 <b>1. s/one</b> · Skills, plugins e MCPs")
         view = rr.radar_view(st)
         assert [p["name"] for p in view["picks"]] == ["s/one", "s/two", "t/one"] and view["picks"][0]["vote"] is None
         assert view["picks"][0]["history"] == [["2026-11-08", 9600], ["2026-11-15", 10000]]
@@ -250,7 +252,7 @@ def test_the_weekly_report_carries_the_radar_and_its_telegram_votes(g):  # noqa:
              "estimated": True, "picks": [pick], "notes": []}
     report = weekly.run_weekly(st, WeeklyGateway(), HashEmbedder(), SMALL, now=GRAPH_NOW, workers=1,
                                radar=lambda run_id, now, notes: radar)
-    assert report.payload["radar"] == radar and "## Ferramentas em alta" in weekly.render_markdown(report.payload)
+    assert report.payload["radar"] == radar and "## 🧰 Ferramentas em alta" in weekly.render_markdown(report.payload)
     assert "Ferramentas em alta" in weekly.render_html(report.payload)
     bot = FakeBot()
     weekly.send_weekly(bot, st, report.payload, report.run_id, pause=0)

@@ -7,6 +7,7 @@ import time
 from dataclasses import asdict
 from datetime import date, timedelta
 
+from sotawhat.notify import brand
 from sotawhat.notify.telegram import LIMIT, esc
 from sotawhat.radar.judge import judge
 from sotawhat.radar.measure import downloads, find_packages, latest_release, readme
@@ -133,13 +134,17 @@ def footer(radar) -> str:
     return text
 
 
+def _front(p) -> str:
+    return f"{brand.front(p.get('front'))} {p['front_label']}"
+
+
 def section_markdown(radar) -> list:
-    out = ["## Ferramentas em alta (radar do GitHub)", ""]
+    out = [f"## {brand.TOOLS} Ferramentas em alta (radar do GitHub)", ""]
     out += [f"> {n}" for n in radar["notes"]] + ([""] if radar["notes"] else [])
     if not radar["picks"]:
         out += ["Nada passou pelo radar desta vez.", ""]
     for p in radar["picks"]:
-        out += [f"### {p['rank']}. [{p['name']}]({p['url']}) · {p['front_label']}",
+        out += [f"### {p['rank']}. [{p['name']}]({p['url']}) · {_front(p)}",
                 f"{signal_line(p)} · relevância {p['relevance']}/5 · {p['kind']} · {p['license'] or 'licença ?'}", "",
                 f"- **O que faz:** {p['what']}", f"- **Por que serve:** {p['why']}"]
         if p["risks"]:
@@ -149,7 +154,7 @@ def section_markdown(radar) -> list:
 
 
 def section_html(radar, s, card_tag="div") -> list:
-    body = [f"<h2 {s['h2']}>Ferramentas em alta (radar do GitHub)</h2>"]
+    body = [f"<h2 {s['h2']}>{brand.TOOLS} Ferramentas em alta (radar do GitHub)</h2>"]
     body += [f"<p {s['warn']}>{esc(n)}</p>" for n in radar["notes"]]
     if not radar["picks"]:
         body.append(f"<p {s['p']}>Nada passou pelo radar desta vez.</p>")
@@ -157,7 +162,7 @@ def section_html(radar, s, card_tag="div") -> list:
         rows = [("O que faz", p["what"]), ("Por que serve", p["why"])] + \
             ([("Riscos", "; ".join(p["risks"]))] if p["risks"] else []) + [("Testar", test_line(p))]
         body.append(f"<{card_tag} {s['card']}><p {s['title']}>{p['rank']}. <a href=\"{esc(p['url'])}\">{esc(p['name'])}</a>"
-                    f" · {esc(p['front_label'])}</p><p {s['meta']}>{esc(signal_line(p))} · relevância {p['relevance']}/5 · "
+                    f" · {esc(_front(p))}</p><p {s['meta']}>{esc(signal_line(p))} · relevância {p['relevance']}/5 · "
                     f"{esc(p['kind'])} · {esc(p['license'] or 'licença ?')}</p>"
                     + "".join(f"<p {s['p']}><b>{esc(label)}:</b> {esc(text)}</p>" for label, text in rows)
                     + f"</{card_tag}>")
@@ -169,11 +174,11 @@ def messages(radar) -> list:
     """A header, then one message per tool (the buttons go on these). -> [{"text", "tool"}]."""
     if not radar or not radar["picks"]:
         return []
-    head = [f"🧰 <b>Ferramentas em alta</b> · {len(radar['picks'])} do radar do GitHub", esc(footer(radar))]
+    head = [f"{brand.TOOLS} <b>Ferramentas em alta</b> · {len(radar['picks'])} do radar do GitHub", esc(footer(radar))]
     head += [f"⚠️ {esc(n[:300])}" for n in radar["notes"][:2]]
     out = [{"text": "\n".join(head)[:LIMIT], "tool": None}]
     for p in radar["picks"]:
-        lines = [f"<b>{p['rank']}. {esc(p['name'])}</b> · {esc(p['front_label'])}",
+        lines = [f"{brand.front(p.get('front'))} <b>{p['rank']}. {esc(p['name'])}</b> · {esc(p['front_label'])}",
                  f"📈 {esc(signal_line(p))} · relevância {p['relevance']}/5", f"🔧 {esc(p['what'][:400])}",
                  f"💡 {esc(p['why'][:500])}"]
         if p["risks"]:

@@ -72,12 +72,13 @@ def test_digest_ranks_limits_and_renders(tmp_path):
         assert any("2 itens ficaram" in n for n in d.notes) and any("+1 aprovados" in n for n in d.notes)
         md = render_markdown(d)
         assert "### 1. [Título <1>](https://pubmed.ncbi.nlm.nih.gov/1/)" in md and "**4,20** · A4 B5 C3 D5" in md
-        assert "emergência/triagem" in md and "3ª falha seguida" in md and "## Também aprovados" in md
-        assert md.index("## IA ∩ Saúde") < md.index("## Fronteira de IA") < md.index("## Radar")
+        assert "emergência/triagem" in md and "3ª falha seguida" in md and "## ➕ Também aprovados" in md
+        assert md.startswith("# 🗞️ SOTA What · 08/11/2026\n\n📊 coletados")
+        assert md.index("## 🩺 IA ∩ Saúde") < md.index("## 🔭 Fronteira de IA") < md.index("## 📡 Radar")
         assert "### 2. [Título <5>](https://pubmed.ncbi.nlm.nih.gov/5/)" in md
         page = render_html(d)
         assert "Título &lt;1&gt;" in page and "<script" not in page and 'lang="pt-BR"' in page
-        assert "<h2>Fronteira de IA</h2>" in page
+        assert "<h2>🔭 Fronteira de IA</h2>" in page and "<title>SOTA What · 08/11/2026</title>" in page
         md_path, html_path = write_files(d, tmp_path / "digests")
         assert md_path.name == "2026-11-08.md" and html_path.read_text(encoding="utf-8").startswith("<!doctype html>")
 
@@ -98,7 +99,9 @@ def test_telegram_messages_buttons_and_delivery_records(tmp_path):
         messages = telegram_messages(d)
         assert len(messages) == 6 and messages[0]["silent"] is False and all(m["silent"] for m in messages[1:])
         assert "saúde 2 · fronteira 2 · radar 1" in messages[0]["text"]
-        assert messages[3]["text"].startswith("🔭 <b>3.</b>") and "Fronteira de IA" not in messages[1]["text"]
+        assert messages[0]["text"].startswith("🗞️ <b>SOTA What</b> · 08/11/2026\n📊 coletados")
+        assert messages[1]["text"].startswith("🩺 <b>1.</b>") and messages[3]["text"].startswith("🔭 <b>3.</b>")
+        assert "Fronteira de IA" not in messages[1]["text"]
         assert "⚠️ <b>Alertas</b>: semantic_scholar (3ª falha seguida)" in messages[0]["text"]
         assert "falha hoje: arxiv" in messages[0]["text"] and "Título &lt;1&gt;" in messages[1]["text"]
         bot = FakeBot()

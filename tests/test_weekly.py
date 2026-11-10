@@ -88,7 +88,9 @@ def test_run_weekly_end_to_end(g, tmp_path):  # noqa: F811
     md, page = weekly.write_files(payload, tmp_path / "weekly")
     assert md.name == "2026-11-08-semana.md" and page.exists()
     text = md.read_text(encoding="utf-8")
-    for section in ("## Ideias", "## Em alta", "## Mapa da semana", "## Lacunas", "## Regras do meta-review"):
+    assert text.startswith("# 🧭 SOTA What · relatório semanal · 08/11/2026\n\n📊 ")
+    for section in ("## 💡 Ideias", "## 📈 Em alta", "## 🗺️ Mapa da semana", "## 🧩 Lacunas",
+                    "## 📜 Regras do meta-review"):
         assert section in text
     assert "Piloto de 90 dias" in text and re.search(r"A0[16] (documentação clínica|emergência/triagem)", text)
     assert "não encontrado: problema, técnica, dado, integração, modelo de negócio, geografia/BR" in text
@@ -96,7 +98,7 @@ def test_run_weekly_end_to_end(g, tmp_path):  # noqa: F811
     html = page.read_text(encoding="utf-8")
     assert "<article" in html and "técnicas &amp; problemas" in html and "<script" not in html
     subject, plain, mail = weekly.render_email(payload)
-    assert subject.startswith("sotawhat · semana 2026-11-08 ·") and 'style="' in mail and "<style" not in mail
+    assert subject.startswith("🧭 SOTA What · semana 08/11 · 💡 ") and 'style="' in mail and "<style" not in mail
 
 
 def test_idea_votes_on_telegram(g):  # noqa: F811

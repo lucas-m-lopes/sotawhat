@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from sotawhat.items import to_item
+from sotawhat.notify import brand
 from sotawhat.notify.telegram import esc, esc_attr
 from sotawhat.pipeline.collect import collect, filter_relevant
 from sotawhat.profiles import PROFILES
@@ -205,8 +206,8 @@ def main_graph_extract(ns, settings) -> int:
 
 def render_summary(report, max_items=10) -> str:
     """P0 summary: still used for the console when the LLM triage is off."""
-    lines = [f"{'✅' if report.ok else '❌'} <b>sotawhat · run diário {report.day}</b>",
-             f"coletados {sum(report.collected.values())} · novos {len(report.new_items)} · "
+    lines = [f"{'✅' if report.ok else '❌'} {brand.RUN} <b>{brand.NAME} · run diário {brand.br_date(report.day)}</b>",
+             f"{brand.STATS} coletados {sum(report.collected.values())} · novos {len(report.new_items)} · "
              f"custo LLM US$ {report.cost_usd:.2f}"]
     for name, count in report.collected.items():
         fresh = sum(1 for it in report.new_items if it.profile == name)
@@ -219,7 +220,7 @@ def render_summary(report, max_items=10) -> str:
             flag = f" — <b>alerta: {count}ª falha seguida</b>" if count >= ALERT_AFTER else ""
             lines.append(f"• {esc(key)}: {esc(err[:120])}{flag}")
     if report.new_items:
-        lines += ["", f"<b>Novos</b> (até {max_items})"]
+        lines += ["", f"{brand.NEW} <b>Novos</b> (até {max_items})"]
         for it in report.new_items[:max_items]:
             lines.append(f'• <a href="{esc_attr(it.url)}">{esc(it.title[:140])}</a> — {esc(it.source)}')
     return "\n".join(lines)

@@ -23,6 +23,7 @@ from sotawhat.llm.gateway import BudgetExceeded, LLMFailure
 from sotawhat.llm.openrouter import InsufficientCredits
 from sotawhat.llm.prompts import load as load_prompt
 from sotawhat.llm.schemas import CommunityLabel, MetaReview
+from sotawhat.notify import brand
 from sotawhat.notify.telegram import LIMIT, esc
 from sotawhat.pipeline.deliver import _CSS, _MAIL, _clip, idea_keyboard, item_key, num, tool_keyboard
 from sotawhat.radar import report as radar_report
@@ -145,9 +146,14 @@ def build_payload(report, store) -> dict:
             "radar": report.radar}
 
 
+def _icon(payload) -> str:
+    return brand.WEEKLY if payload["kind"] == "weekly" else brand.ON_DEMAND
+
+
 def _title(payload) -> str:
     what = "relatório semanal" if payload["kind"] == "weekly" else "ideação sob demanda"
-    return f"sotawhat · {what} · {payload['day']}" + (f" · tema “{payload['theme']}”" if payload.get("theme") else "")
+    return (f"{brand.NAME} · {what} · {brand.br_date(payload['day'])}"
+            + (f" · tema “{payload['theme']}”" if payload.get("theme") else ""))
 
 
 def _stats_line(payload) -> str:
@@ -223,9 +229,9 @@ def _meta(idea) -> str:
 
 
 def render_markdown(payload) -> str:
-    out = [f"# {_title(payload)}", "", _stats_line(payload), ""]
+    out = [f"# {_icon(payload)} {_title(payload)}", "", f"{brand.STATS} {_stats_line(payload)}", ""]
     notes = _notes(payload)
-    out += [f"> {n}" for n in notes] + ([""] if notes else []) + ["## Ideias", ""]
+    out += [f"> {n}" for n in notes] + ([""] if notes else []) + [f"## {brand.IDEAS} Ideias", ""]
     if not payload["ideas"]:
         out += ["Nenhuma ideia passou pelos filtros desta vez.", ""]
     for n, idea in enumerate(payload["ideas"], 1):
@@ -234,29 +240,32 @@ def render_markdown(payload) -> str:
     if payload.get("radar"):
         out += radar_report.section_markdown(payload["radar"])
     if payload["trends"]:
-        out += ["## Em alta (7 dias contra os 28 anteriores)", ""]
+        out += [f"## {brand.TRENDS} Em alta (7 dias contra os 28 anteriores)", ""]
         out += [f"- {t['name']} ({_type(t['type'])}): {t['recent']} itens na semana, {t['baseline']} antes"
                 + (" · **novo**" if t["new"] else "") for t in payload["trends"]] + [""]
     if payload["communities"]:
-        out += ["## Mapa da semana (comunidades do grafo)", ""]
+        out += [f"## {brand.MAP} Mapa da semana (comunidades do grafo)", ""]
         out += [f"- **{c['label']}** ({c['size']} entidades): {c['summary'] or ', '.join(c['top'])}"
                 for c in payload["communities"]] + [""]
     if any(payload["gaps"].values()):
-        out += ["## Lacunas", ""]
+        out += [f"## {brand.GAPS} Lacunas", ""]
         out += [f"- **{title}:** " + "; ".join(f"{c['technique']} × {c['problem']}" for c in payload["gaps"][name])
                 for name, title in GAP_TITLES if payload["gaps"].get(name)] + [""]
     if payload["rules"]:
-        out += ["## Regras do meta-review (entram nos prompts de geração)", ""] + [f"- {r}" for r in payload["rules"]] + [""]
+        out += [f"## {brand.RULES} Regras do meta-review (entram nos prompts de geração)", ""]
+        out += [f"- {r}" for r in payload["rules"]] + [""]
     if payload["discarded"]:
-        out += ["## Descartadas e por quê", ""] + [f"- {d['title']}: {d['reason']}" for d in payload["discarded"]] + [""]
+        out += [f"## {brand.DISCARDED} Descartadas e por quê", ""]
+        out += [f"- {d['title']}: {d['reason']}" for d in payload["discarded"]] + [""]
     return "\n".join(out)
 
 
 def _html(payload, s, card="div") -> list:
     """Body blocks; `s` maps a role (h1, h2, muted, warn, card, title, meta, p, li) to an attribute string."""
-    body = [f"<h1 {s['h1']}>{esc(_title(payload))}</h1>", f"<p {s['muted']}>{esc(_stats_line(payload))}</p>"]
+    body = [f"<h1 {s['h1']}>{_icon(payload)} {esc(_title(payload))}</h1>",
+            f"<p {s['muted']}>{brand.STATS} {esc(_stats_line(payload))}</p>"]
     body += [f"<p {s['warn']}>{esc(n)}</p>" for n in _notes(payload)]
-    body.append(f"<h2 {s['h2']}>Ideias</h2>")
+    body.append(f"<h2 {s['h2']}>{brand.IDEAS} Ideias</h2>")
     if not payload["ideas"]:
         body.append(f"<p {s['p']}>Nenhuma ideia passou pelos filtros desta vez.</p>")
     for n, idea in enumerate(payload["ideas"], 1):
@@ -267,23 +276,23 @@ def _html(payload, s, card="div") -> list:
     if payload.get("radar"):
         body += radar_report.section_html(payload["radar"], s, card)
     if payload["trends"]:
-        body.append(f"<h2 {s['h2']}>Em alta (7 dias contra os 28 anteriores)</h2><ul>" + "".join(
+        body.append(f"<h2 {s['h2']}>{brand.TRENDS} Em alta (7 dias contra os 28 anteriores)</h2><ul>" + "".join(
             f"<li {s['li']}>{esc(t['name'])} <span {s['meta']}>({esc(_type(t['type']))}) {t['recent']} na semana, "
             f"{t['baseline']} antes{' · novo' if t['new'] else ''}</span></li>" for t in payload["trends"]) + "</ul>")
     if payload["communities"]:
-        body.append(f"<h2 {s['h2']}>Mapa da semana</h2><ul>" + "".join(
+        body.append(f"<h2 {s['h2']}>{brand.MAP} Mapa da semana</h2><ul>" + "".join(
             f"<li {s['li']}><b>{esc(c['label'])}</b> <span {s['meta']}>({c['size']} entidades)</span> "
             f"{esc(c['summary'] or ', '.join(c['top']))}</li>" for c in payload["communities"]) + "</ul>")
     if any(payload["gaps"].values()):
-        body.append(f"<h2 {s['h2']}>Lacunas</h2><ul>" + "".join(
+        body.append(f"<h2 {s['h2']}>{brand.GAPS} Lacunas</h2><ul>" + "".join(
             f"<li {s['li']}><b>{esc(title)}:</b> "
             + esc("; ".join(f"{c['technique']} × {c['problem']}" for c in payload["gaps"][name])) + "</li>"
             for name, title in GAP_TITLES if payload["gaps"].get(name)) + "</ul>")
     if payload["rules"]:
-        body.append(f"<h2 {s['h2']}>Regras do meta-review</h2><ul>"
+        body.append(f"<h2 {s['h2']}>{brand.RULES} Regras do meta-review</h2><ul>"
                     + "".join(f"<li {s['li']}>{esc(r)}</li>" for r in payload["rules"]) + "</ul>")
     if payload["discarded"]:
-        body.append(f"<h2 {s['h2']}>Descartadas e por quê</h2><ul>" + "".join(
+        body.append(f"<h2 {s['h2']}>{brand.DISCARDED} Descartadas e por quê</h2><ul>" + "".join(
             f"<li {s['li']}>{esc(d['title'])} <span {s['meta']}>— {esc(d['reason'])}</span></li>"
             for d in payload["discarded"]) + "</ul>")
     return body
@@ -309,7 +318,8 @@ def render_email(payload) -> tuple:
             '<meta name="viewport" content="width=device-width, initial-scale=1"></head>'
             f'<body style="{_MAIL["body"]}">' + "".join(body) + "</body></html>")
     what = "semana" if payload["kind"] == "weekly" else "ideias"
-    subject = f"sotawhat · {what} {payload['day']} · {len(payload['ideas'])} ideias" + (" ⚠️" if _notes(payload) else "")
+    subject = (f"{_icon(payload)} {brand.NAME} · {what} {brand.br_date(payload['day'], year=False)} · "
+               f"{brand.IDEAS} {len(payload['ideas'])} ideias" + (f" · {brand.FAILING}" if _notes(payload) else ""))
     return subject, render_markdown(payload), html
 
 
@@ -331,17 +341,17 @@ def telegram_messages(payload) -> list:
     """A header, then one message per idea (the buttons go on these). Text is clipped before escaping, so an
     HTML entity is never cut in half."""
     s = payload["stats"]
-    head = [f"💡 <b>{esc(_title(payload))}</b>",
-            esc(f"{len(payload['ideas'])} ideias de {s['drafts']} rascunhos · US$ {num(s['cost_usd'], 3)}")]
+    head = [f"{_icon(payload)} <b>{esc(_title(payload))}</b>",
+            f"{brand.IDEAS} " + esc(f"{len(payload['ideas'])} ideias de {s['drafts']} rascunhos · US$ {num(s['cost_usd'], 3)}")]
     if payload["trends"]:
-        head.append("📈 em alta: " + esc(_clip(", ".join(t["name"] for t in payload["trends"][:8]), 400)))
+        head.append(f"{brand.TRENDS} em alta: " + esc(_clip(", ".join(t["name"] for t in payload["trends"][:8]), 400)))
     if payload["communities"]:
-        head.append("🗺️ mapa: " + esc(_clip(" | ".join(c["label"] for c in payload["communities"][:6]), 500)))
+        head.append(f"{brand.MAP} mapa: " + esc(_clip(" | ".join(c["label"] for c in payload["communities"][:6]), 500)))
     head += [f"⚠️ {esc(_clip(n, 300))}" for n in _notes(payload)[:3]]
     messages = [{"text": "\n".join(head)[:LIMIT], "idea": None}]
     for n, idea in enumerate(payload["ideas"], 1):
         d = idea["draft"]
-        lines = [f"<b>{n}. {esc(_clip(idea['title'], 200))}</b>",
+        lines = [f"{brand.IDEAS} <b>{n}. {esc(_clip(idea['title'], 200))}</b>",
                  f"⭐ <b>{num(idea['score'])}</b> · lente {esc(idea['lens'])} · {esc(_sector(d))} · {esc(d.get('forma', '?'))}",
                  f"🩺 {esc(_clip(d.get('problema_jtbd', ''), 400))}", f"⚙️ {esc(_clip(d.get('mecanismo', ''), 600))}",
                  f"⏱️ {esc(_clip(d.get('why_now', ''), 250))}", f"🛑 {esc(_clip(d.get('hipotese_nula', ''), 250))}"]

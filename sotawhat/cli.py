@@ -112,7 +112,10 @@ def parse_args(argv):
     p_extract.add_argument("--force", action="store_true", help="overwrite an existing draft")
 
     p_repair = sub.add_parser("repair", help="fix stored texts (P6)")
-    p_repair.add_argument("repair_action", choices=["cjk"], help="cjk: triage texts with Chinese/Japanese/Korean characters")
+    p_repair.add_argument("repair_action", choices=["cjk", "names"],
+                          help="cjk: triage texts with Chinese/Japanese/Korean characters; names: entity names the "
+                               "old singular rule cut ('AI bia' → 'AI bias')")
+    p_repair.add_argument("--dry-run", action="store_true", help="names: show what would change, write nothing")
 
     p_calibrate = sub.add_parser("calibrate", help="proposals for the triage cut-offs and the idea weights (P6)")
     p_calibrate.add_argument("--apply", action="store_true", help="write the proposal to config/")

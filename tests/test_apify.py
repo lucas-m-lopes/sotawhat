@@ -57,6 +57,34 @@ def test_failed_and_stuck_runs_and_bad_tokens():
         ApifyClient("").run("a~b", {})
 
 
+def test_a_stuck_run_keeps_what_it_fetched_when_partial_and_an_old_run_can_be_read():
+    ticks = iter([0, 0, 700, 700])
+
+    def stuck(request):
+        if request.url.path.endswith("/abort"):
+            return httpx.Response(200, json={"data": {"id": "r4", "status": "ABORTING"}})
+        if request.url.path.endswith("/datasets/d4/items"):
+            return httpx.Response(200, json=[{"username": "a"}, {"username": "b"}])
+        return httpx.Response(200, json={"data": {"id": "r4", "status": "RUNNING", "defaultDatasetId": "d4"}})
+
+    client = ApifyClient("t", client=_client(stuck), wait_seconds=600, clock=lambda: next(ticks))
+    assert client.run("a~b", {}, partial=True) == [{"username": "a"}, {"username": "b"}]
+
+    def old(request):
+        if request.url.path.endswith("/actor-runs/r5"):
+            return httpx.Response(200, json={"data": {"id": "r5", "status": "ABORTED", "defaultDatasetId": "d5"}})
+        if request.url.path.endswith("/datasets/d5/items"):
+            return httpx.Response(200, json=[{"username": "c"}])
+        return httpx.Response(404)
+
+    assert ApifyClient("t", client=_client(old)).items("r5") == [{"username": "c"}]
+    timed_out = lambda r: httpx.Response(201 if r.method == "POST" else 200, json=(  # noqa: E731
+        {"data": {"id": "r6", "status": "TIMED-OUT", "defaultDatasetId": "d6"}} if "datasets" not in r.url.path else []))
+    assert ApifyClient("t", client=_client(timed_out)).run("a~b", {}, partial=True) == []
+    with pytest.raises(ApifyError, match="TIMED-OUT"):
+        ApifyClient("t", client=_client(timed_out)).run("a~b", {})
+
+
 def test_usage_of_the_month():
     def handler(request):
         return httpx.Response(200, json={"data": {"monthlyUsageCycle": {"endAt": "2026-12-07T23:59:59.999Z"},

@@ -30,6 +30,7 @@ class Privacy:
     data_collection: str = "deny"
     quantizations: list = field(default_factory=lambda: ["fp8", "bf16", "fp16", "fp32", "unknown"])
     sort: str | None = "price"
+    max_price: dict | None = None     # {"prompt": US$/M, "completion": US$/M}: endpoints above it are never used
 
     def provider_prefs(self) -> dict:
         prefs = {"require_parameters": True, "allow_fallbacks": True,
@@ -40,6 +41,8 @@ class Privacy:
             prefs["quantizations"] = list(self.quantizations)
         if self.sort:
             prefs["sort"] = self.sort
+        if self.max_price:
+            prefs["max_price"] = dict(self.max_price)
         return prefs
 
 

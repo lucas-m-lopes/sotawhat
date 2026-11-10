@@ -7,6 +7,7 @@ import random
 import shutil
 import threading
 import time
+from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +26,7 @@ from sotawhat.llm.tasks import DEEPSEEK_FLASH, KIMI_PRO, MIMO_PRO
 PLAN_MODELS = {"economico": None, "equilibrado": (KIMI_PRO, DEEPSEEK_FLASH, MIMO_PRO)}
 TITLE_S, END_S = 4.0, 4.0
 LLM_TIMEOUT_S = 900.0
+MAX_PRICE = {"economico": {"prompt": 1.0, "completion": 2.5}, "equilibrado": {"prompt": 3.0, "completion": 10.0}}
 SCENE_WORKERS = 3
 
 
@@ -175,7 +177,22 @@ def rerender(settings, store, tools, lesson_id, voice):
     _save(work / "report.json", report)
 
 
-def _gateway(settings, store, run_id, previous_cost):
+def forget_scenes(settings, lesson_id, which) -> list:
+    """Drops the code, video and report of some scenes ("2,5"), so `resume` makes them again."""
+    numbers = sorted({int(x) for x in str(which).replace(" ", "").split(",") if x})
+    work = lesson_dir(settings, lesson_id)
+    report = _load(work / "report.json", {"scenes": {}})
+    for n in numbers:
+        scene_dir = work / "scenes" / f"{n:02d}"
+        for name in ("scene.py", "scene.js", "out.mp4", "audio.wav", "warnings.txt"):
+            (scene_dir / name).unlink(missing_ok=True)
+        shutil.rmtree(scene_dir / "frames", ignore_errors=True)
+        report.get("scenes", {}).pop(str(n), None)
+    _save(work / "report.json", report)
+    return numbers
+
+
+def _gateway(settings, store, run_id, previous_cost, mode="economico"):
     from sotawhat.configfiles import load_config
     from sotawhat.llm.gateway import LLMGateway
     from sotawhat.llm.openrouter import OpenRouterClient
@@ -186,18 +203,23 @@ def _gateway(settings, store, run_id, previous_cost):
     client = OpenRouterClient(settings.openrouter_api_key, base_url=settings.openrouter_base_url,
                               app_title=settings.openrouter_app_title, timeout=LLM_TIMEOUT_S)
     budget = max(0.05, settings.sotawhat_llm_budget_usd_lesson - previous_cost)
-    return LLMGateway(client, store=store, settings=settings, run_id=run_id,
-                      tasks=load_config(settings.sotawhat_config_dir).llm.get("tasks"), budget_run=budget)
+    gateway = LLMGateway(client, store=store, settings=settings, run_id=run_id,
+                         tasks=load_config(settings.sotawhat_config_dir).llm.get("tasks"), budget_run=budget)
+    # a model can have a ZDR endpoint ten times dearer than the others (MiMo-V2.6-Pro: PrimaLabs US$ 4/8 per M vs
+    # DeepInfra US$ 0.39/0.78; three pilot calls there cost US$ 0.52): the lessons never pay more than this
+    gateway.privacy = replace(gateway.privacy, max_price=MAX_PRICE[mode])
+    return gateway
 
 
-def run_lesson(settings, store, tools, lesson_id, voice, mode, deliver, log=print) -> int:
+def run_lesson(settings, store, tools, lesson_id, voice, mode, deliver, log=print, fresh_budget=False) -> int:
+    """`fresh_budget`: the lesson cap counts from zero (scenes you asked to redo), not from what was spent."""
     from sotawhat.llm.gateway import BudgetExceeded, LLMFailure
     from sotawhat.llm.openrouter import InsufficientCredits
 
     lesson = store.get_lesson(lesson_id)
-    previous = json.loads(lesson["report_json"] or "{}").get("cost_usd") or 0.0
+    previous = 0.0 if fresh_budget else json.loads(lesson["report_json"] or "{}").get("cost_usd") or 0.0
     run_id = store.start_run("lesson")
-    gateway = _gateway(settings, store, run_id, previous)
+    gateway = _gateway(settings, store, run_id, previous, mode)
     try:
         report = make_lesson(settings, store, gateway, tools, lesson_id, voice, mode=mode, log=log)
     except (LessonError, BudgetExceeded, InsufficientCredits, LLMFailure, RenderError, VoiceError, RuntimeError) as exc:
@@ -334,8 +356,11 @@ def main_lessons(ns) -> int:
             return 0
         if ns.lessons_action == "rerender":
             rerender(settings, store, tools, lesson_id, voice)
+        if ns.lessons_action == "resume" and getattr(ns, "refazer", ""):
+            redo = forget_scenes(settings, lesson_id, ns.refazer)
+            log(f"refazendo as cenas {', '.join(map(str, redo))}")
         deliver = ns.lessons_action in ("make", "resume") and not ns.no_send
         return run_lesson(settings, store, tools, lesson_id, voice, getattr(ns, "modo", "economico") or "economico",
-                          deliver, log=log)
+                          deliver, log=log, fresh_budget=bool(getattr(ns, "refazer", "")))
 
 

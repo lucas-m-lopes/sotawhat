@@ -44,4 +44,7 @@ export default function build(kit) {
 - Cross-sections and slices: thin `BoxGeometry` planes or clipping by scale; volumes of voxels with
   `InstancedMesh` (set each instance matrix once in build, animate the whole mesh in update).
 
+Keep the module compact: about 120–220 lines, short helper functions, no long comments, no generic
+utility libraries.
+
 Answer only with JSON: {"code": "<the complete JavaScript module>"}.

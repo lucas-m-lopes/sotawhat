@@ -96,3 +96,11 @@ def test_key_info_and_models():
     client = _client(handler)
     assert client.key_info()["limit_remaining"] == 28.5
     assert client.models()[0]["id"] == "deepseek/deepseek-v4.1-flash-1017"
+
+
+def test_max_price_keeps_dear_endpoints_out():
+    from sotawhat.llm.openrouter import Privacy, build_payload
+
+    payload = build_payload(["xiaomi/mimo-v2.6-pro"], [], privacy=Privacy(max_price={"prompt": 1.0, "completion": 2.5}))
+    assert payload["provider"]["max_price"] == {"prompt": 1.0, "completion": 2.5}
+    assert "max_price" not in build_payload(["x/y"], [])["provider"]

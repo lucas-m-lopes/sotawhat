@@ -208,6 +208,21 @@ research in `docs/research/reports/Aulas didáticas animadas em 3D.md`):
   - `lessons send N`, `lessons pack N` and `lessons list` deliver a lesson, export its pack and list the lessons.
 - Voice: Piper by default (local). Google Chirp 3 HD (`google:pt-BR-Chirp3-HD-Charon`) needs `GOOGLE_TTS_API_KEY`.
   A lesson made from a ledger idea should keep a local voice.
+- After the pilot feedback (arrows out of place, overlaps, artificial pauses):
+  - Scenes draw arrows with `connect(a, b)`, which follows its ends and disappears with them.
+  - The layout check rejects:
+    - arrows left behind after their object left;
+    - arrows that arrive before their target;
+    - loose arrows and arrows that cross objects;
+    - partial overlaps between objects;
+    - LaTeX typed into a Text;
+    - more than 16 things on stage.
+  - A vision model reviews the frame at the end of every sentence (gate G4). A serious defect goes back with the
+    frames to a model that sees images.
+  - The narration is written for the ear: short sentences, at most one comma, no colons or parentheses.
+  - Before synthesis the text is rewritten for speech: acronyms spelled out, symbols written as words.
+  - Pauses are shaped: 0.24 s at commas, 0.32 s between sentences and 0.75 s at the end of a scene.
+  - Lesson calls never pay more than US$ 1/2.5 per million tokens.
 
 To set it up, copy `.env.example` to `.env` and fill in at least `OPENROUTER_API_KEY`,
 `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Then schedule the runs with

@@ -47,7 +47,7 @@ class Tools:
     def env(self, **extra) -> dict:
         """A minimal environment: no secrets reach code written by an LLM."""
         out = {k: os.environ[k] for k in _KEEP_ENV if k in os.environ}
-        out.update({"PLAYWRIGHT_BROWSERS_PATH": str(self.browsers), "PYTHONIOENCODING": "utf-8",
+        out.update({"PLAYWRIGHT_BROWSERS_PATH": str(self.browsers), "PYTHONIOENCODING": "utf-8", "COLUMNS": "240",
                     "MPLCONFIGDIR": str(self.root / "mpl")})
         out.update({k: str(v) for k, v in extra.items()})
         return out

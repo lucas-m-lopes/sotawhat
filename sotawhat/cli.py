@@ -73,6 +73,7 @@ def parse_args(argv):
     p_lessons.add_argument("--modo", choices=["economico", "equilibrado"], default="economico",
                            help="equilibrado: Kimi K3.1 Pro writes the storyboard")
     p_lessons.add_argument("--sem-envio", dest="no_send", action="store_true", help="do not send it to Telegram")
+    p_lessons.add_argument("--refazer", default="", help="resume: scenes to make again, e.g. 2,5")
 
     p_backup = sub.add_parser("backup", help="copy data/insight.db to data/backups (P6)")
     p_backup.add_argument("--keep", type=int, default=8, help="copies to keep (default 8)")

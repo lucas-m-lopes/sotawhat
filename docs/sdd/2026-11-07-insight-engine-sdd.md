@@ -8,7 +8,7 @@
 - decisões de 2026-11-08 incorporadas: digest em duas seções, "IA ∩ Saúde" e "Fronteira de IA" (escolha feita a partir do golden set), e cópia do digest por e-mail (§6.7, §6.11, §16.1);
 - v1.4: o Obsidian sai do projeto, e nada lê nem escreve no vault (§9, D12). A interface própria com o grafo vem para a P3, que passa a ser executada antes da P2. O grafo de entidades fica no SQLite, e o Neo4j vira espelho (§6.3, §11, D16);
 - v1.5: P2 executada (fontes novas como canais com teto diário, triagem v2 com os tipos de item, Gmail por label; §11). A pedido do usuário ("continue a implantação segundo o plano SDD direto até o final"), as fases seguem sem pausa: P4, P5 e P6;
-- v2.3: aulas 3D, fases F0 e F1 do relatório `docs/research/reports/Aulas didáticas animadas em 3D.md`. Os detalhes estão no plano `docs/superpowers/plans/2026-11-09-aulas-3d-f0-f1.md`.
+- v2.3 (+ rodada de qualidade): setas presas às pontas, verificador de layout e revisão visual G4; narração escrita para o ouvido e pausas modeladas; teto de preço por token. Aulas 3D, fases F0 e F1 do relatório `docs/research/reports/Aulas didáticas animadas em 3D.md`. Os detalhes estão no plano `docs/superpowers/plans/2026-11-09-aulas-3d-f0-f1.md`.
   - `sotawhat lessons` transforma um tema do grafo numa aula narrada em pt-BR, animada por código escrito pelo LLM e renderizado no PC: Manim no abstrato, three.js no espacial.
   - Portões: G1 (fatos), G2 (roteiro), G3 (layout e render) e G8 (sua revisão).
   - Entrega: quiz no Telegram, re-quiz em 2 dias e aba Aulas com as cenas 3D interativas.

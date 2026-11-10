@@ -111,8 +111,10 @@ def render_three(tools, lessons_root, scene_dir, lenient=False) -> Path:
     page = scene_dir.relative_to(lessons_root).as_posix() + "/index.html"
     out = scene_dir / "out.mp4"
     args = [tools.python, KIT / "capture.py", lessons_root, page, out] + (["--lenient"] if lenient else [])
+    work = tools.root / "work"          # Chromium's GPU driver drops a shader cache in the working folder
+    work.mkdir(parents=True, exist_ok=True)
     try:
-        done = tools.run(args, cwd=scene_dir, timeout=CAPTURE_TIMEOUT)
+        done = tools.run(args, cwd=work, timeout=CAPTURE_TIMEOUT)
     except subprocess.TimeoutExpired:
         raise RenderError(f"a captura passou de {CAPTURE_TIMEOUT // 60} min: simplifique a cena (menos objetos)") from None
     if done.returncode != 0 or not out.exists():

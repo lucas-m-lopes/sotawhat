@@ -18,7 +18,8 @@ from sotawhat.llm.prompts import load as load_prompt
 from sotawhat.llm.schemas import _Portuguese
 
 PROMPT = "lesson_storyboard_v1"
-TEMPLATES = ("graph", "bars", "vectors3d", "patches")
+TEMPLATES = ("graph", "bars", "chart", "timeline", "compare", "vectors3d", "patches", "volume3d")
+TEMPLATES_3D = ("vectors3d", "volume3d")
 ROLES = ("token", "embedding", "query", "key", "value", "score", "weight", "output", "neutral", "alert", "info")
 MAX_VISIBLE, MAX_COLS, MAX_ROWS = 7, 6, 5
 LABEL_MAX, GLOSS_MAX, NOTE_MAX = 24, 34, 44

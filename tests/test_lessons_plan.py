@@ -1,8 +1,8 @@
 # tests/test_lessons_plan.py
 """Lessons: the source pack, the storyboard lint (G2), the planner's repair round and the fact gate (G1)."""
 from sotawhat.lessons.pack import Pack, Source, build_pack, pack_markdown, pack_prompt, pick_topic
-from sotawhat.lessons.plan import (Beat, FactCheck, FactProblem, LessonPlan, QuizItem, Scene, Term, check_facts,
-                                   estimate_seconds, lint, make_plan, revise_plan, slug)
+from sotawhat.lessons.plan import (Beat, FactCheck, FactProblem, LessonPlan, MotionPlan, MotionScene, QuizItem, Scene,
+                                   Term, check_facts, estimate_seconds, lint, load_plan, make_plan, revise_plan, slug)
 from tests.test_graph_query import g  # noqa: F401 - the graph fixture
 
 SENTENCE = " ".join(["palavra"] * 18)          # 18 words, ~10 s of narration
@@ -103,3 +103,42 @@ def test_pick_topic_skips_taught_and_non_process_entities(g):  # noqa: F811
     assert pick_topic(st, min_sources=2) == ("MedGemma 1.5", [ids["med"]])
     st.create_lesson("MedGemma", [ids["med"]])
     assert pick_topic(st, min_sources=1) == ("missed fracture", [ids["fract"]])
+
+
+# --- the HyperFrames plan: each scene names its kit template ------------------------------------------------------
+def motion_plan_with(templates=("graph",) * 7, beats=4, example="o token nódulo; scores 8, 24 e 4") -> MotionPlan:
+    scenes = [MotionScene(title=f"Cena {n}", template=t, goal="entender", labels=[Term(term="Q", gloss_pt="consulta")],
+                          beats=[Beat(narration=SENTENCE, visual="aparece", source=0) for _ in range(beats)])
+              for n, t in enumerate(templates)]
+    return MotionPlan(title="Atenção", process="atenção", objective="entender a atenção", example=example,
+                      prerequisites=[Term(term=t, gloss_pt=t) for t in ("Q", "K", "V")], scenes=scenes,
+                      quiz=[QuizItem(question="Por quê?", options=["a", "b", "c"], answer=1, explanation="porque",
+                                     source=-1) for _ in range(4)])
+
+
+def test_motion_plan_lint_counts_3d_scenes_and_wants_the_example():
+    assert lint(motion_plan_with(("graph", "bars", "chart", "vectors3d", "volume3d", "compare", "graph")), 2) == []
+    problems = " | ".join(lint(motion_plan_with(("graph", "vectors3d", "vectors3d", "vectors3d", "volume3d", "bars",
+                                                  "graph")), 2))
+    assert "no máximo 3 cenas em 3D" in problems and "3 cenas vectors3d" in problems
+    assert any("example" in p for p in lint(motion_plan_with(example=""), 2))
+    staged = motion_plan_with()
+    staged.scenes[1].beats[0].narration = "Limpa a tela. " + SENTENCE
+    assert any("c2f1" in p and "instrução de palco" in p for p in lint(staged, 2))
+
+
+def test_load_plan_reads_both_engines():
+    motion = load_plan(motion_plan_with(("graph", "volume3d") + ("graph",) * 5).model_dump_json())
+    assert isinstance(motion, MotionPlan) and [s.mode for s in motion.scenes[:2]] == ["manim", "three"]
+    assert isinstance(load_plan(plan_with().model_dump()), LessonPlan)
+
+
+def test_the_motion_planner_gets_the_template_prompt_and_repairs_with_it():
+    gw = FakeGateway(motion_plan_with(example=""), motion_plan_with())
+    plan, problems = make_plan(gw, Pack(topic="Atenção", sources=[Source(0, "u", "t", "", "", "", "")]),
+                               schema=MotionPlan)
+    assert isinstance(plan, MotionPlan) and problems == [] and len(gw.calls) == 2
+    assert "Scene templates" in gw.calls[0][1][0]["content"] and "example" in gw.calls[1][1][-1]["content"]
+    gw2 = FakeGateway(motion_plan_with())
+    revise_plan(gw2, plan, Pack(topic="Atenção", sources=[]), [FactProblem(sentence="c1f1", issue="x")])
+    assert "Scene templates" in gw2.calls[0][1][0]["content"]

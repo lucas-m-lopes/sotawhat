@@ -206,18 +206,21 @@ def lesson_payload(st, row, lessons_dir, detail=False) -> dict:
     scenes = (report.get("scenes") or {})
     out = {"id": row["id"], "topic": row["topic"], "title": row["title"] or row["topic"], "status": row["status"],
            "created_at": row["created_at"], "duration_s": row["duration_s"], "size_bytes": row["size_bytes"],
-           "cost_usd": row["cost_usd"], "voice": row["voice"], "review": row["review"], "comparison": row["comparison"],
+           "cost_usd": row["cost_usd"], "cost_brl": report.get("cost_brl"), "engine": report.get("engine") or "manim",
+           "voice": row["voice"], "review": row["review"], "comparison": row["comparison"],
            "error": row["error"], "objective": (plan or {}).get("objective"),
            "video": f"/lessons/{folder}/aula.mp4" if row["video_path"] and (lessons_dir / folder / "aula.mp4").exists() else None,
            "sources_md": f"/lessons/{folder}/fontes.md" if (lessons_dir / folder / "fontes.md").exists() else None,
            "quiz_score": [st.lesson_score(row["id"], 0), st.lesson_score(row["id"], 1)],
            "scenes3d": [{"n": n, "title": s["title"], "url": f"/lessons/{folder}/scenes/{n:02d}/index.html"}
                         for n, s in enumerate((plan or {}).get("scenes") or [], 1)
-                        if s["mode"] == "three" and (scenes.get(str(n)) or {}).get("ok")]}
+                        if s.get("mode") == "three" and (scenes.get(str(n)) or {}).get("ok")]}
     if detail:
         sources = lessons_dir / folder / "sources.json"
         out.update(plan=plan, report={k: report.get(k) for k in ("gates", "timings", "scenes", "video", "fallbacks",
-                                                                  "first_try", "mode")},
+                                                                  "first_try", "mode", "engine", "check", "narration",
+                                                                  "storyboard", "llm_usd", "voice", "cost_usd",
+                                                                  "cost_brl", "ptax")},
                    sources=json.loads(sources.read_text(encoding="utf-8"))["sources"] if sources.exists() else [])
     return out
 

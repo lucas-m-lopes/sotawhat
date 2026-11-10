@@ -177,68 +177,69 @@ After P6, newsletters by RSS (2026-11-09):
   filter that also labels them never doubles the stories. The scheduled daily and weekly runs use
   `pythonw.exe`: with no console window, closing a window can no longer kill a run.
 
-Animated lessons (aulas 3D, F0/F1, 2026-11-09; plan in `docs/superpowers/plans/2026-11-09-aulas-3d-f0-f1.md`,
-research in `docs/research/reports/Aulas didáticas animadas em 3D.md`):
+Animated lessons (aulas; research in `docs/research/reports/Aulas didáticas animadas em 3D.md`; plans in
+`docs/superpowers/plans/2026-11-09-aulas-3d-f0-f1.md` and `docs/superpowers/plans/2026-11-10-aulas-motor-hyperframes.md`):
 
-- `sotawhat lessons setup` installs the tools in `data/tools/lessons`:
-  - a uv venv with packages at least two weeks old: Manim 0.22.0, Playwright 1.64.1, matplotlib, Piper and FFmpeg;
-  - Chromium;
-  - the Brazilian Portuguese Piper voices (faber, cadu, jeff; CC0 data).
 - `sotawhat lessons make --tema "Atenção no Transformer" [--entidade 105 …]` (or `--auto`, the strongest weekly
-  trend without a lesson) makes a 3–6 minute lesson:
+  trend without a lesson) makes a 3–6 minute lesson in the HyperFrames engine (since 2026-11-10):
   1. The source pack is built from the graph.
-  2. An LLM writes the storyboard, which goes through the G2 lint and the G1 fact gate (one revision round).
-  3. Each sentence is narrated, and its length times its animation.
-  4. An LLM writes each scene as code: Manim for the abstract, three.js only for the spatial.
-  5. The code passes a policy (no files, network, processes or DOM) and is rendered on the PC. A failure goes back
-     for repair, escalates to Kimi K3.1 Pro after two tries and, as a last resort, becomes a slide.
-  6. The MP4 is assembled under 48 MB, with subtitles drawn in the picture.
+  2. An LLM writes the plan (`lesson_plan_v3`). Each scene names the kit template that shows it, and one worked
+     example with its numbers travels through the lesson. The plan goes through the G2 lint and the G1 fact gate,
+     with one revision round.
+  3. An LLM writes the storyboard (`sotawhat/lessons/storyboard.py`). It fills the template of each scene with data
+     and lists the actions of each sentence, each with the word that triggers it. It runs before the voice, so a
+     failure here spends no credits.
+  4. ElevenLabs narrates each scene (`eleven_v4`, voice Klaus), with the time of every word. Those times drive
+     the captions and the cue words. Every scene is cached, so a rerun spends no credits.
+  5. The kit (`sotawhat/lessons/motion_kit`: HTML, CSS, GSAP; three.js for the 3D) owns layout, links, motion, type
+     and colour, and HyperFrames renders the video: headless Chrome plus FFmpeg, deterministic. The MP4 fits in
+     48 MB. A resume with nothing changed keeps the video.
+- The kit templates:
+  - `graph`: parts and arrows routed border to border.
+  - `bars`: scores, softmax and weights.
+  - `chart`: curves on axes. A ROC curve is drawn from its AUC, so the number said, the curve and the area agree.
+  - `timeline`: events in time.
+  - `compare`: alternatives side by side.
+  - `vectors3d`: dot products as angles.
+  - `patches`: an image cut into tokens.
+  - `volume3d`: synthetic CT/MRI slices that stack into a volume, a cut with its 2D image, an organ segmented into a
+    marching-cubes surface, and a finding.
 - The video goes to Telegram with:
+  - the cost of the lesson, LLM plus voice, in US$ and in R$ at the PTAX of the Banco Central;
   - the quiz;
   - your review buttons (✅ / ⚠️);
   - the comparison with the NotebookLM Video Overview generated from `fontes.md`.
 
   The daily run sends the re-quiz two days later.
-- The Aulas tab of the interface shows the videos, the 3D scenes as interactive pages (timeline, narration, free
-  orbit), the storyboard, the gates and the review checklist.
+- Cost:
+  - The voice is priced as credits × your plan's price per credit (`SOTAWHAT_ELEVENLABS_PLAN_USD`,
+    `SOTAWHAT_ELEVENLABS_PLAN_CREDITS`: Starter is US$ 5 for 30k credits; a 3.5-minute lesson uses about 2.7k).
+  - The R$ comes from the PTAX of the Banco Central (open-data API, `sotawhat/fx.py`).
+  - The LLM cap per lesson (`SOTAWHAT_LLM_BUDGET_USD_LESSON`) counts only the LLM.
 - Other commands:
-  - `lessons resume N` continues a lesson where it stopped;
-  - `lessons rerender N --voz …` re-narrates without the LLM;
-  - `lessons voices` sends a blind voice test to Telegram (your vote picks the voice);
+  - `lessons resume N [--refazer plano,storyboard,voz,video]` continues a lesson or redoes some steps (`voz`
+    spends credits again);
+  - `lessons hf N` remakes an older lesson (its plan and sources) in the HyperFrames engine;
   - `lessons send N`, `lessons pack N` and `lessons list` deliver a lesson, export its pack and list the lessons.
-- Voice: Piper by default (local). Google Chirp 3 HD (`google:pt-BR-Chirp3-HD-Charon`) needs `GOOGLE_TTS_API_KEY`.
-  A lesson made from a ledger idea should keep a local voice.
-- After the pilot feedback (arrows out of place, overlaps, artificial pauses):
-  - Scenes draw arrows with `connect(a, b)`, which follows its ends and disappears with them.
-  - The layout check rejects:
-    - arrows left behind after their object left;
-    - arrows that arrive before their target;
-    - loose arrows and arrows that cross objects;
-    - partial overlaps between objects;
-    - LaTeX typed into a Text;
-    - more than 16 things on stage.
-  - A vision model reviews the frame at the end of every sentence (gate G4). A serious defect goes back with the
-    frames to a model that sees images.
-  - The narration is written for the ear: short sentences, at most one comma, no colons or parentheses.
-  - Before synthesis the text is rewritten for speech: acronyms spelled out, symbols written as words.
-  - Pauses are shaped: 0.24 s at commas, 0.32 s between sentences and 0.75 s at the end of a scene.
-  - Lesson calls never pay more than US$ 1/2.5 per million tokens.
-- HyperFrames prototype (2026-11-10, after the second feedback: arrows blinking and misaligned, a bland look, a
-  robotic voice): `sotawhat lessons hf 4 [--aula N] [--sem-envio] [--refazer storyboard,voz]` remakes lesson 4's
-  plan with another engine.
-  - The LLM no longer draws. It writes a storyboard (`sotawhat/lessons/storyboard.py`): for each scene it picks a
-    kit template (`graph`, `bars`, `vectors3d`, `patches`), fills it with data and lists the actions of each
-    sentence, each with the word that triggers it.
-  - The kit (`sotawhat/lessons/motion_kit`: HTML, CSS, GSAP; three.js for the 3D template) owns layout, links,
-    motion, type and colour. A link is routed from border to border and fades with its ends.
-  - HyperFrames (HeyGen, Apache-2.0) renders it: headless Chrome plus FFmpeg, deterministic. It is pinned in
-    `data/tools/hyperframes` with versions at least two weeks old, and its telemetry is off:
-    `npm install --before=2026-10-26T20:00:00Z --ignore-scripts --save-exact hyperframes@0.8.206 gsap@3.15.0
-    three@0.186.1 katex@0.19.1 @fontsource/fraunces@5.3.0 @fontsource/manrope@5.3.0 lucide-static@1.61.0
-    @ffprobe-installer/win32-x64@5.1.0`.
-  - The narration is ElevenLabs (`ELEVENLABS_API_KEY`, model `eleven_v4`, voice Klaus): one request per scene,
-    with the time of every word. Those times drive the captions and the cue words. Every scene is cached, so a
-    rerun spends no credits.
+- The Aulas tab of the interface shows:
+  - the videos;
+  - the plan with the template of each scene;
+  - the gates and the HyperFrames check;
+  - what the lesson cost;
+  - the review checklist.
+- HyperFrames (HeyGen, Apache-2.0) is pinned in `data/tools/hyperframes` with versions at least two weeks old, and
+  its telemetry is off:
+  `npm install --before=2026-10-26T20:00:00Z --ignore-scripts --save-exact hyperframes@0.8.206 gsap@3.15.0
+  three@0.186.1 katex@0.19.1 @fontsource/fraunces@5.3.0 @fontsource/manrope@5.3.0 lucide-static@1.61.0
+  @ffprobe-installer/win32-x64@5.1.0`.
+  FFmpeg comes from `sotawhat lessons setup` (`data/tools/lessons`).
+- Lessons 1–5 were made with the first engine:
+  - Manim and three.js scenes written by an LLM, a layout check and a visual review (G4);
+  - Piper or Google Chirp voices.
+
+  It is kept so they can still be resumed (`resume` follows the engine of each lesson), re-narrated
+  (`lessons rerender N --voz …`) and voice-tested (`lessons voices`). The user rejected its look and voice on
+  2026-11-10.
 
 To set it up, copy `.env.example` to `.env` and fill in at least `OPENROUTER_API_KEY`,
 `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Then schedule the runs with

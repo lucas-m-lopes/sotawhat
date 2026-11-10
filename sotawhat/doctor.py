@@ -435,19 +435,23 @@ def check_graph(store, max_backlog=50) -> Check:
     return Check("grafo", "ok", detail + (f" · {s['pending_extraction']} na fila" if s["pending_extraction"] else ""))
 
 
-def check_lessons(settings, tools=None) -> Check:
-    """Aulas 3D: the tools environment (Manim, Chromium, FFmpeg, Piper voices) and the voice in use."""
+def check_lessons(settings, tools=None, hf=None) -> Check:
+    """Aulas: the HyperFrames engine of the new lessons (HyperFrames, FFmpeg, the ElevenLabs key) and the Manim
+    environment that lessons 1–5 still use (Manim, Chromium, Piper voices)."""
+    from sotawhat.lessons import hyperframes as hfm
     from sotawhat.lessons.tools import Tools
 
     status = (tools or Tools.from_settings(settings)).status()
-    if not status["python"]:
-        return Check("aulas 3D", "warn", "ferramentas ausentes: rode `sotawhat lessons setup` (~1,4 GB em data/tools)")
-    missing = [k for k in ("chromium", "ffmpeg") if not status[k]] + ([] if status["voices"] else ["vozes Piper"])
-    google = ("Chirp 3 HD disponível (GOOGLE_TTS_API_KEY)" if settings.google_tts_api_key
-              else "sem GOOGLE_TTS_API_KEY: só vozes locais (Piper)")
+    hf = hf or hfm.hf_tools(settings)
+    missing = ([] if hf.ready() else [f"HyperFrames {hfm.HF_VERSION} em {hf.root} (npm, veja o README)"])
+    missing += [] if status["ffmpeg"] else ["FFmpeg: rode `sotawhat lessons setup`"]
+    missing += [] if getattr(settings, "elevenlabs_api_key", "") else ["ELEVENLABS_API_KEY no .env"]
+    manim = (f"motor Manim das aulas 1–5 ok (vozes {', '.join(status['voices'])})"
+             if status["python"] and status["chromium"] and status["voices"] else "motor Manim das aulas 1–5 ausente")
     if missing:
-        return Check("aulas 3D", "warn", f"falta {', '.join(missing)}: rode `sotawhat lessons setup`")
-    return Check("aulas 3D", "ok", f"Manim, Chromium e FFmpeg ok · vozes {', '.join(status['voices'])} · {google}")
+        return Check("aulas", "warn", "falta " + "; ".join(missing) + f" · {manim}")
+    voice = getattr(settings, "sotawhat_elevenlabs_voice", "") or "padrão"
+    return Check("aulas", "ok", f"HyperFrames {hfm.HF_VERSION}, FFmpeg e ElevenLabs ok (voz {voice}) · {manim}")
 
 
 def check_web(port, connect=None) -> Check:

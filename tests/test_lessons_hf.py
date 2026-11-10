@@ -1,11 +1,14 @@
 """HyperFrames lessons: ElevenLabs alignment, storyboard validation, timing of actions and captions."""
+import json
+
 import pytest
 
 from sotawhat.lessons import eleven
 from sotawhat.lessons import hyperframes as hfm
 from sotawhat.lessons.motion import spoken_decimals, two_digits
-from sotawhat.lessons.storyboard import (Action, Bar, Edge, FormulaPart, Node, Patches, SceneBoard, Step, Storyboard,
-                                         Vector3D, clean_narration, cue_in, validate)
+from sotawhat.lessons.storyboard import (Action, Axes, Bar, Column, Edge, Event, FormulaPart, Node, Patches, Row,
+                                         SceneBoard, Series, Step, Storyboard, Vector3D, Volume, clean_narration, cue_in,
+                                         roc_points, trapezoid, validate)
 
 
 def alignment(text, step=0.1):
@@ -129,3 +132,153 @@ def test_slots_run_from_one_scene_to_the_next():
 def test_formula_parts_are_kept_in_the_schema():
     part = FormulaPart(id="qk", tex="q \\cdot k")
     assert part.model_dump() == {"id": "qk", "tex": "q \\cdot k"}
+
+
+# --- ElevenLabs credits -------------------------------------------------------------------------------------------
+def _speech_client(text, headers=None):
+    import base64
+    import httpx
+
+    def handler(request):
+        return httpx.Response(200, headers=headers or {}, json={
+            "audio_base64": base64.b64encode(b"ID3").decode(), "alignment": alignment(text)})
+    return httpx.Client(base_url=eleven.API, transport=httpx.MockTransport(handler))
+
+
+def test_credits_come_from_the_response_header_or_the_characters_sent():
+    text = "O token chega."
+    _, _, credits = eleven.ElevenLabs("k", client=_speech_client(text, {"character-cost": "16"})).speak(text)
+    assert credits == 16
+    _, _, credits = eleven.ElevenLabs("k", client=_speech_client(text)).speak(text)
+    assert credits == len(text)
+    assert eleven.credits_usd(2730) == 0.455 and eleven.credits_usd(100, 22, 121000) == 0.0182
+
+
+class _FakeEleven:
+    def __init__(self):
+        self.calls = 0
+
+    def speak(self, text, *args, **kw):
+        self.calls += 1
+        return b"ID3", alignment(text), len(text) + 3
+
+
+def _fake_wav(monkeypatch):
+    def to_wav(ffmpeg, mp3, wav, lead_in=0.35):
+        eleven.silence(wav, 1.0)
+        return 1.0
+    monkeypatch.setattr(eleven, "to_wav", to_wav)
+
+
+def test_scene_cache_keeps_what_the_generation_cost(tmp_path, monkeypatch):
+    _fake_wav(monkeypatch)
+    el, sentences = _FakeEleven(), ["O token chega.", "Vira vetor."]
+    first = eleven.speak_scene(el, sentences, tmp_path, "ffmpeg", "cena01")
+    again = eleven.speak_scene(el, sentences, tmp_path, "ffmpeg", "cena01")
+    assert el.calls == 1 and (first.cached, again.cached) == (False, True)
+    assert first.credits == again.credits == len(" ".join(sentences)) + 3
+    # the first cache files hold the alignment alone: their cost is the characters
+    old = tmp_path / "old"
+    old.mkdir()
+    key = eleven.cache_key("Fim.", eleven.DEFAULT_VOICE, eleven.DEFAULT_MODEL, eleven.SETTINGS)
+    (old / f"cena02-{key}.mp3").write_bytes(b"ID3")
+    (old / f"cena02-{key}.json").write_text(json.dumps(alignment("Fim.")), encoding="utf-8")
+    assert eleven.speak_scene(el, ["Fim."], old, "ffmpeg", "cena02").credits == 4 and el.calls == 1
+
+
+def test_narration_bills_only_the_scenes_it_generated(tmp_path, monkeypatch):
+    _fake_wav(monkeypatch)
+    el = _FakeEleven()
+    eleven.speak_scene(el, ["Uma cena pronta."], tmp_path, "ffmpeg", "cena01")
+    nar = eleven.narrate(el, [["Uma cena pronta."], ["Outra nova."]], tmp_path, "ffmpeg", intro=1.0, progress=lambda *_: None)
+    assert nar.billed_chars == len("Outra nova.") + 3
+    assert nar.credits == len("Uma cena pronta.") + 3 + len("Outra nova.") + 3
+
+
+# --- storyboard v2: chart, timeline, compare, volume3d --------------------------------------------------------------
+
+
+def test_a_roc_curve_is_drawn_from_its_auc():
+    pts = roc_points(0.94)
+    assert pts[0] == [0.0, 0.0] and pts[-1] == [1.0, 1.0]
+    assert all(b[1] >= a[1] for a, b in zip(pts, pts[1:]))              # a ROC never goes down
+    assert abs(trapezoid(pts) - 0.94) < 0.015
+    scene = _scene(template="chart", axes=Axes(x_label="1 − especificidade", y_label="sensibilidade", x_min=0,
+                                               x_max=1, y_min=0, y_max=1),
+                   series=[Series(id="roc", label="modelo", role="info", points=[[0.5, 0.2]], auc=0.94)],
+                   steps=[Step(beat=0, actions=[_act("show", ["roc"]), _act("area", ["roc"], text="AUC 0,94")])])
+    assert validate(Storyboard(scenes=[scene]), [["A curva sobe rápido."]]) == []
+    assert len(scene.series[0].points) == 15
+
+
+def test_chart_points_are_sorted_and_kept_inside_the_axes():
+    scene = _scene(template="chart", axes=Axes(x_label="dados", y_label="erro", x_min=0, x_max=0, y_min=0, y_max=0),
+                   series=[Series(id="a", label="treino", role="query", points=[[3, 0.2], [1, 0.9], [2, 0.4], [2, 0.5],
+                                                                               [4]], auc=0)],
+                   steps=[Step(beat=0, actions=[_act("show", ["a"])])])
+    assert validate(Storyboard(scenes=[scene]), [["O erro cai."]]) == []
+    assert scene.series[0].points == [[1, 0.9], [2, 0.5], [3, 0.2]]          # sorted, one y per x, pairs only
+    ax = scene.axes
+    assert (ax.x_min, ax.x_max, ax.y_min, ax.y_max) == (1, 3, 0.0, 0.9)        # derived from the points
+    bad = _scene(template="chart", series=[Series(id="b", label="x", role="query", points=[[1, 1]], auc=0)])
+    assert any("chart precisa" in p for p in validate(Storyboard(scenes=[bad]), [["Uma frase."]]))
+
+
+def test_compare_cells_follow_the_columns_and_timelines_need_two_events():
+    scene = _scene(template="compare", columns=[Column(id="cnn", title="convolução", role="value"),
+                                                Column(id="vit", title="atenção", role="query")],
+                   rows=[Row(id="campo", label="campo de visão", cells=["local"]),
+                         Row(id="dados", label="dados", cells=["poucos", "muitos", "demais"])],
+                   steps=[Step(beat=0, actions=[_act("show", ["cnn", "vit"]), _act("pick", ["campo", "vit"])])])
+    assert validate(Storyboard(scenes=[scene]), [["A atenção vê tudo."]]) == []
+    assert [r.cells for r in scene.rows] == [["local", ""], ["poucos", "muitos"]]
+    lone = _scene(template="timeline", events=[Event(id="e1", when="1972", label="primeira TC", gloss="", role="info")])
+    assert any("timeline precisa" in p for p in validate(Storyboard(scenes=[lone]), [["Em 1972."]]))
+
+
+def test_volume_defaults_and_the_planned_template_is_required():
+    scene = _scene(template="volume3d", volume=Volume(organ="nenhum", finding="nódulo", modality="nenhuma", slices=0),
+                   steps=[Step(beat=0, actions=[_act("slice", value=1.7)])])
+    problems = validate(Storyboard(scenes=[scene]), [["O corte passa."]], planned=["chart"])
+    assert problems == ["cena 1: use o modelo de cena do plano, chart (veio volume3d)"]
+    assert (scene.volume.organ, scene.volume.modality, scene.volume.slices) == ("corpo", "tomografia", 16)
+    assert scene.steps[0].actions[0].value == 1.0
+
+
+def test_storyboards_of_the_first_prototype_still_load():
+    old = {"scene": 1, "template": "graph", "nodes": [], "edges": [], "bars": [], "vectors": [], "formula": [],
+           "patches": {"image": "nenhuma", "rows": 0, "cols": 0, "focus_row": 0, "focus_col": 0}, "steps": []}
+    board = SceneBoard.model_validate(old)
+    assert board.series == [] and board.volume.organ == "nenhum"
+
+
+# --- lessons learned from lesson 7 -----------------------------------------------------------------------------------
+def test_a_bulk_show_waits_for_each_part_to_be_named():
+    bars = [Bar(id=i, label=i, value=v, role="score") for i, v in (("ar", -1000), ("agua", 0), ("osso", 1200))]
+    scene = _scene(template="bars", bars=bars, steps=[
+        Step(beat=0, actions=[_act("show", ["ar", "agua", "osso"], cue="voxel")]),
+        Step(beat=1, actions=[_act("show", ["ar"], cue="ar"), _act("show", ["agua"], cue="água")]),
+        Step(beat=2, actions=[_act("show", ["osso"], cue="osso")])])
+    validate(Storyboard(scenes=[scene]), [["Cada voxel guarda um número.", "O ar e a água.", "O osso."]])
+    assert scene.steps[0].actions == []                    # emptied, so dropped: an empty show would mean all
+    assert [a.ids for a in scene.steps[1].actions] == [["ar"], ["agua"]]
+
+
+def test_a_note_that_repeats_the_screen_is_dropped():
+    node = Node(id="p", label="projeções", kind="box", role="query", col=0, row=0, panel=1, gloss="perfis de atenuação",
+                values=[])
+    scene = _scene(nodes=[node], steps=[Step(beat=0, actions=[_act("show", ["p"]), _act("note", ["p"], text="perfis de atenuação")]),
+                                        Step(beat=1, actions=[_act("note", ["p"], text="medidos em cada ângulo")])])
+    validate(Storyboard(scenes=[scene]), [["A primeira peça.", "Medida em cada ângulo."]])
+    assert [a.do for a in scene.steps[0].actions] == ["show"] and scene.steps[1].actions[0].text == "medidos em cada ângulo"
+
+
+def test_a_focus_lasts_its_sentence_except_the_last_one():
+    words = [{"text": "Um", "start": 1.0, "end": 1.2, "beat": 0}, {"text": "Dois", "start": 3.0, "end": 3.2, "beat": 1},
+             {"text": "Três", "start": 5.0, "end": 5.2, "beat": 2}]
+    nar_scene = {"start": 0.0, "end": 6.0, "beats": [(1.0, 1.2), (3.0, 3.2), (5.0, 5.2)], "words": words}
+    scene = _scene(steps=[Step(beat=0, actions=[_act("focus", ["q"])]), Step(beat=1, actions=[_act("pulse", ["q"])]),
+                          Step(beat=2, actions=[_act("focus", ["q"])])])
+    acts = hfm.scene_actions(scene, nar_scene, slot_start=0.0)
+    assert [a["do"] for a in acts] == ["focus", "unfocus", "pulse", "focus"]
+    assert acts[1]["t"] == pytest.approx(3.0 - 0.3)       # released in the pause before the next sentence

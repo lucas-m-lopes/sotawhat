@@ -90,10 +90,19 @@ def scene_actions(board_scene, nar_scene, slot_start) -> list:
         for k, a in enumerate(step.actions):
             at = cue_time(words, step.beat, a.cue, b_start) - LEAD_S
             out.append({"do": a.do, "ids": list(a.ids), "text": a.text, "value": a.value,
-                        "t": round(max(0.05, at - slot_start), 3), "until": round(nxt - slot_start, 3), "_k": k})
+                        "t": round(max(0.05, at - slot_start), 3), "until": round(nxt - slot_start, 3), "_k": k,
+                        "_beat": step.beat})
+    # a focus lasts its sentence: the picture comes back before the next one (in lesson 7 parts stayed dimmed to the
+    # end of their scenes); the focus of the last sentence stays until the scene leaves
+    for x in [x for x in out if x["do"] == "focus" and x["_beat"] + 1 < len(beats)]:
+        end = round(max(x["t"] + 0.6, x["until"] - 0.3), 3)     # in the pause before the next sentence
+        if not any(y is not x and y["do"] in ("focus", "unfocus", "dim") and x["t"] < y["t"] <= end for y in out):
+            out.append({"do": "unfocus", "ids": [], "text": "", "value": 0.0, "t": end, "until": x["until"], "_k": 99,
+                        "_beat": x["_beat"]})
     out.sort(key=lambda x: (x["t"], x["_k"]))
     for x in out:
         x.pop("_k")
+        x.pop("_beat")
     return out
 
 
@@ -169,6 +178,10 @@ def copy_assets(hf, project, wav) -> None:
     shutil.copy2(m / "gsap" / "dist" / "gsap.min.js", assets / "lib")
     for name in ("three.module.js", "three.core.js"):
         shutil.copy2(m / "three" / "build" / name, assets / "lib")
+    # the marching cubes of three's addons (volume3d), with its bare `from 'three'` pointed at the copy above
+    cubes = (m / "three" / "examples" / "jsm" / "objects" / "MarchingCubes.js").read_text(encoding="utf-8")
+    (assets / "lib" / "MarchingCubes.js").write_text(cubes.replace("from 'three';", "from './three.module.js';"),
+                                                     encoding="utf-8")
     katex = assets / "lib" / "katex"
     if not katex.exists():
         katex.mkdir()
@@ -206,9 +219,13 @@ def compose(hf, project, plan, board, nar, lesson_id) -> dict:
                 "nodes": [x.model_dump() for x in bscene.nodes], "edges": [x.model_dump() for x in bscene.edges],
                 "bars": [x.model_dump() for x in bscene.bars], "vectors": [x.model_dump() for x in bscene.vectors],
                 "patches": bscene.patches.model_dump(), "formula": [x.model_dump() for x in bscene.formula],
+                "axes": bscene.axes.model_dump(), "series": [x.model_dump() for x in bscene.series],
+                "events": [x.model_dump() for x in bscene.events], "columns": [x.model_dump() for x in bscene.columns],
+                "rows": [x.model_dump() for x in bscene.rows], "volume": bscene.volume.model_dump(),
                 "actions": scene_actions(bscene, nscene, start)}
-        if bscene.template == "vectors3d":
-            script = (f'import {{ mount3d }} from "./assets/kit/scene3d.js"; mount3d("{cid}", {_js(data)}, {start});')
+        if bscene.template in ("vectors3d", "volume3d"):
+            mount = "mount3d" if bscene.template == "vectors3d" else "mountVolume"
+            script = (f'import {{ {mount} }} from "./assets/kit/scene3d.js"; {mount}("{cid}", {_js(data)}, {start});')
             (project / "compositions" / f"{cid}.html").write_text(_scene_file(cid, script, module=True), encoding="utf-8")
         else:
             (project / "compositions" / f"{cid}.html").write_text(_scene_file(cid, f'MK.scene("{cid}", {_js(data)});'),

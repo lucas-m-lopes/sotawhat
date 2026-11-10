@@ -1,15 +1,18 @@
 # sotawhat/lessons/storyboard.py
-"""The storyboard of a HyperFrames lesson: the LLM no longer draws. For each scene of the plan it picks one scene
-template of the kit (sotawhat/lessons/motion_kit) and fills it with data — the parts of the diagram, their
-colour role and their place in a grid of columns and rows — and, for each narration sentence, the actions that
-happen while it is spoken (show, focus, draw a link, turn scores into weights…) with the word that triggers them.
+"""The storyboard of a HyperFrames lesson: the LLM no longer draws. For each scene of the plan it fills the scene
+template of the kit (sotawhat/lessons/motion_kit) that the plan chose — the parts of a diagram, the bars, the
+curves of a chart, the events of a timeline, the cells of a comparison, the organ of a 3D volume — and, for each
+narration sentence, the actions that happen while it is spoken (show, focus, draw a link, turn scores into
+weights, cut the volume…) with the word that triggers them.
 
 Layout, arrows, motion, type and colour belong to the templates, so a link always leaves the border of its
 source and reaches the border of its target, and it fades together with them. `validate` checks the references
-and the limits and repairs what it can; what it cannot repair goes back to the LLM once."""
+and the limits and repairs what it can (a ROC curve is even drawn from its AUC, so the number said, the area
+painted and the curve agree); what it cannot repair goes back to the LLM once."""
 import math
 import re
 import unicodedata
+from statistics import NormalDist
 from typing import Literal
 
 from pydantic import Field
@@ -17,11 +20,13 @@ from pydantic import Field
 from sotawhat.llm.prompts import load as load_prompt
 from sotawhat.llm.schemas import _Portuguese
 
-PROMPT = "lesson_storyboard_v1"
-TEMPLATES = ("graph", "bars", "vectors3d", "patches")
+PROMPT = "lesson_storyboard_v2"
+TEMPLATES = ("graph", "bars", "chart", "timeline", "compare", "vectors3d", "patches", "volume3d")
+TEMPLATES_3D = ("vectors3d", "volume3d")
 ROLES = ("token", "embedding", "query", "key", "value", "score", "weight", "output", "neutral", "alert", "info")
 MAX_VISIBLE, MAX_COLS, MAX_ROWS = 7, 6, 5
 LABEL_MAX, GLOSS_MAX, NOTE_MAX = 24, 34, 44
+ROC_X = (0.0, 0.01, 0.025, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
 _STAGE = re.compile(r"^\s*(limpa|limpe|limpamos)\s+a\s+tela\s*[.,;:!]?\s*", re.I)
 
 Role = Literal["token", "embedding", "query", "key", "value", "score", "weight", "output", "neutral", "alert", "info"]
@@ -71,6 +76,50 @@ class Patches(_Portuguese):
     focus_col: int
 
 
+class Axes(_Portuguese):
+    x_label: str = Field(description="o que o eixo x mede, até 30 caracteres; vazio fora do chart")
+    y_label: str = Field(description="o que o eixo y mede, até 30 caracteres; vazio fora do chart")
+    x_min: float
+    x_max: float
+    y_min: float
+    y_max: float
+
+
+class Series(_Portuguese):
+    id: str
+    label: str = Field(description="o nome da curva, até 22 caracteres")
+    role: Role
+    points: list[list[float]] = Field(description="pontos [x, y] em ordem de x, de 2 a 30; [] numa ROC dada pela auc")
+    auc: float = Field(description="curva ROC: a AUC entre 0,5 e 1, e o kit desenha a curva com essa área; outras: 0")
+
+
+class Event(_Portuguese):
+    id: str
+    when: str = Field(description="o ano ou a fase, até 10 caracteres: 1972, 2017, fase 2")
+    label: str = Field(description="o marco, até 26 caracteres")
+    gloss: str = Field(description="um detalhe curto, até 34 caracteres, ou vazio")
+    role: Role
+
+
+class Column(_Portuguese):
+    id: str
+    title: str = Field(description="a alternativa comparada, até 22 caracteres")
+    role: Role
+
+
+class Row(_Portuguese):
+    id: str
+    label: str = Field(description="o atributo comparado, até 22 caracteres")
+    cells: list[str] = Field(description="um texto curto por coluna, na ordem das colunas, até 24 caracteres cada")
+
+
+class Volume(_Portuguese):
+    organ: Literal["pulmão", "fígado", "cérebro", "rim", "coração", "corpo", "nenhum"]
+    finding: Literal["nódulo", "massa", "nenhum"]
+    modality: Literal["tomografia", "ressonância", "nenhuma"]
+    slices: int = Field(description="quantas fatias o volume mostra, 8 a 24; 0 quando a cena não usa volume")
+
+
 class FormulaPart(_Portuguese):
     id: str
     tex: str = Field(description="um pedaço da fórmula em LaTeX (KaTeX), ex.: q \\cdot k")
@@ -78,11 +127,14 @@ class FormulaPart(_Portuguese):
 
 class Action(_Portuguese):
     do: Literal["show", "hide", "focus", "unfocus", "dim", "pulse", "label", "flow", "panel", "note", "formula",
-                "scale", "softmax", "total", "score", "project", "tokenize", "attend", "conv"]
-    ids: list[str] = Field(description="ids dos elementos que a ação toca (nós, ligações, barras, vetores, partes "
-                                       "da fórmula); vazio quando não se aplica")
-    text: str = Field(description="label: o novo texto; note: a anotação (até 44 caracteres); outros: vazio")
-    value: float = Field(description="scale: o divisor (ex.: 8 para raiz de 64); outros: 0")
+                "scale", "softmax", "total", "score", "project", "tokenize", "attend", "conv",
+                "area", "mark", "pick", "stack", "slice", "segment"]
+    ids: list[str] = Field(description="ids dos elementos que a ação toca (nós, ligações, barras, vetores, curvas, "
+                                       "marcos, linhas, colunas, partes da fórmula); vazio quando não se aplica")
+    text: str = Field(description="label: o novo texto; note, area e mark: a anotação (até 44 caracteres); "
+                                  "outros: vazio")
+    value: float = Field(description="scale: o divisor (ex.: 8 para raiz de 64); mark: o x do ponto; slice: a "
+                                     "altura do corte de 0 a 1 (0 = pelo achado); outros: 0")
     cue: str = Field(description="uma palavra da frase; a ação começa quando ela é dita (vazio = início da frase)")
 
 
@@ -93,12 +145,20 @@ class Step(_Portuguese):
 
 class SceneBoard(_Portuguese):
     scene: int = Field(description="número da cena no plano, começando em 1")
-    template: Literal["graph", "bars", "vectors3d", "patches"]
+    template: Literal[TEMPLATES]
     nodes: list[Node]
     edges: list[Edge]
     bars: list[Bar]
     vectors: list[Vector3D]
     patches: Patches
+    # the defaults only let the first storyboards (lesson 6) load; the strict schema the LLM gets requires them all
+    axes: Axes = Field(default_factory=lambda: Axes(x_label="", y_label="", x_min=0, x_max=0, y_min=0, y_max=0))
+    series: list[Series] = Field(default_factory=list)
+    events: list[Event] = Field(default_factory=list)
+    columns: list[Column] = Field(default_factory=list)
+    rows: list[Row] = Field(default_factory=list)
+    volume: Volume = Field(default_factory=lambda: Volume(organ="nenhum", finding="nenhum", modality="nenhuma",
+                                                          slices=0))
     formula: list[FormulaPart]
     steps: list[Step]
 
@@ -126,10 +186,19 @@ def cue_in(cue, sentence) -> bool:
 
 
 def board_prompt(plan, sentences) -> str:
-    """The plan as the storyboard LLM sees it: scenes, the sentence of each beat and the visual it intended."""
-    lines = [f"Aula: {plan.title}", f"Objetivo: {plan.objective}", ""]
+    """The plan as the storyboard LLM sees it: the example, the scenes with their template, the sentence of each beat
+    and the visual it intended."""
+    lines = [f"Aula: {plan.title}", f"Objetivo: {plan.objective}"]
+    if getattr(plan, "example", ""):
+        lines.append(f"Exemplo que atravessa a aula (use estes números): {plan.example}")
+    lines.append("")
     for n, scene in enumerate(plan.scenes, 1):
-        lines.append(f"## Cena {n}: {scene.title} (modo sugerido no plano: {scene.mode}{'; ' + scene.why_3d if scene.why_3d else ''})")
+        template = getattr(scene, "template", None)
+        if template:
+            lines.append(f"## Cena {n}: {scene.title} (modelo de cena do plano: {template})")
+        else:
+            lines.append(f"## Cena {n}: {scene.title} (modo sugerido no plano: {scene.mode}"
+                         f"{'; ' + scene.why_3d if scene.why_3d else ''})")
         lines.append(f"Meta: {scene.goal}")
         for k, (beat, sentence) in enumerate(zip(scene.beats, sentences[n - 1])):
             lines.append(f"- frase {k}: {sentence}")
@@ -140,19 +209,119 @@ def board_prompt(plan, sentences) -> str:
 
 def _ids(scene) -> dict:
     return {"node": {x.id for x in scene.nodes}, "edge": {x.id for x in scene.edges}, "bar": {x.id for x in scene.bars},
-            "vector": {x.id for x in scene.vectors}, "formula": {x.id for x in scene.formula}}
+            "vector": {x.id for x in scene.vectors}, "formula": {x.id for x in scene.formula},
+            "series": {x.id for x in scene.series}, "event": {x.id for x in scene.events},
+            "column": {x.id for x in scene.columns}, "row": {x.id for x in scene.rows}}
 
 
-def validate(board, sentences) -> list:
+def roc_points(auc) -> list:
+    """Equal-variance binormal ROC with exactly this area: y = Φ(a + Φ⁻¹(x)), a = √2 · Φ⁻¹(AUC)."""
+    nd = NormalDist()
+    a = math.sqrt(2) * nd.inv_cdf(min(max(auc, 0.5001), 0.9995))
+    out = []
+    for x in ROC_X:
+        y = 0.0 if x <= 0 else 1.0 if x >= 1 else nd.cdf(a + nd.inv_cdf(x))
+        out.append([x, round(y, 4)])
+    return out
+
+
+def trapezoid(points) -> float:
+    return sum((x1 - x0) * (y0 + y1) / 2 for (x0, y0), (x1, y1) in zip(points, points[1:]))
+
+
+def _fix_chart(scene, where, problems) -> None:
+    ax = scene.axes
+    ax.x_label, ax.y_label = ax.x_label.strip()[:30], ax.y_label.strip()[:30]
+    scene.series = scene.series[:4]
+    for s in scene.series:
+        s.label = s.label.strip()[:22]
+        if 0.5 < s.auc < 1:                               # a ROC curve: the kit draws the area the narration says
+            s.points = roc_points(s.auc)
+        else:
+            s.auc = 0.0
+            pts = [p[:2] for p in s.points if len(p) >= 2 and all(math.isfinite(v) for v in p[:2])]
+            s.points = sorted({p[0]: p for p in pts}.values(), key=lambda p: p[0])[:30]
+    pts = [p for s in scene.series for p in s.points]
+    if not scene.series or any(len(s.points) < 2 for s in scene.series):
+        problems.append(f"{where}: template chart precisa de 1 a 4 curvas com 2 a 30 pontos [x, y] (ou auc na ROC)")
+    if pts and (ax.x_min >= ax.x_max or ax.y_min >= ax.y_max):
+        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+        ax.x_min, ax.x_max = min(xs), (max(xs) if max(xs) > min(xs) else min(xs) + 1)
+        low = min(0.0, min(ys))
+        ax.y_min, ax.y_max = low, (max(ys) if max(ys) > low else low + 1)
+    for s in scene.series:                               # the curves stay inside the axes
+        s.points = [[min(max(x, ax.x_min), ax.x_max), min(max(y, ax.y_min), ax.y_max)] for x, y in s.points]
+
+
+def _fix_compare(scene, where, problems) -> None:
+    scene.columns = scene.columns[:3]
+    scene.rows = scene.rows[:5]
+    for c in scene.columns:
+        c.title = c.title.strip()[:22]
+    for r in scene.rows:
+        r.label = r.label.strip()[:22]
+        r.cells = [c.strip()[:24] for c in r.cells[:len(scene.columns)]]
+        r.cells += [""] * (len(scene.columns) - len(r.cells))
+    if not (2 <= len(scene.columns) <= 3 and 2 <= len(scene.rows) <= 5):
+        problems.append(f"{where}: template compare precisa de 2 ou 3 colunas e de 2 a 5 linhas")
+
+
+def named_later(scene) -> None:
+    """A part shown in bulk early (three or more at once) and shown again on its own, with its cue, when a later
+    sentence names it, appears when it is named: lesson 7 showed all six densities in the first sentence and then
+    each one again as the narration said it. An action left with no ids is dropped: an empty `show` means
+    "everything" in several templates."""
+    shows = {}
+    for step in scene.steps:
+        for act in step.actions:
+            if act.do == "show":
+                for i in act.ids:
+                    shows.setdefault(i, []).append((step.beat, act))
+    size = {id(act): len(act.ids) for seen in shows.values() for _, act in seen}
+    had_ids = set(size)
+    for i, seen in shows.items():
+        named = [beat for beat, act in seen if act.cue and size[id(act)] <= 2]
+        if not named:
+            continue
+        for beat, act in seen:
+            if beat < named[0] and size[id(act)] >= 3 and i in act.ids:
+                act.ids.remove(i)
+    for step in scene.steps:
+        step.actions = [a for a in step.actions if not (a.do == "show" and not a.ids and id(a) in had_ids)]
+
+
+def drop_echo_notes(scene) -> None:
+    """A note that repeats the label or the gloss already on screen (lesson 7: "perfis de atenuação" twice) or an
+    earlier note says nothing new."""
+    on_screen = {_fold(x) for n in scene.nodes for x in (n.label, n.gloss) if x}
+    said = set()
+    for step in scene.steps:
+        kept = []
+        for act in step.actions:
+            text = _fold(act.text)
+            if act.do == "note" and (text in on_screen or text in said):
+                continue
+            if act.do == "note":
+                said.add(text)
+            kept.append(act)
+        step.actions = kept
+
+
+def validate(board, sentences, planned=None) -> list:
     """Problems that only the LLM can fix -> [str]. Repairs in place what has an obvious fix (lengths, cues that
-    are not in the sentence, a link shown before its ends, missing steps)."""
+    are not in the sentence, a link shown before its ends, missing steps, curves out of their axes). `planned`: the
+    template of each scene in the plan, which the storyboard must use."""
     problems = []
     if len(board.scenes) != len(sentences):
         problems.append(f"o storyboard tem {len(board.scenes)} cenas; o plano tem {len(sentences)}")
     for n, (scene, said) in enumerate(zip(board.scenes, sentences), 1):
         scene.scene = n
         where = f"cena {n}"
-        all_ids = [x.id for group in (scene.nodes, scene.edges, scene.bars, scene.vectors, scene.formula) for x in group]
+        if planned and n <= len(planned) and planned[n - 1] and scene.template != planned[n - 1]:
+            problems.append(f"{where}: use o modelo de cena do plano, {planned[n - 1]} (veio {scene.template})")
+        groups = (scene.nodes, scene.edges, scene.bars, scene.vectors, scene.formula, scene.series, scene.events,
+                  scene.columns, scene.rows)
+        all_ids = [x.id for group in groups for x in group]
         if len(all_ids) != len(set(all_ids)):
             problems.append(f"{where}: ids repetidos")
         ids = _ids(scene)
@@ -181,6 +350,21 @@ def validate(board, sentences) -> list:
             p.rows, p.cols = min(max(p.rows, 3), 6), min(max(p.cols, 3), 6)     # a 2 × 2 grid does not read as patches
             p.focus_row = min(max(p.focus_row, 0), p.rows - 1)
             p.focus_col = min(max(p.focus_col, 0), p.cols - 1)
+        if scene.template == "chart":
+            _fix_chart(scene, where, problems)
+        if scene.template == "timeline":
+            scene.events = scene.events[:7]
+            for e in scene.events:
+                e.when, e.label, e.gloss = e.when.strip()[:10], e.label.strip()[:26], e.gloss.strip()[:34]
+            if len(scene.events) < 2:
+                problems.append(f"{where}: template timeline precisa de 2 a 7 marcos")
+        if scene.template == "compare":
+            _fix_compare(scene, where, problems)
+        if scene.template == "volume3d":
+            v = scene.volume
+            v.slices = min(max(v.slices or 16, 8), 24)
+            v.organ = "corpo" if v.organ == "nenhum" else v.organ
+            v.modality = "tomografia" if v.modality == "nenhuma" else v.modality
         # one step per sentence, in order; an empty sentence holds the picture
         by_beat = {}
         for step in scene.steps:
@@ -190,6 +374,8 @@ def validate(board, sentences) -> list:
         if len(missing) > max(1, len(said) // 3):
             problems.append(f"{where}: as frases {missing} não têm nenhuma ação")
         scene.steps = [Step(beat=k, actions=by_beat.get(k, [])) for k in range(len(said))]
+        named_later(scene)
+        drop_echo_notes(scene)
         shown = set()
         for step in scene.steps:
             for act in step.actions:
@@ -200,6 +386,8 @@ def validate(board, sentences) -> list:
                 if not cue_in(act.cue, said[step.beat]):
                     act.cue = ""
                 act.text = act.text.strip()[:NOTE_MAX]
+                if act.do == "slice":
+                    act.value = min(max(act.value, 0.0), 1.0)
                 if act.do == "show":
                     for edge in scene.edges:          # a link never appears before both of its ends
                         if edge.id in act.ids:
@@ -268,16 +456,22 @@ def sync_scores(board) -> None:
                     bar.value = hit[0]
 
 
+def planned_templates(plan) -> list | None:
+    templates = [getattr(s, "template", None) for s in plan.scenes]
+    return templates if any(templates) else None
+
+
 def make_storyboard(gateway, plan, sentences, models=None) -> tuple:
     """-> (storyboard, remaining problems). One repair round."""
+    planned = planned_templates(plan)
     messages = [{"role": "system", "content": load_prompt(PROMPT)},
                 {"role": "user", "content": board_prompt(plan, sentences)}]
     board = gateway.structured("lesson_storyboard", messages, Storyboard, models=models)
-    problems = validate(board, sentences)
+    problems = validate(board, sentences, planned)
     if problems:
         messages += [{"role": "assistant", "content": board.model_dump_json()},
                      {"role": "user", "content": "Corrija estes problemas e devolva o storyboard inteiro:\n- "
                                                  + "\n- ".join(problems)}]
         board = gateway.structured("lesson_storyboard", messages, Storyboard, models=models)
-        problems = validate(board, sentences)
+        problems = validate(board, sentences, planned)
     return board, problems

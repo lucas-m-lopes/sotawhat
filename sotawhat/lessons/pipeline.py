@@ -1,7 +1,11 @@
 # sotawhat/lessons/pipeline.py
 """`sotawhat lessons`: make a lesson from a topic (or from the strongest weekly trend), resume it where it stopped,
-re-render it with another voice (no LLM), deliver it, export the source pack for NotebookLM, run the blind voice
-test. Everything a step produces stays in data/lessons/<id>/, so a step that already finished is never redone."""
+deliver it, export the source pack for NotebookLM. Everything a step produces stays in data/lessons/<id>/, so a
+step that already finished is never redone.
+
+New lessons use the HyperFrames engine (sotawhat/lessons/motion.py, since 2026-11-10). The Manim engine below
+(`make_lesson`, `rerender`, the blind voice test) is kept for lessons 1–5: `resume` follows the engine recorded
+in the lesson's report."""
 import json
 import random
 import shutil
@@ -16,7 +20,7 @@ from sotawhat.lessons import assemble as asm
 from sotawhat.lessons.coder import build_scene
 from sotawhat.lessons.deliver import clock
 from sotawhat.lessons.pack import Pack, build_pack, pack_markdown, pick_topic
-from sotawhat.lessons.plan import LessonPlan, check_facts, make_plan, revise_plan
+from sotawhat.lessons.plan import LessonPlan, check_facts, load_plan, make_plan, revise_plan
 from sotawhat.lessons.render import RenderError
 from sotawhat.lessons.tools import Tools, media_seconds, sync_kit
 from sotawhat.lessons.voice import (DEFAULT_VOICE, GOOGLE_VOICES, SAMPLE, VoiceError, beat_paths, engine_for,
@@ -55,6 +59,21 @@ def _load(path, default):
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
 
 
+def source_pack(store, lesson, work) -> Pack:
+    """sources.json of the lesson, or the pack built from the graph (and the entities it found, kept on the lesson)."""
+    if (work / "sources.json").exists():
+        return Pack.from_json((work / "sources.json").read_text(encoding="utf-8"))
+    pack = build_pack(store, lesson["topic"], json.loads(lesson["entities_json"]))
+    if not pack.sources and not pack.entities:
+        raise LessonError(f"nada no grafo sobre “{lesson['topic']}”: passe --entidade ou outro tema")
+    (work / "sources.json").write_text(pack.to_json(), encoding="utf-8")
+    if not json.loads(lesson["entities_json"]):
+        store.conn.execute("UPDATE lessons SET entities_json = ? WHERE id = ?",
+                           (json.dumps([e["id"] for e in pack.entities]), lesson["id"]))
+        store.conn.commit()
+    return pack
+
+
 def make_lesson(settings, store, gateway, tools, lesson_id, voice, mode="economico", log=print) -> dict:
     """Runs (or resumes) every step of lesson `lesson_id`. -> the lesson report."""
     lesson = store.get_lesson(lesson_id)
@@ -73,17 +92,7 @@ def make_lesson(settings, store, gateway, tools, lesson_id, voice, mode="economi
         _save(work / "report.json", report)
 
     # 1. source pack ------------------------------------------------------------------------------
-    if (work / "sources.json").exists():
-        pack = Pack.from_json((work / "sources.json").read_text(encoding="utf-8"))
-    else:
-        pack = build_pack(store, lesson["topic"], json.loads(lesson["entities_json"]))
-        if not pack.sources and not pack.entities:
-            raise LessonError(f"nada no grafo sobre “{lesson['topic']}”: passe --entidade ou outro tema")
-        (work / "sources.json").write_text(pack.to_json(), encoding="utf-8")
-        if not json.loads(lesson["entities_json"]):
-            store.conn.execute("UPDATE lessons SET entities_json = ? WHERE id = ?",
-                               (json.dumps([e["id"] for e in pack.entities]), lesson_id))
-            store.conn.commit()
+    pack = source_pack(store, lesson, work)
     # 2. plan, G2 lint and G1 facts ---------------------------------------------------------------
     t = time.monotonic()
     if (work / "plan.json").exists():
@@ -313,14 +322,15 @@ def main_lessons(ns) -> int:
     log = print
     if ns.lessons_action == "setup":
         return 0 if setup(tools, log=log) else 1
-    if ns.lessons_action in ("make", "resume", "rerender", "voices") and not tools.ready():
+    if ns.lessons_action in ("rerender", "voices") and not tools.ready():
         log("ferramentas das aulas incompletas: rode `sotawhat lessons setup`")
         return 2
+    from sotawhat.lessons import motion
+    redo = {x.strip() for x in (getattr(ns, "refazer", "") or "").split(",") if x.strip()}
+    mode = getattr(ns, "modo", "economico") or "economico"
     with Store(settings.db_path) as store:
-        if ns.lessons_action == "hf":       # HyperFrames: kit templates, ElevenLabs voice (sotawhat/lessons/motion.py)
-            from sotawhat.lessons.motion import make_hf_lesson
-            redo = {x.strip() for x in (ns.refazer or "").split(",") if x.strip()}
-            return make_hf_lesson(settings, store, ns.id, lesson_id=ns.aula, deliver=not ns.no_send, redo=redo, log=log)
+        if ns.lessons_action == "hf":       # an older lesson made again in the HyperFrames engine
+            return motion.remake(settings, store, ns.id, lesson_id=ns.aula, deliver=not ns.no_send, redo=redo, log=log)
         if ns.lessons_action == "list":
             print_list(store, log)
             return 0
@@ -341,20 +351,30 @@ def main_lessons(ns) -> int:
                 return 2
             lesson_id = store.create_lesson(topic, entities)
             log(f"aula #{lesson_id}: {topic}")
-        else:
-            lesson_id = ns.id
-            if store.get_lesson(lesson_id) is None:
-                log(f"aula {lesson_id} não existe")
-                return 1
-        voice = choose_voice(settings, store, getattr(ns, "voz", None))
-        parse_voice(voice)
+            return motion.run_motion_lesson(settings, store, lesson_id, deliver=not ns.no_send, mode=mode, log=log)
+        lesson_id = ns.id
+        lesson = store.get_lesson(lesson_id)
+        if lesson is None:
+            log(f"aula {lesson_id} não existe")
+            return 1
         if ns.lessons_action == "send":
             return send(settings, store, lesson_id, log)
+        if motion.engine_of(lesson) == motion.ENGINE and ns.lessons_action in ("resume", "rerender"):
+            unknown = redo - set(motion.REDO)
+            if ns.lessons_action == "rerender" or unknown:
+                log("aula do motor HyperFrames: use resume --refazer " + ",".join(motion.REDO) + " (voz gasta créditos)")
+                return 2
+            return motion.run_motion_lesson(settings, store, lesson_id, deliver=not ns.no_send, redo=redo, mode=mode,
+                                            log=log, fresh_budget=bool(redo))
+        if ns.lessons_action in ("resume", "rerender") and not tools.ready():
+            log("ferramentas das aulas incompletas: rode `sotawhat lessons setup`")
+            return 2
+        voice = choose_voice(settings, store, getattr(ns, "voz", None))
+        parse_voice(voice)
         if ns.lessons_action == "pack":
             work = lesson_dir(settings, lesson_id)
             pack = Pack.from_json((work / "sources.json").read_text(encoding="utf-8"))
-            plan = LessonPlan.model_validate_json((work / "plan.json").read_text(encoding="utf-8")) \
-                if (work / "plan.json").exists() else None
+            plan = load_plan((work / "plan.json").read_text(encoding="utf-8")) if (work / "plan.json").exists() else None
             (work / "fontes.md").write_text(pack_markdown(pack, plan), encoding="utf-8")
             log(f"[NotebookLM] {work / 'fontes.md'}: suba no NotebookLM e peça um Video Overview (Explainer, pt-BR)")
             return 0

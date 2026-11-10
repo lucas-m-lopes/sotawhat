@@ -296,13 +296,22 @@ def test_doctor_lessons_check(tmp_path):
     from sotawhat.doctor import check_lessons
     from sotawhat.lessons.tools import Tools
 
-    settings = SimpleNamespace(sotawhat_data_dir=tmp_path, google_tts_api_key="")
-    assert check_lessons(settings).status == "warn"                                   # nothing installed
+    settings = SimpleNamespace(sotawhat_data_dir=tmp_path, google_tts_api_key="", elevenlabs_api_key="",
+                               sotawhat_elevenlabs_voice="UQ3s9h7N3CVJBL2USizn")
+    check = check_lessons(settings)
+    assert check.status == "warn" and "HyperFrames" in check.detail and "ELEVENLABS_API_KEY" in check.detail
     tools = Tools(tmp_path / "tools")
 
     class Ready(Tools):
         def status(self):
             return {"python": True, "chromium": True, "ffmpeg": True, "voices": ["faber"]}
 
-    check = check_lessons(settings, tools=Ready(tools.root))
-    assert check.status == "ok" and "faber" in check.detail and "sem GOOGLE_TTS_API_KEY" in check.detail
+    class HF:
+        root = tmp_path / "hyperframes"
+
+        def ready(self):
+            return True
+
+    settings.elevenlabs_api_key = "k"
+    check = check_lessons(settings, tools=Ready(tools.root), hf=HF())
+    assert check.status == "ok" and "ElevenLabs ok" in check.detail and "faber" in check.detail

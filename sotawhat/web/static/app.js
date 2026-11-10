@@ -871,7 +871,8 @@
     const card = el("article", { class: "idea lesson" },
       el("div", { class: "head" }, el("span", { class: "badge" }, LESSON_STATUS[lesson.status] || lesson.status),
         meta(`aula #${lesson.id}`, fmtDate(lesson.created_at), lesson.duration_s ? clock(lesson.duration_s) : null,
-             lesson.cost_usd !== null ? `US$ ${num(lesson.cost_usd, 3)}` : null, lesson.voice,
+             lesson.cost_usd !== null ? `US$ ${num(lesson.cost_usd, 3)}` + (lesson.cost_brl != null ? ` · R$ ${num(lesson.cost_brl, 2)}` : "") : null,
+             lesson.voice,
              r0[1] ? `quiz ${r0[0]}/${r0[1]}` : null, r1[1] ? `re-quiz ${r1[0]}/${r1[1]}` : null,
              REVIEW[lesson.review], COMPARISON[lesson.comparison])),
       el("h2", {}, lesson.title),
@@ -902,12 +903,33 @@
     const out = [el("h3", {}, "Roteiro"), el("ol", {}, plan.scenes.map((s, i) => {
       const r = scenes[String(i + 1)] || {};
       const status = r.fallback ? " · virou slide" : r.attempts ? ` · ${r.attempts} tentativa(s)` : "";
-      return el("li", {}, el("b", {}, `${s.title} `), el("span", { class: "muted" }, `(${s.mode === "three" ? "3D" : "2D"}${status})`),
+      const kind = s.template || (s.mode === "three" ? "3D" : "2D");
+      return el("li", {}, el("b", {}, `${s.title} `), el("span", { class: "muted" }, `(${kind}${status})`),
                 el("ul", {}, s.beats.map((b) => el("li", {}, b.narration, b.source >= 0 ? el("sup", {}, ` [${b.source}]`) : null))));
     }))];
     out.push(el("h3", {}, "Quiz"), el("ol", {}, plan.quiz.map((q) => el("li", {}, q.question,
       el("details", {}, el("summary", {}, "resposta"), el("p", {}, `${"ABCD"[q.answer]}) ${q.options[q.answer]} — ${q.explanation}`))))));
     const after = gates.G1_after || gates.G1_first || [];
+    if (report.engine === "hyperframes") {        // the HyperFrames engine: gates, the check and what the lesson cost
+      const check = report.check || {}, voice = report.voice || {}, ptax = report.ptax;
+      out.push(el("h3", {}, "Portões automáticos"), el("ul", {},
+        el("li", {}, `G1 fatos: ${(gates.G1_first || []).length} problema(s) na 1ª checagem, ${after.length} depois da revisão`),
+        ...after.map((p) => el("li", { class: "muted" }, p)),
+        el("li", {}, `G2 roteiro: ${(gates.G2 || []).length ? gates.G2.join("; ") : "ok"}`),
+        el("li", {}, `hyperframes check: ${(check.errors || []).length} erro(s), ${(check.warnings || []).length} aviso(s)`)));
+      if (report.cost_usd != null) out.push(el("h3", {}, "Custo"), el("ul", {},
+        el("li", {}, `LLM: US$ ${num(report.llm_usd || 0, 3)}`),
+        el("li", {}, `voz: ${voice.credits || 0} créditos ElevenLabs = US$ ${num(voice.usd || 0, 3)}` +
+          (voice.plan ? ` (US$ ${num(voice.plan[0], 2)} por ${voice.plan[1]} créditos do plano)` : "")),
+        el("li", {}, `total: US$ ${num(report.cost_usd, 3)}` +
+          (report.cost_brl != null && ptax ? ` = R$ ${num(report.cost_brl, 2)} (PTAX de ${fmtDate(ptax.day)}: R$ ${num(ptax.brl, 4)})` : ""))));
+      out.push(el("h3", {}, "Checklist da sua revisão (G8)"), el("ol", {}, CHECKLIST.map((c) => el("li", {}, c))));
+      if (d.sources && d.sources.length) out.push(el("h3", {}, "Fontes"), el("ol", { start: 0 }, d.sources.map((s) => {
+        const url = safeUrl(s.url);
+        return el("li", {}, url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer" }, s.title) : s.title, ` (${s.published})`);
+      })));
+      return out;
+    }
     const visual = Object.values(scenes).flatMap((s) => (s.visual || []).flatMap((r) => r.defects || []));
     const serious = visual.filter((d) => d.severity === "grave");
     const fixed = Object.values(scenes).reduce((n, s) => n + (s.visual_fixes || 0), 0);
@@ -931,7 +953,7 @@
     try { lessons = await api("/api/lessons"); }
     catch (e) { $("#lessons-meta").textContent = `Não consegui carregar as aulas (${e.message}).`; return; }
     $("#lessons-meta").textContent = lessons.length
-      ? `${lessons.length} aula(s) · vídeo narrado, cenas 3D interativas, quiz no Telegram e re-quiz em 2 dias`
+      ? `${lessons.length} aula(s) · vídeo narrado com cenas 3D, quiz no Telegram e re-quiz em 2 dias`
       : "Nenhuma aula ainda: sotawhat lessons make --tema \"…\" (ou --auto, a tendência mais forte da semana).";
     $("#lessons-list").replaceChildren(...lessons.map(lessonCard));
   }

@@ -7,7 +7,9 @@ every sentence (the beats that time the animation) and of every word (the captio
 an element appear when its name is spoken). `previous_text`/`next_text` keep the tone continuous across scenes.
 
 Credits are spent once: every scene is cached by a hash of its text, voice, model and settings, so a rerun of the
-same lesson costs nothing. The key travels only in the `xi-api-key` header and is never logged."""
+same lesson costs nothing. What a generation cost comes from the `character-cost` response header (the characters
+sent when it is missing: lesson 6 was charged 2,730 credits for 2,722 characters) and is kept with the cache, so
+the lesson report can price its voice. The key travels only in the `xi-api-key` header and is never logged."""
 import base64
 import hashlib
 import json
@@ -26,6 +28,7 @@ SETTINGS = {"stability": 0.45, "similarity_boost": 0.8, "style": 0.15, "use_spea
 RATE = 44100
 SCENE_GAP_S = 0.7          # silence between scenes: the visual transition happens here
 LEAD_IN_S = 0.35           # silence before the first word of a scene's audio
+PLAN_USD, PLAN_CREDITS = 5.0, 30000       # Starter: US$ 5 a month for 30k credits (the 90k shown include rollover)
 
 
 class ElevenError(Exception):
@@ -40,6 +43,7 @@ class SceneAudio:
     words: list            # [{"text", "start", "end", "beat"}] local seconds
     chars: int
     cached: bool = False
+    credits: int = 0       # what its generation cost (also when it now comes from the cache)
 
 
 @dataclass
@@ -48,7 +52,8 @@ class Narration:
     duration: float
     scenes: list = field(default_factory=list)   # [{"start", "end", "beats": [(s, e)], "words": [...]}] global seconds
     chars: int = 0
-    billed_chars: int = 0
+    billed_chars: int = 0          # credits charged in this run (0 when every scene came from the cache)
+    credits: int = 0               # credits of the scenes of this narration, whenever they were generated
 
 
 class ElevenLabs:
@@ -59,7 +64,8 @@ class ElevenLabs:
 
     def speak(self, text, voice=DEFAULT_VOICE, model=DEFAULT_MODEL, previous_text=None, next_text=None,
               settings=None) -> tuple:
-        """-> (mp3 bytes, alignment {"characters", "character_start_times_seconds", "character_end_times_seconds"})."""
+        """-> (mp3 bytes, alignment {"characters", "character_start_times_seconds", "character_end_times_seconds"},
+        credits charged)."""
         body = {"text": text, "model_id": model, "language_code": "pt", "voice_settings": settings or SETTINGS}
         if previous_text:
             body["previous_text"] = previous_text
@@ -73,7 +79,11 @@ class ElevenLabs:
         alignment = data.get("alignment") or data.get("normalized_alignment")
         if not alignment or not data.get("audio_base64"):
             raise ElevenError("ElevenLabs não devolveu áudio com tempos")
-        return base64.b64decode(data["audio_base64"]), alignment
+        try:
+            credits = int(r.headers.get("character-cost") or len(text))
+        except ValueError:
+            credits = len(text)
+        return base64.b64decode(data["audio_base64"]), alignment, credits
 
 
 def spans(sentences) -> list:
@@ -116,6 +126,11 @@ def word_times(alignment, sentences) -> list:
     return out
 
 
+def credits_usd(credits, plan_usd=PLAN_USD, plan_credits=PLAN_CREDITS) -> float:
+    """What the credits are worth at the plan's price (a share of the monthly fee you pay anyway)."""
+    return round(credits * plan_usd / max(1, plan_credits), 4)
+
+
 def cache_key(text, voice, model, settings) -> str:
     raw = json.dumps([text, voice, model, settings], ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
@@ -141,16 +156,18 @@ def speak_scene(el, sentences, out_dir, ffmpeg, name, voice=DEFAULT_VOICE, model
     mp3, meta = out_dir / f"{name}-{key}.mp3", out_dir / f"{name}-{key}.json"
     cached = mp3.exists() and meta.exists()
     if cached:
-        alignment = json.loads(meta.read_text(encoding="utf-8"))
+        stored = json.loads(meta.read_text(encoding="utf-8"))
+        # the first cache files (lesson 6) hold the alignment alone
+        alignment, credits = (stored["alignment"], stored["credits"]) if "alignment" in stored else (stored, len(text))
     else:
-        audio, alignment = el.speak(text, voice, model, previous_text, next_text, settings)
+        audio, alignment, credits = el.speak(text, voice, model, previous_text, next_text, settings)
         mp3.write_bytes(audio)
-        meta.write_text(json.dumps(alignment, ensure_ascii=False), encoding="utf-8")
+        meta.write_text(json.dumps({"alignment": alignment, "credits": credits}, ensure_ascii=False), encoding="utf-8")
     wav = out_dir / f"{name}.wav"
     duration = to_wav(ffmpeg, mp3, wav)
     beats = [(s + LEAD_IN_S, e + LEAD_IN_S) for s, e in beat_times(alignment, sentences)]
     words = [{**w, "start": w["start"] + LEAD_IN_S, "end": w["end"] + LEAD_IN_S} for w in word_times(alignment, sentences)]
-    return SceneAudio(wav, duration, beats, words, len(text), cached)
+    return SceneAudio(wav, duration, beats, words, len(text), cached, credits)
 
 
 def silence(path, seconds) -> Path:
@@ -184,7 +201,7 @@ def narrate(el, scenes, out_dir, ffmpeg, intro=0.0, voice=DEFAULT_VOICE, model=D
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     texts = [" ".join(s) for s in scenes]
-    parts, t, timeline, billed = [], 0.0, [], 0
+    parts, t, timeline, billed, credits = [], 0.0, [], 0, 0
     if intro > 0:
         parts.append(silence(out_dir / "intro.wav", intro))
         t = intro
@@ -192,8 +209,10 @@ def narrate(el, scenes, out_dir, ffmpeg, intro=0.0, voice=DEFAULT_VOICE, model=D
         audio = speak_scene(el, sentences, out_dir, ffmpeg, f"cena{n + 1:02d}", voice, model,
                             previous_text=texts[n - 1] if n else None,
                             next_text=texts[n + 1] if n + 1 < len(texts) else None, settings=settings)
-        billed += 0 if audio.cached else audio.chars
-        progress(f"[voz] cena {n + 1}: {audio.duration:.1f} s{' (cache)' if audio.cached else ''}")
+        billed += 0 if audio.cached else audio.credits
+        credits += audio.credits
+        progress(f"[voz] cena {n + 1}: {audio.duration:.1f} s · "
+                 + ("cache" if audio.cached else f"{audio.credits} créditos"))
         parts.append(audio.wav)
         timeline.append({"start": t, "end": t + audio.duration, "duration": audio.duration,
                          "beats": [(t + s, t + e) for s, e in audio.beats],
@@ -206,4 +225,4 @@ def narrate(el, scenes, out_dir, ffmpeg, intro=0.0, voice=DEFAULT_VOICE, model=D
     parts.append(tail)
     wav = out_dir / "narration.wav"
     duration = join(parts, wav)
-    return Narration(wav, duration, timeline, sum(len(x) for x in texts), billed)
+    return Narration(wav, duration, timeline, sum(len(x) for x in texts), billed, credits)

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from sotawhat import taxonomy as tx
+from sotawhat.notify import brand
 from sotawhat.notify.telegram import LIMIT, esc, esc_attr
 
 VOTES = {"up": "👍", "down": "👎", "test": "🧪"}
@@ -134,12 +135,20 @@ def _sources(e) -> str:
 
 
 # --- files --------------------------------------------------------------------
+def _title(d, year=True) -> str:
+    return f"{brand.DAILY} {brand.NAME} · {brand.br_date(d.day, year)}"
+
+
+def _sections(d) -> tuple:
+    return ((f"{brand.HEALTH} IA ∩ Saúde", d.main), (f"{brand.FRONTIER} Fronteira de IA", d.frontier))
+
+
 def render_markdown(d) -> str:
-    out = [f"# sotawhat · {d.day}", "", d.stats_line, ""]
+    out = [f"# {_title(d)}", "", f"{brand.STATS} {d.stats_line}", ""]
     out += [f"> {n}" for n in d.notes] + ([""] if d.notes else [])
     if d.error:
         out += [f"> ❌ erro no run: {d.error}", ""]
-    for title, entries in (("IA ∩ Saúde", d.main), ("Fronteira de IA", d.frontier)):
+    for title, entries in _sections(d):
         if not entries:
             continue
         out += [f"## {title}", ""]
@@ -148,17 +157,17 @@ def render_markdown(d) -> str:
                     f"**{num(e.total)}** · {_scores(e)} · {_sources(e)} · {' · '.join(_tag_labels(e))}", "",
                     e.summary, "", f"**Por que importa:** {e.why}", "", f"`{e.item_id}`", ""]
     if d.radar:
-        out += ["## Radar", ""]
+        out += [f"## {brand.RADAR} Radar", ""]
         out += [f"{e.position}. [{e.title}]({e.url}) — {_sources(e)} · {_scores(e)}" for e in d.radar] + [""]
     if d.extra:
-        out += ["## Também aprovados (além do limite diário)", ""]
+        out += [f"## {brand.EXTRA} Também aprovados (além do limite diário)", ""]
         out += [f"- [{e.title}]({e.url}) — {num(e.total)} · {_sources(e)}" for e in d.extra] + [""]
     if d.failing:
-        out += ["## Fontes com falha", ""]
+        out += [f"## {brand.FAILING} Fontes com falha", ""]
         out += [f"- {key}: {err[:160]}" + (f" — **{count}ª falha seguida**" if count >= ALERT_AFTER else "")
                 for key, count, err in d.failing] + [""]
     if not (d.main or d.frontier or d.radar):
-        out += ["Nada relevante hoje.", ""]
+        out += [f"{brand.QUIET} Nada relevante hoje.", ""]
     return "\n".join(out)
 
 
@@ -174,11 +183,11 @@ def render_html(d) -> str:
     def a(e):
         return f'<a href="{esc_attr(e.url)}">{esc(e.title)}</a>'
 
-    body = [f"<h1>sotawhat · {esc(d.day)}</h1>", f'<p class="muted">{esc(d.stats_line)}</p>']
+    body = [f"<h1>{esc(_title(d))}</h1>", f'<p class="muted">{brand.STATS} {esc(d.stats_line)}</p>']
     body += [f'<p class="muted">{esc(n)}</p>' for n in d.notes]
     if d.error:
         body.append(f"<p>❌ erro no run: {esc(d.error)}</p>")
-    for title, entries in (("IA ∩ Saúde", d.main), ("Fronteira de IA", d.frontier)):
+    for title, entries in _sections(d):
         if not entries:
             continue
         body.append(f"<h2>{title}</h2>")
@@ -187,20 +196,21 @@ def render_html(d) -> str:
                         f"{esc(_scores(e))} · {esc(_sources(e))} · {esc(' · '.join(_tag_labels(e)))}</p>"
                         f"<p>{esc(e.summary)}</p><p><b>Por que importa:</b> {esc(e.why)}</p></article>")
     if d.radar:
-        body.append("<h2>Radar</h2><ol>" + "".join(
+        body.append(f"<h2>{brand.RADAR} Radar</h2><ol>" + "".join(
             f"<li>{a(e)} <span class=\"meta\">— {esc(_sources(e))} · {esc(_scores(e))}</span></li>" for e in d.radar)
             + "</ol>")
     if d.extra:
-        body.append("<h2>Também aprovados</h2><ul>" + "".join(
+        body.append(f"<h2>{brand.EXTRA} Também aprovados</h2><ul>" + "".join(
             f"<li>{a(e)} <span class=\"meta\">— {num(e.total)}</span></li>" for e in d.extra) + "</ul>")
     if d.failing:
-        body.append("<h2>Fontes com falha</h2><ul>" + "".join(
+        body.append(f"<h2>{brand.FAILING} Fontes com falha</h2><ul>" + "".join(
             f"<li>{esc(k)}: {esc(err[:160])}" + (f" — <b>{c}ª falha seguida</b>" if c >= ALERT_AFTER else "") + "</li>"
             for k, c, err in d.failing) + "</ul>")
     if not (d.main or d.frontier or d.radar):
-        body.append("<p>Nada relevante hoje.</p>")
+        body.append(f"<p>{brand.QUIET} Nada relevante hoje.</p>")
     return (f'<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
-            f'<meta name="viewport" content="width=device-width, initial-scale=1"><title>sotawhat {esc(d.day)}</title>'
+            f'<meta name="viewport" content="width=device-width, initial-scale=1">'
+            f"<title>{brand.NAME} · {esc(brand.br_date(d.day))}</title>"
             f"<style>{_CSS}</style></head><body>{''.join(body)}</body></html>")
 
 
@@ -218,25 +228,25 @@ _MAIL = {
 def render_email(d) -> tuple:
     """(subject, plain text, HTML) of the e-mail copy. Inline styles only: Gmail and other clients drop
     <style> blocks and CSS variables. Votes stay in Telegram, the e-mail is for reading."""
-    day = "/".join(reversed(d.day.split("-")))[:5]
     if d.main or d.frontier:
-        parts = [f"{len(d.main)} em IA ∩ Saúde", f"{len(d.frontier)} na fronteira"]
+        parts = [f"{brand.HEALTH} {len(d.main)} em IA ∩ Saúde", f"{brand.FRONTIER} {len(d.frontier)} na fronteira"]
     else:
-        parts = [f"radar com {len(d.radar)}"] if d.radar else []
-    subject = " · ".join([f"sotawhat · {day}"] + parts + (["⚠️"] if d.alerts or d.error else []))
+        parts = [f"{brand.RADAR} radar com {len(d.radar)}"] if d.radar else []
+    subject = " · ".join([_title(d, year=False)] + parts + ([brand.FAILING] if d.alerts or d.error else []))
     s = _MAIL
 
     def a(e):
         return f'<a href="{esc_attr(e.url)}" style="{s["a"]}">{esc(e.title)}</a>'
 
-    body = [f'<p style="{s["h1"]}">sotawhat · {esc(day)}</p>', f'<p style="{s["muted"]}">{esc(d.stats_line)}</p>']
+    body = [f'<p style="{s["h1"]}">{esc(_title(d))}</p>',
+            f'<p style="{s["muted"]}">{brand.STATS} {esc(d.stats_line)}</p>']
     body += [f'<p style="{s["muted"]}">{esc(n)}</p>' for n in d.notes]
     if d.error:
         body.append(f'<p style="{s["warn"]}">❌ erro no run: {esc(d.error)}</p>')
     if d.alerts:
         body.append(f'<p style="{s["warn"]}">⚠️ Alertas: '
                     + "; ".join(f"{esc(k)} ({c}ª falha seguida)" for k, c, _ in d.alerts) + "</p>")
-    for title, entries in (("IA ∩ Saúde", d.main), ("Fronteira de IA", d.frontier)):
+    for title, entries in _sections(d):
         if not entries:
             continue
         body.append(f'<p style="{s["h2"]}">{title}</p>')
@@ -247,11 +257,11 @@ def render_email(d) -> tuple:
                         f'<p style="{s["p"]}">{esc(e.summary)}</p>'
                         f'<p style="{s["p"]}"><b>Por que importa:</b> {esc(e.why)}</p></div>')
     if d.radar:
-        body.append(f'<p style="{s["h2"]}">Radar</p><ol>' + "".join(
+        body.append(f'<p style="{s["h2"]}">{brand.RADAR} Radar</p><ol>' + "".join(
             f'<li style="{s["li"]}">{a(e)} <span style="{s["meta"]}">— {esc(_sources(e))} · {esc(_scores(e))}</span></li>'
             for e in d.radar) + "</ol>")
     if not (d.main or d.frontier or d.radar):
-        body.append(f'<p style="{s["p"]}">Nada relevante hoje.</p>')
+        body.append(f'<p style="{s["p"]}">{brand.QUIET} Nada relevante hoje.</p>')
     body.append(f'<p style="{s["muted"]}">Vote 👍 👎 🧪 nas mensagens do Telegram; este e-mail é uma cópia do digest.</p>')
     html = ('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width, initial-scale=1"></head>'
@@ -306,8 +316,7 @@ def _clip(text, n) -> str:
 
 
 def telegram_messages(d) -> list:
-    day = "/".join(reversed(d.day.split("-")))
-    header = [f"🗞️ <b>sotawhat · {esc(day)}</b>", esc(d.stats_line)]
+    header = [f"{brand.DAILY} <b>{brand.NAME}</b> · {esc(brand.br_date(d.day))}", f"{brand.STATS} {esc(d.stats_line)}"]
     header += [f"ℹ️ {esc(n)}" for n in d.notes]
     if d.error:
         header.append(f"❌ <b>erro no run:</b> {esc(d.error[:300])}")
@@ -317,7 +326,7 @@ def telegram_messages(d) -> list:
     if others:
         header.append(f"⚠️ falha hoje: {esc(', '.join(others))}")
     messages = [{"text": "\n".join(header), "rows": [], "silent": False}]
-    for prefix, entries in (("", d.main), ("🔭 ", d.frontier)):
+    for prefix, entries in ((f"{brand.HEALTH} ", d.main), (f"{brand.FRONTIER} ", d.frontier)):
         for e in entries:
             text = (f'{prefix}<b>{e.position}.</b> <a href="{esc_attr(e.url)}">{esc(_clip(e.title, 300))}</a>\n'
                     f"⭐ <b>{num(e.total)}</b> · {_scores(e)} · {esc(_sources(e))}\n"
@@ -325,7 +334,7 @@ def telegram_messages(d) -> list:
                     f"💡 <i>{esc(_clip(e.why, 450))}</i>")
             messages.append({"text": text[:LIMIT], "rows": [e.row()], "silent": True})
     if d.radar:
-        lines = ["📡 <b>Radar</b> (mais IA, uma linha cada)"]
+        lines = [f"{brand.RADAR} <b>Radar</b> (mais IA, uma linha cada)"]
         lines += [f'{e.position}. <a href="{esc_attr(e.url)}">{esc(_clip(e.title, 200))}</a> — {esc(_sources(e))} '
                   f"· A{e.scores.get('A', '?')}" for e in d.radar]
         messages.append({"text": "\n".join(lines)[:LIMIT], "rows": [e.row() for e in d.radar], "silent": True})

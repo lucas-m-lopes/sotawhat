@@ -50,8 +50,8 @@ def fake_smtp(log, fail_login=False):
 
 def test_email_copy_has_both_sections_inline_styles_and_a_plain_part():
     subject, text, html = render_email(_digest())
-    assert subject == "sotawhat · 08/11 · 1 em IA ∩ Saúde · 1 na fronteira · ⚠️"
-    assert "## IA ∩ Saúde" in text and "## Fronteira de IA" in text
+    assert subject == "🗞️ SOTA What · 08/11 · 🩺 1 em IA ∩ Saúde · 🔭 1 na fronteira · ⚠️"
+    assert "## 🩺 IA ∩ Saúde" in text and "## 🔭 Fronteira de IA" in text and "🗞️ SOTA What · 08/11/2026" in html
     assert "Título &lt;1&gt;" in html and 'style="' in html and "<style" not in html and "var(--" not in html
     assert html.index("IA ∩ Saúde") < html.index("Fronteira de IA") < html.index("Radar")
     assert "Telegram" in html                                    # votes stay in Telegram
@@ -64,7 +64,7 @@ def test_send_over_starttls_with_the_app_password_without_spaces():
     assert log[0] == ("connect", "smtp.gmail.com", 587, False) and ("starttls", True) in log
     assert ("login", "eu@gmail.com", "abcdefghijklmnop") in log and log[-1] == "quit"
     msg = next(entry[1] for entry in log if isinstance(entry, tuple) and entry[0] == "send")
-    assert (msg["From"], msg["To"]) == ("eu@gmail.com", "eu@gmail.com") and msg["Subject"].startswith("sotawhat · 08/11")
+    assert (msg["From"], msg["To"]) == ("eu@gmail.com", "eu@gmail.com") and msg["Subject"].startswith("🗞️ SOTA What · 08/11")
     assert [part.get_content_type() for part in msg.iter_parts()] == ["text/plain", "text/html"]
     assert msg["Message-ID"].endswith("@gmail.com>")              # no local host name in the headers
 

@@ -40,6 +40,13 @@ def test_stalled_feeds_removed():
     assert "the-gradient" not in [name for name, _ in LAB_FEEDS]
 
 
+def test_vendor_health_launches_reach_the_medical_profile():
+    from sotawhat.profiles import HEALTH_AI_FEEDS
+    news = [s for s in build_sources("medico") if s.name == "health-ai-news"][0]
+    assert ("google-cloud-health", "https://cloudblog.withgoogle.com/topics/healthcare-life-sciences/rss/") in news.feeds
+    assert news.feeds == HEALTH_AI_FEEDS and news.ai_specific and news.keywordless
+
+
 def _names(sources):
     return [s.name for s in sources]
 

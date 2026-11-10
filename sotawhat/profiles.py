@@ -58,6 +58,9 @@ HEALTH_AI_FEEDS = [
     ("jama-ai", "https://jamanetwork.com/rss/site_9/0_44024.xml"),
     ("stat-ai", "https://www.statnews.com/topic/artificial-intelligence/feed/"),
     ("monai", "https://github.com/Project-MONAI/MONAI/releases.atom"),
+    # Google Cloud's healthcare and life sciences posts (≈ 20 a year; verified 2026-11-10): "Introducing Gemini for
+    # healthcare" came out there at 09:00 BRT, and no other feed of ours had it that day
+    ("google-cloud-health", "https://cloudblog.withgoogle.com/topics/healthcare-life-sciences/rss/"),
 ]
 HEALTH_NEWS_FEEDS = [
     ("lancet-digital-health", "https://rss.sciencedirect.com/publication/science/25897500"),

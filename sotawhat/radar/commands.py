@@ -17,15 +17,15 @@ def _config(settings):
     return load_radar(settings.sotawhat_config_dir / "tools_radar.yaml")
 
 
-def scan(store, cfg, client, token, today, now, sleep=time.sleep, stars_token="", history_limit=300) -> dict:
-    """Discovery and today's counts; with `stars_token`, also the history of up to `history_limit` repositories that
+def scan(store, cfg, client, token, today, now, sleep=time.sleep, history_limit=300) -> dict:
+    """Discovery and today's counts; with a token, also the star history of up to `history_limit` repositories that
     have no count from a week ago (the new finds, or all of them the first time)."""
     errors = {}
     finds = search_github(client, token, cfg, today, sleep=sleep, errors=errors)
     finds += hn_repos(client, cfg, now, errors=errors)
     found = record(store, finds, today)
     counted = snapshot(store, client, token, cfg, today, errors=errors)
-    history = backfill(store, client, stars_token, today, limit=history_limit) if stars_token else None
+    history = backfill(store, client, token, today, limit=history_limit) if token else None
     if history and history["stopped"]:
         errors["histórico de estrelas"] = history["stopped"]
     store.meta_set("radar_scanned_at", now.isoformat(timespec="seconds"))
@@ -46,8 +46,7 @@ def scan_step(settings, store, client=None, today=None, now=None, sleep=time.sle
     client = client or httpx.Client(timeout=30, follow_redirects=True)
     try:
         return scan_line(scan(store, _config(settings), client, settings.github_token, today or date.today(),
-                              now or datetime.now(timezone.utc), sleep=sleep,
-                              stars_token=getattr(settings, "github_stars_token", "")))
+                              now or datetime.now(timezone.utc), sleep=sleep))
     finally:
         if own:
             client.close()
@@ -55,14 +54,14 @@ def scan_step(settings, store, client=None, today=None, now=None, sleep=time.sle
 
 def backfill_step(settings, store, days=14, client=None, today=None) -> int:
     """`sotawhat radar backfill`: the star history of every tracked repository without a count from a week ago."""
-    if not settings.github_stars_token:
-        print("[radar] GITHUB_STARS_TOKEN vazio no .env: crie um token clássico sem escopos "
-              "(github.com/settings/tokens/new) e rode de novo", file=sys.stderr)
+    if not settings.github_token:
+        print("[radar] GITHUB_TOKEN vazio no .env: sem token o GitHub dá 60 pedidos por hora, poucos para o histórico",
+              file=sys.stderr)
         return 2
     own = client is None
     client = client or httpx.Client(timeout=30, follow_redirects=True)
     try:
-        out = backfill(store, client, settings.github_stars_token, today or date.today(), days=days)
+        out = backfill(store, client, settings.github_token, today or date.today(), days=days)
     finally:
         if own:
             client.close()

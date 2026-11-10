@@ -261,14 +261,13 @@ outside the triage, the digest and the graph.
   - the GitHub repositories in the Hacker News stories of the week (Algolia's public API);
   - a daily count of every tracked repository's stars.
 
-  The GitHub token cannot list stargazers with dates, so star growth comes from these counts. Until 7 days of counts
-  exist, it is scaled from what there is and marked as an estimate.
-
-  With `GITHUB_STARS_TOKEN` (a classic token without any scope) there is also a history:
-  - The scan rebuilds the last 14 days of every repository without a count from a week ago, up to 300 a day. The
-    GraphQL API lists who starred, newest first, and the count of day d is the stars now minus the stars given after
-    d.
-  - `sotawhat radar backfill [--dias 14]` does it for all of them at once.
+  Star growth comes from these counts. The scan also fills the 14 days before a repository's first count, up to 300
+  repositories a day, from GitHub's star history endpoint:
+  - `/stargazers/history` (September 2026) gives the stars given each day and never who gave them. Since July 2026
+    GitHub lists who starred only to a repository's admins and collaborators.
+  - The count of day d is the latest count minus the stars given after d, so the week is the sum of those days.
+  - A repository without that history is scaled from what there is and marked as an estimate.
+  - `sotawhat radar backfill [--dias 14]` fills all of them at once.
 - `sotawhat radar report [--no-notify]`, which `run weekly` runs every Sunday:
   - measures the stars gained in the week and the week before;
   - adds the npm and PyPI downloads of the last two weeks (packages read from `package.json`/`pyproject.toml`) and

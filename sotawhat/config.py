@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     openalex_email: str = ""          # P4 prior art: OpenAlex polite pool (falls back to CROSSREF_MAILTO)
     exa_api_key: str = ""             # P4 prior art: Exa market layer (empty = layer "não verificado")
     apify_token: str = ""             # P5: Instagram through Apify (Free plan: US$ 5/month)
-    instagram_max_usd_run: float = 0.15   # P5: charge cap of each Apify scan
+    instagram_max_usd_run: float = 0.15   # P5: Apify cap of the daily run, shared by the "ia" and "saude" scans
     instagram_per_account: int = 3        # P5: newest posts per account in a scan
 
     sotawhat_web_port: int = 8765     # `sotawhat serve` (P3), always on 127.0.0.1

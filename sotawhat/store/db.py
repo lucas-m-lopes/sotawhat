@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 APPROVED = ("main", "frontier", "radar")
 ROLE_RANK = {"tag": 0, "mentioned": 1, "used": 2, "main": 3}
 IDEA_STATUS = {"up": "curtida", "down": "rejeitada", "test": "testar", "archive": "engavetada", "built": "construida"}
@@ -297,6 +297,53 @@ CREATE TABLE IF NOT EXISTS lesson_answers(
     PRIMARY KEY(lesson_id, round, question)
 );
 """
+_SCHEMA_V6 = """
+CREATE TABLE IF NOT EXISTS radar_repos(
+    full_name TEXT PRIMARY KEY,           -- owner/repo in lower case (radar de ferramentas, 2026-11-10)
+    name TEXT NOT NULL,                   -- owner/repo as GitHub writes it
+    description TEXT,
+    language TEXT,
+    license TEXT,
+    topics_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT,
+    homepage TEXT,
+    fronts_json TEXT NOT NULL DEFAULT '[]',   -- the radar fronts whose searches found it
+    sources_json TEXT NOT NULL DEFAULT '[]',  -- github | hn
+    packages_json TEXT,                       -- [{"registry": "npm" | "pypi", "name"}]; NULL: not looked up yet
+    release_at TEXT,                          -- the latest release (the two-week rule for dependencies)
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS radar_stars(
+    full_name TEXT NOT NULL,
+    day TEXT NOT NULL,
+    stars INTEGER NOT NULL,
+    forks INTEGER,
+    pushed_at TEXT,
+    PRIMARY KEY(full_name, day)
+);
+CREATE TABLE IF NOT EXISTS radar_hn(
+    full_name TEXT NOT NULL,
+    story_id TEXT NOT NULL,
+    title TEXT,
+    points INTEGER,
+    comments INTEGER,
+    created_at TEXT,
+    PRIMARY KEY(full_name, story_id)
+);
+CREATE TABLE IF NOT EXISTS radar_picks(
+    run_id INTEGER NOT NULL,
+    day TEXT NOT NULL,
+    full_name TEXT NOT NULL,
+    rank INTEGER,                         -- position in the report; NULL: judged and left out
+    front TEXT,
+    score REAL,
+    metrics_json TEXT NOT NULL,
+    verdict_json TEXT,
+    card_json TEXT,                       -- what the report and the interface show (the picks only)
+    PRIMARY KEY(run_id, full_name)
+);
+"""
 LESSON_FIELDS = ("status", "title", "voice", "video_path", "duration_s", "size_bytes", "run_id", "cost_usd",
                  "delivered_at", "requiz_at", "review", "comparison", "error")
 
@@ -333,7 +380,8 @@ class Store:
         self.conn.executescript(_SCHEMA_V3)
         self.conn.executescript(_SCHEMA_V4)
         self.conn.executescript(_SCHEMA_V5)
-        columns = {row[1] for row in self.conn.execute("PRAGMA table_info(items)")}
+        self.conn.executescript(_SCHEMA_V6)
+        columns ={row[1] for row in self.conn.execute("PRAGMA table_info(items)")}
         if "cluster_id" not in columns:
             self.conn.execute("ALTER TABLE items ADD COLUMN cluster_id TEXT")
         if "graph_synced_at" not in columns:

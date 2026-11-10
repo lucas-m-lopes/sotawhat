@@ -14,6 +14,7 @@ from sotawhat.notify.telegram import LIMIT, esc, esc_attr
 VOTES = {"up": "👍", "down": "👎", "test": "🧪"}
 CODES = {"up": "u", "down": "d", "test": "t", "archive": "a"}     # archive: ideas only (P4)
 IDEA_VOTES = {"up": "👍 explorar", "down": "👎", "test": "🧪 testar", "archive": "🗄️ engavetar"}
+TOOL_VOTES = {"test": "🧪 testar", "up": "👍", "down": "👎", "archive": "🗄️ depois"}    # radar de ferramentas
 ALERT_AFTER = 3
 
 
@@ -287,11 +288,16 @@ def keyboard(rows, votes=None) -> dict:
     return {"inline_keyboard": [buttons[i:i + 4] for i in range(0, len(buttons), 4)]}
 
 
-def idea_keyboard(row, vote=None) -> dict:
+def idea_keyboard(row, vote=None, labels=None) -> dict:
     """One idea (P4): 👍 explorar · 👎 · 🧪 testar · 🗄️ engavetar."""
     def button(value, label):
         return {"text": f"✅{label}" if vote == value else label, "callback_data": f"f:{row['key']}:{CODES[value]}"}
-    return {"inline_keyboard": [[button(v, label) for v, label in IDEA_VOTES.items()]]}
+    return {"inline_keyboard": [[button(v, label) for v, label in (labels or IDEA_VOTES).items()]]}
+
+
+def tool_keyboard(row, vote=None) -> dict:
+    """One tool of the radar: 🧪 testar · 👍 · 👎 · 🗄️ depois."""
+    return idea_keyboard(row, vote, TOOL_VOTES)
 
 
 def _clip(text, n) -> str:

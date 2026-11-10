@@ -7,7 +7,7 @@ from sotawhat.store.db import Store
 
 def test_lessons_ledger_answers_and_requiz(tmp_path):
     with Store(tmp_path / "insight.db") as st:
-        assert st.meta_get("schema_version") == "5"
+        assert st.meta_get("schema_version") == "6"
         a = st.create_lesson("Atenção no Transformer", [105, 634])
         b = st.create_lesson("Da tomografia ao volume", [237])
         st.update_lesson(a, status="entregue", title="Atenção", delivered_at="2026-11-09T10:00:00+00:00",

@@ -2,7 +2,12 @@
 
 **Tipo:** Software Design Document (SDD) — serve também como *spec* para desenvolvimento orientado a especificação (spec-driven).
 **Data:** 2026-11-07
-**Status:** v2.4 (2026-11-10), com todas as fases (P0–P6) executadas, as newsletters por RSS com texto completo e as aulas no motor HyperFrames:
+**Status:** v2.5 (2026-11-10), com todas as fases (P0–P6) executadas, as newsletters por RSS com texto completo, as aulas no motor HyperFrames e o radar de ferramentas:
+- v2.5: radar de ferramentas, pedido em 2026-11-10: skills, plugins, MCPs e afins em alta no GitHub, fora da medicina.
+  - Frentes: skills/plugins/MCPs, arquitetura de agentes e evals, economia de tokens e contexto, aulas (vídeo, animação e voz).
+  - Todo dia, no fim do `run daily`, o `sotawhat radar scan` faz a descoberta (buscas do GitHub por frente e repositórios no Hacker News) e guarda o retrato das estrelas. Todo domingo, o `run weekly` mede a semana, pede o veredito a um juiz barato (tarefa `radar`) e entrega a seção "Ferramentas em alta": no relatório, no Telegram (🧪 testar · 👍 · 👎 · 🗄️ depois) e na aba Ferramentas da interface.
+  - O radar não entra na triagem, no digest nem no grafo. A OSS Insight, o ranking de terceiros escolhido, está fora do ar desde 2026-03-01; o Hacker News faz esse papel.
+  - Plano: `docs/superpowers/plans/2026-11-10-radar-ferramentas.md`;
 - v2.4: aulas no motor HyperFrames. Você aprovou a aula 6 em 2026-11-10 ("Absolute cinema! ficou excelente.") e pediu a migração.
   - `sotawhat lessons make` agora planeja com modelos de cena (`lesson_plan_v3`): cada cena tem um modelo e um exemplo único atravessa a aula. Os modelos são `graph`, `bars`, `chart`, `timeline`, `compare`, `vectors3d`, `patches` e `volume3d`.
   - O storyboard vem antes da voz.

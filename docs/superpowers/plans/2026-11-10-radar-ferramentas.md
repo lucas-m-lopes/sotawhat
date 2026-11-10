@@ -53,9 +53,11 @@ IA, economia de tokens, geração de aulas, enfim..."
   - **GitHub Search**, duas buscas por consulta, cada uma devolvendo os 30 primeiros:
     - `<q> stars:>=50 pushed:>=<hoje−14d> fork:false archived:false`, por estrelas: os ativos que já são usados;
     - `<q> created:>=<hoje−45d> stars:>=20`: os novos que sobem.
-  - **Registro oficial MCP:** servidores atualizados nos últimos 14 dias com repositório no GitHub. Os pacotes npm/PyPI
-    declarados ficam guardados.
-  - **Hacker News:** histórias dos últimos 7 dias com URL de repositório e pelo menos 20 pontos.
+  - **Hacker News:** histórias dos últimos 7 dias com URL de repositório e pelo menos 20 pontos. Um repositório que só
+    o HN trouxe precisa parecer ferramenta de IA (termos na descrição, nos tópicos ou no título) para ser medido.
+  - **O registro oficial MCP fica de fora:** em 2026-11-10, mais de 6.000 servidores tinham mudado em 14 dias, 570 deles
+    com GitHub e pacote. Mudança no registro não diz nada sobre uso. Os MCPs vêm das buscas por tópico (`mcp-server`,
+    `model-context-protocol`, `mcp`), e o uso de cada um vem dos downloads do seu pacote.
 - **Retrato diário:** para cada repositório acompanhado, guarda estrelas, forks e último push (`GET /repos/{r}`).
   - Isso dá cerca de 400 pedidos por dia, e a cota é de 5.000 por hora.
   - Um repositório que nenhuma descoberta trouxe nos últimos 60 dias sai do acompanhamento.

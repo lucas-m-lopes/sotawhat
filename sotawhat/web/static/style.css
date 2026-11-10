@@ -185,3 +185,5 @@ button { font: inherit; color: inherit; }
 .lesson details h3 { font-size: 13px; margin: 12px 0 4px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .lesson details ol, .lesson details ul { margin: 4px 0; padding-left: 20px; }
 .lesson .chips { align-items: center; margin: 6px 0; }
+.tool-title { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin-top: 6px; font-weight: 600; }
+.spark { flex: none; color: var(--main); }

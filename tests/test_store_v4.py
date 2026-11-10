@@ -9,7 +9,7 @@ def test_schema_4_tables_and_version(tmp_path):
     with Store(tmp_path / "insight.db") as st:
         names = {r[0] for r in st.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert {"ideas", "communities", "entity_communities", "weekly_reports"} <= names
-        assert st.meta_get("schema_version") == "5"
+        assert st.meta_get("schema_version") == "6"
 
 
 def test_idea_ledger_versions_status_and_votes(tmp_path):

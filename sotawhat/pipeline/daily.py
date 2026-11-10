@@ -336,4 +336,12 @@ def main_daily(ns) -> int:
                     mirror.close()
             print(f"[{render_graph_line(graph_report)}]")
             log.info("graph %s", render_graph_line(graph_report))
+        try:                                     # the tools radar: discovery and today's stars, no LLM
+            from sotawhat.radar.commands import scan_step
+
+            line = scan_step(settings, store)
+            print(f"[{line}]")
+            log.info(line)
+        except Exception as exc:  # noqa: BLE001 - the radar never stops the daily run
+            log.warning("radar: %s", exc)
     return 0 if report.ok else 1

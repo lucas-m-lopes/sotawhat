@@ -246,6 +246,41 @@ Animated lessons (aulas; research in `docs/research/reports/Aulas didáticas ani
   (`lessons rerender N --voz …`) and voice-tested (`lessons voices`). The user rejected its look and voice on
   2026-11-10.
 
+Tools radar (radar de ferramentas, 2026-11-10; plan in `docs/superpowers/plans/2026-11-10-radar-ferramentas.md`): skills,
+plugins, MCP servers and other tools on the rise on GitHub, for building AI systems rather than medicine. It stays
+outside the triage, the digest and the graph.
+
+- `config/tools_radar.yaml` lists the fronts and their GitHub searches:
+  - skills, plugins and MCPs;
+  - agent architecture and evals;
+  - tokens and context;
+  - lessons: video, animation and voice.
+- `sotawhat radar scan` runs at the end of `run daily`:
+  - two searches per query, the active repositories already in use and the new ones that climb;
+  - the GitHub repositories in the Hacker News stories of the week (Algolia's public API);
+  - a daily count of every tracked repository's stars.
+
+  The GitHub token cannot list stargazers with dates, so star growth comes from these counts. Until 7 days of counts
+  exist, it is scaled from what there is and marked as an estimate.
+- `sotawhat radar report [--no-notify]`, which `run weekly` runs every Sunday:
+  - measures the stars gained in the week and the week before;
+  - adds the npm and PyPI downloads of the last two weeks (packages read from `package.json`/`pyproject.toml`) and
+    the Hacker News points;
+  - scores each repository by the mean percentile of its signals;
+  - sends the leading 30 to a cheap judge (task `radar`, ZDR), which gives the front, the relevance 0–5 for your stack,
+    what the tool does, why it helps and its risks;
+  - reports the top 10 with relevance ≥ 3, at most 4 per front, with "testar a partir de" (the latest release plus
+    14 days, the dependency rule).
+- The section goes into the weekly report, to Telegram (🧪 testar · 👍 · 👎 · 🗄️ depois per tool) and to the Ferramentas
+  tab of the interface.
+- The official MCP registry is not crawled (more than 6,000 servers change every two weeks). OSS Insight's trend
+  ranking has been unavailable since 2026-03-01.
+
+The Instagram import (`sotawhat instagram import following.json --yes`) fetches the profiles in batches of 40 (about
+10 s each on Apify) and keeps them in `data/state/instagram_profiles.json`. An import that stops resumes without paying
+twice, and `--recuperar RUN_ID` adds what an aborted Apify run had fetched. `config/instagram_accounts.yaml` lists the
+accounts you follow, so it stays out of git.
+
 To set it up, copy `.env.example` to `.env` and fill in at least `OPENROUTER_API_KEY`,
 `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Then schedule the runs with
 `powershell -ExecutionPolicy Bypass -File scripts\schedule_daily.ps1 [-Listener] [-Web] [-Weekly]`.

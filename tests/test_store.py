@@ -15,9 +15,10 @@ def _item(iid, concepts=("k1",)):
 def test_schema_created(tmp_path):
     with Store(tmp_path / "db" / "insight.db") as st:
         names = {r[0] for r in st.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        assert {"items", "runs", "source_state", "llm_calls", "meta"} <= names
+        assert {"items", "runs", "source_state", "llm_calls", "meta", "radar_repos", "radar_stars", "radar_hn",
+                "radar_picks"} <= names
         version = st.conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-        assert version == "5"
+        assert version == "6"
 
 
 def test_upsert_dedupes_and_merges_concepts(tmp_path):

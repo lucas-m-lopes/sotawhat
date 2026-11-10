@@ -49,6 +49,17 @@ def handle_update(store, notifier, update, allowed_user) -> str:
         value = parsed[1]
         message = query.get("message") or {}
         chat, message_id = (message.get("chat") or {}).get("id"), message.get("message_id")
+        if row["item_id"].startswith("tool:"):                      # the tools radar (2026-11-10)
+            from sotawhat.pipeline.deliver import TOOL_VOTES, tool_keyboard
+
+            store.add_feedback("tool", row["item_id"].split(":", 1)[1], value, "telegram")
+            _answer(notifier, query, f"ferramenta: {TOOL_VOTES[value]}")
+            if chat is not None and message_id:
+                try:
+                    notifier.edit_reply_markup(chat, message_id, tool_keyboard(row, value))
+                except TelegramError:
+                    pass
+            return "vote"
         if row["item_id"].startswith("idea:"):                      # P4: weekly report ideas
             status = store.vote_idea(int(row["item_id"].split(":", 1)[1]), value, "telegram")
             _answer(notifier, query, f"ideia: {status}")

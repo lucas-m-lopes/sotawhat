@@ -26,6 +26,7 @@ DEFAULT_TASKS = {
     "vision": TaskSpec((MIMO_FLASH, GLM_FLASH, MINIMAX_FLASH), "low", 1500),
     "extract": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO, GLM), "high", 12000),
     "resolve": TaskSpec((DEEPSEEK_FLASH, GLM_FLASH), "low", 600),     # entity-resolution judge (P3)
+    "radar": TaskSpec((DEEPSEEK_FLASH, GLM_FLASH), "low", 6000),      # tools radar judge, 10 repositories a call
     # idea engine (P4): the callers pass the model per call to rotate families; these are the defaults
     "ideate": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO, GLM_FLASH), "high", 5000),
     "critique": TaskSpec((GLM_FLASH, DEEPSEEK_FLASH), "high", 5000),

@@ -3,7 +3,7 @@ import argparse
 import sys
 
 _SUBCOMMANDS = {"search", "run", "ideate", "doctor", "feedback", "eval", "serve", "serve-mcp", "graph", "instagram",
-                "newsletters", "backup", "calibrate", "repair", "lessons"}
+                "newsletters", "backup", "calibrate", "repair", "lessons", "radar"}
 _LESSON_ID_ACTIONS = ("resume", "rerender", "send", "pack", "hf")
 
 def parse_args(argv):
@@ -53,6 +53,8 @@ def parse_args(argv):
     p_instagram.add_argument("--max", type=int, default=50, help="accounts enabled for the daily scan (default 50)")
     p_instagram.add_argument("--limit", type=int, default=None, help="classify at most N new accounts")
     p_instagram.add_argument("--yes", action="store_true", help="fetch the profiles on Apify (paid) and classify")
+    p_instagram.add_argument("--recuperar", metavar="RUN_ID", default=None,
+                             help="add the profiles an earlier, aborted Apify run already fetched (no new charge)")
 
     p_news = sub.add_parser("newsletters", help="newsletters read by RSS (config/newsletters.yaml)")
     p_news.add_argument("newsletters_action", choices=["add"])
@@ -116,6 +118,12 @@ def parse_args(argv):
                           help="cjk: triage texts with Chinese/Japanese/Korean characters; names: entity names the "
                                "old singular rule cut ('AI bia' → 'AI bias')")
     p_repair.add_argument("--dry-run", action="store_true", help="names: show what would change, write nothing")
+
+    p_radar = sub.add_parser("radar", help="tools radar: skills, MCPs and tools on the rise on GitHub (2026-11-10)")
+    p_radar.add_argument("radar_action", choices=["scan", "report"],
+                         help="scan: discovery and today's stars (run daily does it); report: measures, judge and "
+                              "the section of the weekly report, on demand (run weekly does it on Sundays)")
+    p_radar.add_argument("--no-notify", action="store_true", help="report: do not send it to Telegram")
 
     p_calibrate = sub.add_parser("calibrate", help="proposals for the triage cut-offs and the idea weights (P6)")
     p_calibrate.add_argument("--apply", action="store_true", help="write the proposal to config/")
@@ -201,6 +209,9 @@ def main(argv=None):
     elif ns.command == "repair":
         from sotawhat.pipeline.repair import main_repair
         raise SystemExit(main_repair(ns))
+    elif ns.command == "radar":
+        from sotawhat.radar.commands import main_radar
+        raise SystemExit(main_radar(ns))
     elif ns.command == "calibrate":
         from sotawhat.evals.calibrate import main_calibrate
         raise SystemExit(main_calibrate(ns))

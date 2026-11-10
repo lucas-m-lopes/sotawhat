@@ -116,3 +116,51 @@ com quiz:
 - Os testes passam sem rede, e os antigos continuam passando.
 - O `hyperframes check` termina sem erros na aula real.
 - A aula chega ao Telegram com quiz, e o relatório mostra LLM + voz em US$ e R$ pela PTAX.
+
+## Adendo (execução, 2026-11-10)
+
+**Feito.** Tarefas 1–8, com os testes indo de 390 para 412. Todos passam sem rede.
+
+**Galeria do kit.** Os quatro modelos novos foram vistos quadro a quadro, sem LLM nem voz. A galeria levou a estas
+correções:
+- a ROC passou a ter proporção quase quadrada e rótulos sobre as curvas, desviando de linhas e chips;
+- o plano de corte ganhou preenchimento;
+- o corte passa pelo achado quando `value` é 0;
+- o quadro 2D segue a convenção radiológica;
+- no 3D, uma malha invisível tapava as fatias, porque gravava profundidade; agora ela só aparece quando visível;
+- o achado aparece através do órgão;
+- a câmera mostra a frente do corpo.
+
+**A primeira aula real.** Aula 7, "Da tomografia ao volume: reconstrução e segmentação por IA", o mesmo tema das
+aulas 2 e 5.
+- **Plano:** 1 chamada, mais a checagem de fatos (G1 e G2 sem problemas). O planejador escolheu nove cenas: graph,
+  graph, chart (perfil de atenuação), volume3d (retroprojeção e empilhamento), bars (unidades Hounsfield), patches,
+  compare (limiar contra rede neural), graph, graph.
+- **Storyboard:** 1 chamada, sem reparo.
+- **Voz:** 9 cenas, 4 min 12 s, 3.295 créditos para 3.286 caracteres. Isso confirma o cabeçalho `character-cost`.
+- **Render:** 7 min 31 s; 19,4 MB.
+- **Custo:** LLM US$ 0,011 + voz US$ 0,549 = **US$ 0,56, ou R$ 3,13** (PTAX de 10/11, R$ 5,5840).
+
+**O que a aula 7 ensinou.** Ela foi refeita só do render, sem LLM e sem créditos. O `hyperframes check` foi de 1
+erro e 7 avisos para 0 erros e 4 avisos.
+- **Focus:** durava até o fim da cena. Agora dura a frase e se desfaz na pausa antes da seguinte; o da última frase
+  fica.
+- **Show em bloco:** as seis densidades apareciam todas na primeira frase. Agora uma parte mostrada em bloco espera
+  a frase que a nomeia.
+- **Notas repetidas:** a nota que repetia o rótulo ou a glosa na tela saiu.
+- **Grandezas brutas em `bars`:** viraram barras a partir de uma linha do zero, com as negativas para baixo. Os
+  números inteiros perderam as casas decimais ("−1000", não "−1000,0").
+- **Cores das curvas:** duas curvas com o mesmo papel ganham cores diferentes.
+- **Notas no `chart` e no `volume3d`:** ganharam uma coluna à direita (no 3D, abaixo do chip de modalidade e acima do
+  corte 2D).
+- **Colunas do `compare`:** cada uma aparece quando é nomeada, e a célula escolhida fica acesa.
+- **Janela de convolução:** sem rótulo padrão.
+
+**Aula 6 (protótipo):** o custo passou a incluir a voz. São 2.730 créditos (US$ 0,455) + LLM US$ 0,021 =
+US$ 0,48, ou R$ 2,66.
+
+**Fica para depois:**
+- malhas anatômicas reais, que exigem baixar arquivos e dar atribuição;
+- teste cego de vozes da ElevenLabs, que gasta créditos;
+- rotina semanal (F2);
+- a primeira frase de uma cena `bars` pode ficar só com a linha do zero quando o storyboard nomeia as barras depois.

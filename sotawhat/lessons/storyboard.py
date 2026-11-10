@@ -266,6 +266,47 @@ def _fix_compare(scene, where, problems) -> None:
         problems.append(f"{where}: template compare precisa de 2 ou 3 colunas e de 2 a 5 linhas")
 
 
+def named_later(scene) -> None:
+    """A part shown in bulk early (three or more at once) and shown again on its own, with its cue, when a later
+    sentence names it, appears when it is named: lesson 7 showed all six densities in the first sentence and then
+    each one again as the narration said it. An action left with no ids is dropped: an empty `show` means
+    "everything" in several templates."""
+    shows = {}
+    for step in scene.steps:
+        for act in step.actions:
+            if act.do == "show":
+                for i in act.ids:
+                    shows.setdefault(i, []).append((step.beat, act))
+    size = {id(act): len(act.ids) for seen in shows.values() for _, act in seen}
+    had_ids = set(size)
+    for i, seen in shows.items():
+        named = [beat for beat, act in seen if act.cue and size[id(act)] <= 2]
+        if not named:
+            continue
+        for beat, act in seen:
+            if beat < named[0] and size[id(act)] >= 3 and i in act.ids:
+                act.ids.remove(i)
+    for step in scene.steps:
+        step.actions = [a for a in step.actions if not (a.do == "show" and not a.ids and id(a) in had_ids)]
+
+
+def drop_echo_notes(scene) -> None:
+    """A note that repeats the label or the gloss already on screen (lesson 7: "perfis de atenuação" twice) or an
+    earlier note says nothing new."""
+    on_screen = {_fold(x) for n in scene.nodes for x in (n.label, n.gloss) if x}
+    said = set()
+    for step in scene.steps:
+        kept = []
+        for act in step.actions:
+            text = _fold(act.text)
+            if act.do == "note" and (text in on_screen or text in said):
+                continue
+            if act.do == "note":
+                said.add(text)
+            kept.append(act)
+        step.actions = kept
+
+
 def validate(board, sentences, planned=None) -> list:
     """Problems that only the LLM can fix -> [str]. Repairs in place what has an obvious fix (lengths, cues that
     are not in the sentence, a link shown before its ends, missing steps, curves out of their axes). `planned`: the
@@ -333,6 +374,8 @@ def validate(board, sentences, planned=None) -> list:
         if len(missing) > max(1, len(said) // 3):
             problems.append(f"{where}: as frases {missing} não têm nenhuma ação")
         scene.steps = [Step(beat=k, actions=by_beat.get(k, [])) for k in range(len(said))]
+        named_later(scene)
+        drop_echo_notes(scene)
         shown = set()
         for step in scene.steps:
             for act in step.actions:

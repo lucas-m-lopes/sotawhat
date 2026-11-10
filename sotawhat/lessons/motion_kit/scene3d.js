@@ -419,16 +419,22 @@ export function mountVolume(id, data, offset) {
     const insetCanvas = MK.el("canvas", "", inset); insetCanvas.width = insetCanvas.height = 360;
     const insetCap = MK.el("div", "mk-inset-cap", inset, "corte axial");
     const ix = insetCanvas.getContext("2d");
-    const hasCuts = cuts.length > 0;
-    const shiftX = hasCuts ? 250 : 0;
-    inset.style.left = (W - 120 - 388) + "px"; inset.style.top = "292px";
-    chip.style.left = (hasCuts ? 1412 : W - 120 - chip.offsetWidth) + "px"; chip.style.top = "200px";
+    const hasCuts = cuts.length > 0, hasNotes = acts.some((a) => a.do === "note");
+    const shiftX = hasCuts || hasNotes ? 240 : 0;        // the volume moves left of the right column
+    const colR = W - 120;
+    chip.style.left = (colR - chip.offsetWidth) + "px"; chip.style.top = "150px";
+    let colY = 150 + chip.offsetHeight + 22;
+    for (const a of acts) {
+      if (a.do !== "note") continue;
+      const n = MK.el("div", "mk-note mk-r-info", overlay, `<i></i>${MK.esc(a.text)}`);
+      n.style.left = (colR - n.offsetWidth) + "px"; n.style.top = colY + "px"; colY += n.offsetHeight + 12;
+      T.init(n, { opacity: 0, x: -12, filter: "blur(6px)" }); T.to(n, { opacity: 1, x: 0, filter: "blur(0px)" }, a.t, 0.45, "expo.out");
+    }
+    inset.style.left = (colR - 388) + "px"; inset.style.top = Math.max(290, colY + 14) + "px";
     inset.style.opacity = "0"; chip.style.opacity = "0";
     const organTag = MK.el("div", "mk-tag3d mk-r-info", overlay, MK.esc(organ));
     const lesionTag = lesion ? MK.el("div", "mk-tag3d mk-r-alert", overlay, MK.esc(vol.finding)) : null;
     organTag.style.opacity = "0"; if (lesionTag) lesionTag.style.opacity = "0";
-    const note = MK.notes({ T, layer: overlay, area: { y1: 862 }, obstacles: hasCuts ? [{ x: W - 520, y: 280, w: 410, h: 470 }] : [] });
-    for (const a of acts) if (a.do === "note") note(a, null, "info");
 
     // framing: the camera fits the stack (taller while the slices are apart) between the header and the captions
     camera.setViewOffset(W, H, shiftX, 30, W, H);

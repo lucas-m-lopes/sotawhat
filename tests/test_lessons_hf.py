@@ -250,3 +250,35 @@ def test_storyboards_of_the_first_prototype_still_load():
            "patches": {"image": "nenhuma", "rows": 0, "cols": 0, "focus_row": 0, "focus_col": 0}, "steps": []}
     board = SceneBoard.model_validate(old)
     assert board.series == [] and board.volume.organ == "nenhum"
+
+
+# --- lessons learned from lesson 7 -----------------------------------------------------------------------------------
+def test_a_bulk_show_waits_for_each_part_to_be_named():
+    bars = [Bar(id=i, label=i, value=v, role="score") for i, v in (("ar", -1000), ("agua", 0), ("osso", 1200))]
+    scene = _scene(template="bars", bars=bars, steps=[
+        Step(beat=0, actions=[_act("show", ["ar", "agua", "osso"], cue="voxel")]),
+        Step(beat=1, actions=[_act("show", ["ar"], cue="ar"), _act("show", ["agua"], cue="água")]),
+        Step(beat=2, actions=[_act("show", ["osso"], cue="osso")])])
+    validate(Storyboard(scenes=[scene]), [["Cada voxel guarda um número.", "O ar e a água.", "O osso."]])
+    assert scene.steps[0].actions == []                    # emptied, so dropped: an empty show would mean all
+    assert [a.ids for a in scene.steps[1].actions] == [["ar"], ["agua"]]
+
+
+def test_a_note_that_repeats_the_screen_is_dropped():
+    node = Node(id="p", label="projeções", kind="box", role="query", col=0, row=0, panel=1, gloss="perfis de atenuação",
+                values=[])
+    scene = _scene(nodes=[node], steps=[Step(beat=0, actions=[_act("show", ["p"]), _act("note", ["p"], text="perfis de atenuação")]),
+                                        Step(beat=1, actions=[_act("note", ["p"], text="medidos em cada ângulo")])])
+    validate(Storyboard(scenes=[scene]), [["A primeira peça.", "Medida em cada ângulo."]])
+    assert [a.do for a in scene.steps[0].actions] == ["show"] and scene.steps[1].actions[0].text == "medidos em cada ângulo"
+
+
+def test_a_focus_lasts_its_sentence_except_the_last_one():
+    words = [{"text": "Um", "start": 1.0, "end": 1.2, "beat": 0}, {"text": "Dois", "start": 3.0, "end": 3.2, "beat": 1},
+             {"text": "Três", "start": 5.0, "end": 5.2, "beat": 2}]
+    nar_scene = {"start": 0.0, "end": 6.0, "beats": [(1.0, 1.2), (3.0, 3.2), (5.0, 5.2)], "words": words}
+    scene = _scene(steps=[Step(beat=0, actions=[_act("focus", ["q"])]), Step(beat=1, actions=[_act("pulse", ["q"])]),
+                          Step(beat=2, actions=[_act("focus", ["q"])])])
+    acts = hfm.scene_actions(scene, nar_scene, slot_start=0.0)
+    assert [a["do"] for a in acts] == ["focus", "unfocus", "pulse", "focus"]
+    assert acts[1]["t"] == pytest.approx(3.0 - 0.3)       # released in the pause before the next sentence

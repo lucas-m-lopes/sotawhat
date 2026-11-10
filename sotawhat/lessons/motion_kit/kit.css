@@ -129,6 +129,14 @@
 
 .mk-chip-big { font: 600 40px/1 var(--display); padding: 12px 28px 14px; }
 
+.mk-pbar { position: absolute; border-radius: 12px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--c) 92%, white 8%), color-mix(in srgb, var(--c) 50%, var(--panel)));
+  box-shadow: 0 0 36px color-mix(in srgb, var(--c) 26%, transparent); }
+.mk-pval { position: absolute; left: 0; text-align: center; font: 600 48px/1 var(--display); font-variant-numeric: tabular-nums;
+  color: var(--c); white-space: nowrap; }
+.mk-ccol .mk-halo { left: -8px; top: -8px; right: -8px; bottom: -8px; border-radius: 30px; background: none;
+  border: 3px solid var(--c); box-shadow: 0 0 34px color-mix(in srgb, var(--c) 50%, transparent); }
+
 /* ---- patches ------------------------------------------------------------------------------------------ */
 .mk-img { position: absolute; left: 0; top: 0; }
 .mk-tilep { position: absolute; left: 0; top: 0; border-radius: 4px; overflow: hidden;

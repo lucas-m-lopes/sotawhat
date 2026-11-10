@@ -90,10 +90,19 @@ def scene_actions(board_scene, nar_scene, slot_start) -> list:
         for k, a in enumerate(step.actions):
             at = cue_time(words, step.beat, a.cue, b_start) - LEAD_S
             out.append({"do": a.do, "ids": list(a.ids), "text": a.text, "value": a.value,
-                        "t": round(max(0.05, at - slot_start), 3), "until": round(nxt - slot_start, 3), "_k": k})
+                        "t": round(max(0.05, at - slot_start), 3), "until": round(nxt - slot_start, 3), "_k": k,
+                        "_beat": step.beat})
+    # a focus lasts its sentence: the picture comes back before the next one (in lesson 7 parts stayed dimmed to the
+    # end of their scenes); the focus of the last sentence stays until the scene leaves
+    for x in [x for x in out if x["do"] == "focus" and x["_beat"] + 1 < len(beats)]:
+        end = round(max(x["t"] + 0.6, x["until"] - 0.3), 3)     # in the pause before the next sentence
+        if not any(y is not x and y["do"] in ("focus", "unfocus", "dim") and x["t"] < y["t"] <= end for y in out):
+            out.append({"do": "unfocus", "ids": [], "text": "", "value": 0.0, "t": end, "until": x["until"], "_k": 99,
+                        "_beat": x["_beat"]})
     out.sort(key=lambda x: (x["t"], x["_k"]))
     for x in out:
         x.pop("_k")
+        x.pop("_beat")
     return out
 
 

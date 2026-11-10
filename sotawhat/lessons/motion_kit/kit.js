@@ -58,6 +58,8 @@
     return v.toFixed(d).replace(".", ",").replace("-", "−");
   }
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function decOf(v) { return Number.isInteger(v) ? 0 : (Math.abs(v) >= 10 ? 1 : 2); }
+  function fmtv(v) { return num(v, decOf(v)); }      // 45 → "45", −1000 → "−1000", 0.62 → "0,62"
 
   /* ---- seek-safe tweens: each fromTo starts where the previous tween of that property ended ---------------- */
   function Track(tl) {
@@ -504,8 +506,68 @@
   }
 
   /* ---- bars: scores → ÷√d → softmax weights ------------------------------------------------------------------ */
+  function plainBars(ctx) {   // raw quantities (densities, a metric by group): bars from a zero line, negatives down
+    const { data, T } = ctx;
+    const items = data.bars, n = items.length;
+    const iw = Math.min(230, 1500 / n), gap = Math.min(80, iw * 0.4), total = n * iw + (n - 1) * gap;
+    const x0 = 960 - total / 2, top = ctx.area.y0 + 80, bottom = 790;
+    const vals = items.map((b) => b.value), hi = Math.max(0, ...vals), lo = Math.min(0, ...vals);
+    const k = (bottom - top) / ((hi - lo) || 1), zeroY = top + hi * k;
+    const layer = el("div", "mk-bars", ctx.stage);
+    const zero = el("div", "mk-baseline", layer);
+    zero.style.left = (x0 - 30) + "px"; zero.style.width = (total + 60) + "px"; zero.style.top = zeroY + "px";
+    T.init(zero, { opacity: 0, scaleX: 0 });
+    const it = items.map((b, i) => {
+      const up = b.value >= 0, hgt = Math.max(5, Math.abs(b.value) * k), bw = iw * 0.62;
+      const root = el("div", `mk-item mk-r-${b.role}`, layer);
+      root.style.left = (x0 + i * (iw + gap)) + "px"; root.style.width = iw + "px";
+      const bar = el("div", "mk-pbar", root);
+      bar.style.left = ((iw - bw) / 2) + "px"; bar.style.width = bw + "px";
+      bar.style.top = (up ? zeroY - hgt : zeroY) + "px"; bar.style.height = hgt + "px";
+      const value = el("div", "mk-pval", root, fmtv(b.value));
+      value.style.width = iw + "px";
+      value.style.top = (up ? zeroY - hgt - value.offsetHeight - 12 : zeroY + hgt + 12) + "px";
+      const label = el("div", "mk-itemlabel", root, esc(b.label));
+      label.style.width = iw + "px";
+      label.style.top = (up ? zeroY + 16 : zeroY - 16 - label.offsetHeight) + "px";
+      T.init(bar, { scaleY: 0, opacity: 1, transformOrigin: up ? "50% 100%" : "50% 0%" });
+      T.init(value, { opacity: 0 }); T.init(label, { opacity: 0, y: up ? 8 : -8 });
+      return { b, root, bar, value, label, shown: false, rect: { x: x0 + i * (iw + gap), y: Math.min(zeroY - hgt, zeroY) - 60, w: iw, h: hgt + 120 } };
+    });
+    const note = notes(Object.assign({}, ctx, { obstacles: it.map((x) => x.rect) }));
+    const F = formula(ctx, data.formula);
+    const showItem = (x, at) => {
+      if (x.shown) return; x.shown = true;
+      T.to(x.bar, { scaleY: 1 }, at, 0.9, "expo.out");
+      T.to(x.value, { opacity: 1 }, at + 0.1, 0.3);
+      const dec = decOf(x.b.value);
+      T.count(x.value, 0, x.b.value, at + 0.1, 0.9, (v) => num(v, dec));
+      T.to(x.label, { opacity: 1, y: 0 }, at + 0.15, 0.4, "expo.out");
+    };
+    for (const a of data.actions) {
+      const at = a.t, sel = a.ids.length ? it.filter((x) => a.ids.includes(x.b.id)) : it;
+      if (a.do === "show") sel.forEach((x, i) => showItem(x, at + i * 0.12));
+      else if (a.do === "focus" || a.do === "dim" || a.do === "unfocus") {
+        const keep = new Set(sel.map((x) => x.b.id));
+        it.forEach((x) => {
+          if (!x.shown) return;
+          const on = a.do === "unfocus" || (a.do === "focus" ? keep.has(x.b.id) : !keep.has(x.b.id));
+          T.to(x.root, { opacity: on ? 1 : 0.26 }, at, 0.45, "power2.out");
+        });
+      } else if (a.do === "pulse") {
+        sel.forEach((x) => { showItem(x, at - 0.6); T.to(x.bar, { scaleX: 1.14 }, at, 0.3, "power2.out"); T.to(x.bar, { scaleX: 1 }, at + 0.32, 0.5, "power3.out"); });
+      } else if (a.do === "note") {
+        const x = a.ids.length ? it.find((y) => y.b.id === a.ids[0]) : null;
+        note(a, x ? x.rect : null, x ? x.b.role : "info");
+      } else if (a.do === "formula") formulaAction(ctx, F, a);
+    }
+    if (!it.some((x) => x.shown)) it.forEach((x, i) => showItem(x, 0.5 + i * 0.12));
+    T.to(zero, { opacity: 1, scaleX: 1 }, 0.4, 0.6, "power3.out");          // the zero line opens the scene
+  }
+
   function bars(ctx) {
     const { data, T } = ctx;
+    if (!data.actions.some((a) => a.do === "scale" || a.do === "softmax")) return plainBars(ctx);
     const items = data.bars;
     const n = items.length, iw = 220, gap = 90, total = n * iw + (n - 1) * gap;
     const x0 = 960 - total / 2, base = 760, maxH = 330, tileTop = 430;
@@ -522,7 +584,7 @@
         return h;
       };
       const halo = mkHalo(b.role), haloW = mkHalo("weight");
-      const tile = el("div", "mk-tile", root, `<b>${num(b.value)}</b>`);
+      const tile = el("div", "mk-tile", root, `<b>${fmtv(b.value)}</b>`);
       tile.style.top = tileTop + "px";
       const bar = el("div", "mk-bar", root);
       bar.style.top = (base - maxH) + "px"; bar.style.height = maxH + "px";
@@ -736,9 +798,11 @@
         win.style.left = (tl0.x - tw / 2 - 12) + "px"; win.style.top = (tl0.y - th / 2 - 12) + "px";
         win.style.width = (br0.x - tl0.x + tw + 24 - 6) + "px"; win.style.height = (br0.y - tl0.y + th + 24 - 6) + "px";
         T.init(win, { opacity: 0, scale: 0.9 }); T.to(win, { opacity: 1, scale: 1 }, at, 0.5, "expo.out");
-        const tag = el("div", "mk-tilecap", layer, esc(a.text || "convolução: só a vizinhança"));
-        tag.style.left = (tl0.x - tw / 2 - 12) + "px"; tag.style.top = (tl0.y - th / 2 - 46) + "px";
-        T.init(tag, { opacity: 0 }); T.to(tag, { opacity: 1 }, at + 0.3, 0.3);
+        if (a.text) {
+          const tag = el("div", "mk-tilecap", layer, esc(a.text));
+          tag.style.left = (tl0.x - tw / 2 - 12) + "px"; tag.style.top = (tl0.y - th / 2 - 46) + "px";
+          T.init(tag, { opacity: 0 }); T.to(tag, { opacity: 1 }, at + 0.3, 0.3);
+        }
       } else if (a.do === "dim") {
         tiles.forEach((x) => T.to(x.t, { opacity: 0.35 }, at, 0.5));
       } else if (a.do === "note") {
@@ -779,8 +843,10 @@
     const { data, T } = ctx;
     const ax = data.axes || {}, list = data.series || [];
     const square = ax.x_min === 0 && ax.x_max === 1 && ax.y_min === 0 && ax.y_max === 1;   // ROC-like: a squarer plot
-    const top = ctx.area.y0 + 30, bot = 770, wid = square ? Math.round((bot - top) * 1.35) : 1060;
-    const P = { x0: 990 - wid / 2, x1: 990 + wid / 2, y0: top, y1: bot };
+    const hasNotes = data.actions.some((a) => a.do === "note");      // then the notes get a column on the right
+    const top = ctx.area.y0 + 30, bot = 770, wid = square ? Math.round((bot - top) * 1.35) : (hasNotes ? 900 : 1060);
+    const cx = hasNotes ? 860 : 990;
+    const P = { x0: cx - wid / 2, x1: cx + wid / 2, y0: top, y1: bot };
     const xr = (ax.x_max - ax.x_min) || 1, yr = (ax.y_max - ax.y_min) || 1;
     const sx = (x) => P.x0 + ((x - ax.x_min) / xr) * (P.x1 - P.x0);
     const sy = (y) => P.y1 - ((y - ax.y_min) / yr) * (P.y1 - P.y0);
@@ -809,16 +875,22 @@
     frame.forEach((f) => T.init(f, { opacity: 0 }));
 
     const curves = {};
+    const used = new Set(), SPARE = ["query", "key", "value", "weight", "info", "output", "score"];
     list.forEach((s) => {
       const pts = (s.points || []).filter((p) => p.length >= 2);
       if (pts.length < 2) return;
+      let role = s.role;
+      if (role !== "neutral") {                         // two curves of the same role would be the same colour
+        if (used.has(role)) role = SPARE.find((r) => !used.has(r)) || role;
+        used.add(role);
+      }
       const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]), m = monotone(xs, ys);
       let d = `M ${sx(xs[0])} ${sy(ys[0])}`;
       for (let i = 0; i < pts.length - 1; i++) {
         const h = xs[i + 1] - xs[i];
         d += ` C ${sx(xs[i] + h / 3)} ${sy(ys[i] + (m[i] * h) / 3)}, ${sx(xs[i + 1] - h / 3)} ${sy(ys[i + 1] - (m[i + 1] * h) / 3)}, ${sx(xs[i + 1])} ${sy(ys[i + 1])}`;
       }
-      const color = ROLE[s.role] || ROLE.neutral;
+      const color = ROLE[role] || ROLE.neutral;
       const gid = `${ctx.id}-area-${s.id}`;
       const grad = svgEl("linearGradient", { id: gid, x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
       svgEl("stop", { offset: "0", "stop-color": color, "stop-opacity": "0.42" }, grad);
@@ -826,13 +898,13 @@
       const area = svgEl("path", { d: `${d} L ${sx(xs[xs.length - 1])} ${P.y1} L ${sx(xs[0])} ${P.y1} Z`, fill: `url(#${gid})` }, svg);
       const g = svgEl("g", {}, svg);
       const path = svgEl("path", { d, class: "mk-curve", stroke: color }, g);
-      const ref = s.role === "neutral";                     // a reference line (chance, baseline): dotted, no draw-on
+      const ref = role === "neutral";                       // a reference line (chance, baseline): dotted, no draw-on
       if (ref) path.setAttribute("stroke-dasharray", "2 14");
       const len = path.getTotalLength();
       if (!ref) path.setAttribute("stroke-dasharray", `${len} ${len + 40}`);
       const dot = svgEl("circle", { cx: sx(xs[xs.length - 1]), cy: sy(ys[ys.length - 1]), r: 9, fill: color, class: "mk-flowdot" }, g);
       dot.style.color = color;
-      const tag = el("div", `mk-seriestag mk-r-${s.role}`, layer, esc(s.label));
+      const tag = el("div", `mk-seriestag mk-r-${role}`, layer, esc(s.label));
       T.init(area, { opacity: 0 });
       T.init(path, ref ? { opacity: 0 } : { strokeDashoffset: len, opacity: 0 });
       T.init(dot, { opacity: 0, scale: 0.4, transformOrigin: "50% 50%" }); T.init(tag, { opacity: 0, y: 8 });
@@ -843,7 +915,7 @@
         const t2 = t * t, t3 = t2 * t;
         return (2 * t3 - 3 * t2 + 1) * ys[i] + (t3 - 2 * t2 + t) * h * m[i] + (-2 * t3 + 3 * t2) * ys[i + 1] + (t3 - t2) * h * m[i + 1];
       };
-      curves[s.id] = { s, ref, path, len, dot, tag, area, at, xs, ys, color, shown: false, els: [path, dot, tag] };
+      curves[s.id] = { s, role, ref, path, len, dot, tag, area, at, xs, ys, color, shown: false, els: [path, dot, tag] };
     });
     const all = Object.values(curves);
 
@@ -896,7 +968,8 @@
       c.tag.style.left = r.x + "px"; c.tag.style.top = r.y + "px";
     }
 
-    const note = notes(Object.assign({}, ctx, { obstacles: [{ x: P.x0, y: P.y0, w: P.x1 - P.x0, h: P.y1 - P.y0 }] }));
+    // the notes keep off the plot, its ticks and its axis labels
+    const note = notes(Object.assign({}, ctx, { obstacles: [{ x: P.x0 - 150, y: P.y0 - 24, w: P.x1 - P.x0 + 190, h: P.y1 - P.y0 + 130 }] }));
     const F = formula(ctx, data.formula);
     let frameOn = false;
     const showFrame = (at) => {
@@ -924,7 +997,7 @@
         T.to(c.area, { opacity: 1 }, at, 0.9, "power2.out");
         const text = a.text || (c.s.auc ? `AUC ${num(c.s.auc, 2)}` : "");
         if (!text) continue;
-        const chip = el("div", `mk-chip mk-chip-big mk-r-${c.s.role}`, layer, esc(text));
+        const chip = el("div", `mk-chip mk-chip-big mk-r-${c.role}`, layer, esc(text));
         const w = chip.offsetWidth, h = chip.offsetHeight, cands = [];
         for (let k = 0; k <= 16; k++) {      // the chip sits in the widest part of the area under the curve
           const x = ax.x_min + xr * (0.1 + (0.8 * k) / 16), y0 = sy(c.at(x)), y1 = sy(neighbour(c, x, -1));
@@ -944,7 +1017,7 @@
         T.init(guide, { opacity: 0 }); T.init(dot, { opacity: 0, scale: 0.3, transformOrigin: "50% 50%" });
         T.to(guide, { opacity: 0.85 }, at, 0.5, "power2.out"); T.to(dot, { opacity: 1, scale: 1 }, at + 0.1, 0.4, "back.out(2.2)");
         if (a.text) {
-          const chip = el("div", `mk-note mk-r-${c.s.role}`, layer, `<i></i>${esc(a.text)}`);
+          const chip = el("div", `mk-note mk-r-${c.role}`, layer, `<i></i>${esc(a.text)}`);
           const w = chip.offsetWidth, h = chip.offsetHeight;
           const cands = [[px + 26, py - h - 16], [px + 26, py + 16], [px - w - 26, py - h - 16], [px - w - 26, py + 16]]
             .map(([cx, cy], k) => ({ x: cx, y: cy, score: -k * 10, own: c }));
@@ -966,7 +1039,7 @@
       } else if (a.do === "note") {
         const c = a.ids.length ? curves[a.ids[0]] : null;
         const rect = c ? { x: sx(c.xs[c.xs.length - 1]) - 10, y: sy(c.ys[c.ys.length - 1]) - 10, w: 20, h: 20 } : null;
-        note(a, rect, c ? c.s.role : "info");
+        note(a, rect, c ? c.role : "info");
       } else if (a.do === "formula") formulaAction(ctx, F, a);
     }
     if (!frameOn) showFrame(0.4);
@@ -1095,17 +1168,25 @@
     });
     const note = notes(Object.assign({}, ctx, { obstacles: [{ x: LX0, y: top, w: CX1 - LX0, h: headH + rh * nr + 24 }] }));
     const F = formula(ctx, data.formula);
-    const showCol = (ce, at) => { if (ce.shown) return; ce.shown = true; T.to(ce.card, { opacity: 1, y: 0, filter: "blur(0px)" }, at, 0.55, "expo.out"); };
+    let lowest = 0;                            // the cards grow down to the lowest row shown
+    const grow = (ce, at) => {
+      if (lowest > ce.rows) { T.to(ce.card, { height: headH + 24 + rh * lowest }, at, 0.55, "power3.out"); ce.rows = lowest; }
+    };
+    const showCol = (ce, at) => {
+      if (ce.shown) return; ce.shown = true;
+      T.to(ce.card, { opacity: 1, y: 0, filter: "blur(0px)" }, at, 0.55, "expo.out");
+      grow(ce, at);
+      rowEls.forEach((re) => { if (re.shown) T.to(re.cells[ce.j], { opacity: 1, y: 0 }, at + 0.25, 0.45, "expo.out"); });
+    };
     const showRow = (re, at) => {
-      if (re.shown) return; re.shown = true;
-      colEls.forEach((ce, j) => showCol(ce, at - 0.3 + j * 0.05));
-      colEls.forEach((ce) => {               // the cards grow down to the lowest row shown
-        const need = Math.max(ce.rows, re.i + 1);
-        if (need > ce.rows) { T.to(ce.card, { height: headH + 24 + rh * need }, at - 0.05, 0.55, "power3.out"); ce.rows = need; }
-      });
+      if (re.shown) return;
+      if (!colEls.some((ce) => ce.shown)) colEls.forEach((ce, j) => showCol(ce, at - 0.3 + j * 0.05));   // no column named yet
+      re.shown = true;
+      lowest = Math.max(lowest, re.i + 1);
+      colEls.forEach((ce) => { if (ce.shown) grow(ce, at - 0.05); });
       T.to(re.label, { opacity: 1, x: 0 }, at, 0.45, "expo.out");
       T.to(re.rule, { opacity: 1, scaleX: 1 }, at + 0.1, 0.6, "power2.out");
-      re.cells.forEach((cell, j) => T.to(cell, { opacity: 1, y: 0 }, at + 0.15 + j * 0.12, 0.45, "expo.out"));
+      re.cells.forEach((cell, j) => { if (colEls[j].shown) T.to(cell, { opacity: 1, y: 0 }, at + 0.15 + j * 0.12, 0.45, "expo.out"); });
     };
     for (const a of data.actions) {
       const at = a.t;
@@ -1117,7 +1198,8 @@
       } else if (a.do === "pick") {
         const re = rs[0], ce = cs[0];
         if (!re || !ce) continue;
-        showRow(re, at - 0.6);
+        showRow(re, at - 0.6); showCol(ce, at - 0.6);
+        T.to(re.cells[ce.j], { opacity: 1 }, at, 0.3, "power2.out");
         const box = el("div", `mk-cpick mk-r-${ce.c.role}`, layer, "<i>✓</i>");
         box.style.left = (ce.x + 10) + "px"; box.style.top = (re.y + 8) + "px"; box.style.width = (cw - 20) + "px"; box.style.height = (rh - 16) + "px";
         T.init(box, { opacity: 0, scale: 0.92 }); T.to(box, { opacity: 1, scale: 1 }, at, 0.45, "back.out(1.7)");
@@ -1126,6 +1208,7 @@
         for (const re of rowEls) {
           if (!re.shown) continue;
           re.cells.forEach((cell, j) => {
+            if (!colEls[j].shown) return;
             const hit = rowIds.has(re.r.id) || colIds.has(cols[j].id);
             const op = a.do === "unfocus" ? 1 : a.do === "focus" ? (hit ? 1 : 0.25) : (hit ? 0.25 : 1);
             T.to(cell, { opacity: op }, at, 0.45, "power2.out");

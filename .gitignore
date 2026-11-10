@@ -14,3 +14,6 @@ token*.json
 *.session
 data/
 logs/
+
+# P5: the Instagram accounts you follow (personal data, written by `sotawhat instagram import`); the fork is public
+config/instagram_accounts.yaml

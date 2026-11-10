@@ -37,6 +37,15 @@ IA, economia de tokens, geração de aulas, enfim..."
     dias depois do início.
   - Até lá, um repositório com menos de 90 dias usa estrelas/dia desde a criação, marcada como estimativa.
   - Com um token clássico sem escopos, o histórico poderia vir de uma vez. Fica como opção do usuário.
+  - **Adendo (2026-11-10):** o usuário pediu o guia para criar esse token. A partir dessa data o GitHub exige
+    autenticação para listar stargazers: sem token, a resposta é 401.
+    - Com `GITHUB_STARS_TOKEN`, um token clássico sem escopos, `sotawhat/radar/history.py` lê pelo GraphQL quem deu
+      estrela e quando, dos mais recentes para os mais antigos, até 14 dias atrás (no máximo 5 páginas de 100 por
+      repositório).
+    - A partir disso reconstrói a contagem de cada dia: as estrelas de agora menos as dadas depois do dia.
+    - A varredura diária faz isso para até 300 repositórios sem contagem de uma semana atrás. O
+      `sotawhat radar backfill` faz para todos de uma vez.
+    - O `doctor` testa o token.
 - **npm e PyPI** guardam histórico diário de downloads: `api.npmjs.org/downloads/range/<período>/<pacote>` e
   `pypistats.org/api/packages/<pacote>/overall`. O crescimento semana contra semana sai já no primeiro relatório.
 - **A busca do GitHub da P2** pega só repositórios criados nos últimos 7 dias e passa pela triagem de IA ∩ saúde. Ela

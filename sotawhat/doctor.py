@@ -435,9 +435,9 @@ def check_graph(store, max_backlog=50) -> Check:
     return Check("grafo", "ok", detail + (f" · {s['pending_extraction']} na fila" if s["pending_extraction"] else ""))
 
 
-def check_radar(settings, store, now=None) -> Check:
-    """The tools radar (2026-11-10): its fronts, how many repositories it follows, the days of star counts and the last
-    scan with its errors."""
+def check_radar(settings, store, now=None, probe=None) -> Check:
+    """The tools radar (2026-11-10): its fronts, how many repositories it follows, the days of star counts, the last
+    scan with its errors and whether GITHUB_STARS_TOKEN can read who starred (`probe`: token -> problem or None)."""
     import json
     from datetime import datetime, timedelta, timezone
 
@@ -460,6 +460,21 @@ def check_radar(settings, store, now=None) -> Check:
         return Check(name, "warn", detail + " · sem GITHUB_TOKEN (só 10 buscas por minuto)")
     if (now or datetime.now(timezone.utc)) - datetime.fromisoformat(last) > timedelta(hours=36):
         return Check(name, "warn", detail + " · a varredura diária está atrasada")
+    stars_token = getattr(settings, "github_stars_token", "")
+    if stars_token:
+        if probe is None:
+            import httpx
+
+            from sotawhat.radar.history import probe as history_probe
+            with httpx.Client(timeout=20) as client:
+                problem = history_probe(client, stars_token)
+        else:
+            problem = probe(stars_token)
+        if problem:
+            return Check(name, "warn", detail + f" · o GITHUB_STARS_TOKEN não lê as estrelas: {problem}")
+        detail += " · histórico de estrelas ok"
+    else:
+        detail += " · sem GITHUB_STARS_TOKEN (o crescimento vem só dos retratos diários)"
     if errors:
         return Check(name, "warn", detail + f" · {len(errors)} erros: " + "; ".join(list(errors)[:3]))
     return Check(name, "ok", detail)

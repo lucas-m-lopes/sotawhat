@@ -6,7 +6,7 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 
-from sotawhat.lessons.plan import LessonPlan
+from sotawhat.lessons.plan import load_plan
 from sotawhat.notify.telegram import TelegramError, esc
 from sotawhat.store.db import utcnow
 
@@ -22,6 +22,14 @@ _VOICE = re.compile(r"v:([A-E])")
 def clock(seconds) -> str:
     seconds = int(round(seconds or 0))
     return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+def cost_text(cost_usd, report) -> str:
+    """"US$ 0,49 (R$ 2,73)": the total of the lesson (LLM + voice), in reais at the PTAX when known."""
+    text = f"US$ {cost_usd or 0:.2f}".replace(".", ",")
+    if report.get("cost_brl") is not None:
+        text += f" (R$ {report['cost_brl']:.2f})".replace(".", ",")
+    return text
 
 
 def quiz_text(item, n, total, round_) -> str:
@@ -51,12 +59,13 @@ def send_quiz(notifier, lesson_id, plan, round_=0) -> int:
 
 def send_lesson(store, notifier, lesson_id) -> None:
     lesson = store.get_lesson(lesson_id)
-    plan = LessonPlan.model_validate_json(lesson["plan_json"])
+    plan = load_plan(lesson["plan_json"])
     report = json.loads(lesson["report_json"] or "{}")
     height = (report.get("video") or {}).get("height", 1080)
     caption = (f"🎓 <b>{esc(plan.title)}</b>\n{esc(plan.objective)}\n⏱ {clock(lesson['duration_s'])} · "
-               f"{len(plan.scenes)} cenas · US$ {lesson['cost_usd'] or 0:.2f}\n"
-               "Quiz e revisão logo abaixo; cenas 3D interativas em http://127.0.0.1:8765/#aulas")
+               f"{len(plan.scenes)} cenas · {cost_text(lesson['cost_usd'], report)}\n"
+               + ("Quiz e revisão logo abaixo." if report.get("engine") == "hyperframes"
+                  else "Quiz e revisão logo abaixo; cenas 3D interativas em http://127.0.0.1:8765/#aulas"))
     notifier.send_video(lesson["video_path"], caption=caption[:1024], duration=lesson["duration_s"],
                         width=1920 if height == 1080 else 1280, height=height)
     send_quiz(notifier, lesson_id, plan, 0)
@@ -96,7 +105,7 @@ def handle_callback(store, notifier, query):
         if lesson is None or not lesson["plan_json"]:
             _answer(notifier, query, "aula não encontrada")
             return "quiz"
-        plan = LessonPlan.model_validate_json(lesson["plan_json"])
+        plan = load_plan(lesson["plan_json"])
         if n >= len(plan.quiz) or chosen >= len(plan.quiz[n].options):
             _answer(notifier, query, "pergunta não encontrada")
             return "quiz"
@@ -151,7 +160,7 @@ def requiz_due(store, notifier, now=None, days=2) -> int:
     for lesson in store.lessons_due_requiz((now - timedelta(days=days)).isoformat(timespec="seconds")):
         if not lesson["plan_json"]:
             continue
-        plan = LessonPlan.model_validate_json(lesson["plan_json"])
+        plan = load_plan(lesson["plan_json"])
         notifier.send_message(f"🔁 Re-quiz de “{esc(plan.title)}” (a aula foi há {days}+ dias): responda sem rever.")
         send_quiz(notifier, lesson["id"], plan, round_=1)
         store.update_lesson(lesson["id"], requiz_at=utcnow())

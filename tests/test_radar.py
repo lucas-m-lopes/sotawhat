@@ -308,3 +308,84 @@ def test_cli_doctor_and_the_daily_step(tmp_path):
         assert line.startswith("radar: 1 achados (1 novos) · 0 contados")
         assert check_radar(settings, st, now=NOW).status == "ok"
         assert check_radar(settings, st, now=NOW + timedelta(days=2)).status == "warn"
+
+
+# --- the star history (GITHUB_STARS_TOKEN, a classic token without scopes) -------------------------------------------
+def stargazers(repos, total=None, status=200, errors=None, remaining=4000):
+    """GraphQL double: repos = {"owner/name": [days of the stars, newest first]}; pages of 100, the offset as cursor."""
+    def handler(request):
+        if status != 200:
+            return httpx.Response(status, json={"message": "Bad credentials"})
+        if errors:
+            return httpx.Response(200, json={"data": None, "errors": errors})
+        v = json.loads(request.content)["variables"]
+        key = f"{v['owner']}/{v['name']}"
+        if key not in repos:
+            return httpx.Response(200, json={"data": {"rateLimit": {"remaining": remaining}, "repository": None},
+                                             "errors": [{"type": "NOT_FOUND", "message": "Could not resolve"}]})
+        start = int(v["after"] or 0)
+        page = repos[key][start:start + 100]
+        return httpx.Response(200, json={"data": {"rateLimit": {"remaining": remaining}, "repository": {
+            "stargazerCount": (total or {}).get(key, len(repos[key])),
+            "stargazers": {"edges": [{"starredAt": f"{d.isoformat()}T12:00:00Z"} for d in page],
+                           "pageInfo": {"hasNextPage": start + 100 < len(repos[key]), "endCursor": str(start + 100)}}}}})
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+RECENT = [TODAY - timedelta(days=1 + n // 10) for n in range(140)]          # 10 a day, 2026-11-14 back to 2026-11-01
+
+
+def test_star_dates_read_newest_first_until_two_weeks_back():
+    from sotawhat.radar.history import HistoryError, star_dates
+
+    since = TODAY - timedelta(days=14)
+    client = stargazers({"a/b": RECENT + [date(2026, 10, 1)] * 300}, total={"a/b": 2000})
+    assert star_dates(client, "ghp", "a/b", since)[::2] == (2000, since) and len(star_dates(client, "ghp", "a/b", since)[1]) == 140
+    total, days, exact_from, remaining = star_dates(client, "ghp", "a/b", since, max_pages=1)
+    assert (len(days), exact_from, remaining) == (100, RECENT[99], 4000)        # cut: exact from the oldest star read
+    assert star_dates(stargazers({}), "ghp", "x/gone", since) is None
+    with pytest.raises(HistoryError, match="recusou"):
+        star_dates(stargazers({}, status=401), "ghp", "a/b", since)
+    with pytest.raises(HistoryError, match="FORBIDDEN"):
+        star_dates(stargazers({}, errors=[{"type": "FORBIDDEN", "message": "Resource not accessible"}]), "ghp", "a/b", since)
+
+
+def test_backfill_rebuilds_two_weeks_of_counts_and_the_week_is_real(tmp_path):
+    from sotawhat.radar.history import backfill
+
+    with Store(tmp_path / "insight.db") as st:
+        record(st, [Find("a/b", "github", "skills_mcp", repo=repo("a/b", 2000)),
+                    Find("c/d", "github", "skills_mcp", repo=repo("c/d", 10)), Find("x/gone", "hn")], TODAY)
+        _stars(st, "c/d", {8: 5})                                  # a count from over a week ago: nothing to do
+        client = stargazers({"a/b": RECENT + [date(2026, 10, 1)] * 10}, total={"a/b": 2000})
+        assert backfill(st, client, "ghp", TODAY) == {"repos": 1, "days": 14, "gone": 1, "stopped": None}
+        counts = dict(st.conn.execute("SELECT day, stars FROM radar_stars WHERE full_name = 'a/b'").fetchall())
+        assert (counts["2026-11-15"], counts["2026-11-14"], counts["2026-11-08"], counts["2026-11-01"]) == (2000, 2000, 1940, 1870)
+        m = {m.key: m for m in week_metrics(st, TODAY)}["a/b"]
+        assert (m.week, m.prev_week, m.estimated) == (60, 70, False)
+        assert backfill(st, client, "ghp", TODAY)["repos"] == 0                    # done once
+        record(st, [Find("e/f", "github", "skills_mcp", repo=repo("e/f", 50)), Find("g/h", "github", "skills_mcp",
+                                                                                   repo=repo("g/h", 50))], TODAY)
+        client = stargazers({"e/f": [], "g/h": []}, remaining=150)
+        assert backfill(st, client, "ghp", TODAY)["stopped"].startswith("limite do GraphQL")
+
+
+def test_the_daily_scan_adds_the_history_and_the_doctor_probes_the_token(tmp_path, capsys):
+    settings = SimpleNamespace(sotawhat_config_dir=Path("config"), github_token="tok", github_stars_token="ghp")
+
+    def graphql(request):
+        if request.url.path != "/graphql":
+            return None
+        return httpx.Response(200, json={"data": {"rateLimit": {"remaining": 4000}, "repository": {
+            "stargazerCount": 900, "stargazers": {"edges": [{"starredAt": "2026-11-14T10:00:00Z"}],
+                                                  "pageInfo": {"hasNextPage": False, "endCursor": None}}}}})
+    with Store(tmp_path / "insight.db") as st:
+        client = github_and_hn([], {"topic:mcp-server": [repo("acme/mcp-x", 900)]}, extra=graphql)
+        line = commands.scan_step(settings, st, client=client, today=TODAY, now=NOW, sleep=None)
+        assert "histórico de 1 repositórios" in line
+        assert st.conn.execute("SELECT stars FROM radar_stars WHERE day = '2026-11-08'").fetchone()[0] == 899
+        assert check_radar(settings, st, now=NOW, probe=lambda token: None).detail.endswith("histórico de estrelas ok")
+        bad = check_radar(settings, st, now=NOW, probe=lambda token: "GraphQL: FORBIDDEN")
+        assert bad.status == "warn" and "não lê as estrelas: GraphQL: FORBIDDEN" in bad.detail
+        assert commands.backfill_step(SimpleNamespace(github_stars_token=""), st) == 2
+        assert "GITHUB_STARS_TOKEN vazio" in capsys.readouterr().err

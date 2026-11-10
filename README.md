@@ -223,6 +223,22 @@ research in `docs/research/reports/Aulas didáticas animadas em 3D.md`):
   - Before synthesis the text is rewritten for speech: acronyms spelled out, symbols written as words.
   - Pauses are shaped: 0.24 s at commas, 0.32 s between sentences and 0.75 s at the end of a scene.
   - Lesson calls never pay more than US$ 1/2.5 per million tokens.
+- HyperFrames prototype (2026-11-10, after the second feedback: arrows blinking and misaligned, a bland look, a
+  robotic voice): `sotawhat lessons hf 4 [--aula N] [--sem-envio] [--refazer storyboard,voz]` remakes lesson 4's
+  plan with another engine.
+  - The LLM no longer draws. It writes a storyboard (`sotawhat/lessons/storyboard.py`): for each scene it picks a
+    kit template (`graph`, `bars`, `vectors3d`, `patches`), fills it with data and lists the actions of each
+    sentence, each with the word that triggers it.
+  - The kit (`sotawhat/lessons/motion_kit`: HTML, CSS, GSAP; three.js for the 3D template) owns layout, links,
+    motion, type and colour. A link is routed from border to border and fades with its ends.
+  - HyperFrames (HeyGen, Apache-2.0) renders it: headless Chrome plus FFmpeg, deterministic. It is pinned in
+    `data/tools/hyperframes` with versions at least two weeks old, and its telemetry is off:
+    `npm install --before=2026-10-26T20:00:00Z --ignore-scripts --save-exact hyperframes@0.8.206 gsap@3.15.0
+    three@0.186.1 katex@0.19.1 @fontsource/fraunces@5.3.0 @fontsource/manrope@5.3.0 lucide-static@1.61.0
+    @ffprobe-installer/win32-x64@5.1.0`.
+  - The narration is ElevenLabs (`ELEVENLABS_API_KEY`, model `eleven_v4`, voice Klaus): one request per scene,
+    with the time of every word. Those times drive the captions and the cue words. Every scene is cached, so a
+    rerun spends no credits.
 
 To set it up, copy `.env.example` to `.env` and fill in at least `OPENROUTER_API_KEY`,
 `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Then schedule the runs with

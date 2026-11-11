@@ -18,7 +18,7 @@ from sotawhat.lessons.storyboard import TEMPLATES, TEMPLATES_3D
 from sotawhat.llm.prompts import load as load_prompt
 from sotawhat.llm.schemas import _Portuguese
 
-PLAN_PROMPT, MOTION_PROMPT, FACTS_PROMPT = "lesson_plan_v2", "lesson_plan_v3", "lesson_facts_v1"
+PLAN_PROMPT, MOTION_PROMPT, FACTS_PROMPT = "lesson_plan_v2", "lesson_plan_v4", "lesson_facts_v1"
 _STAGE = re.compile(r"\blimp(a|e|amos)\s+a\s+tela\b", re.I)   # "Limpa a tela." was read aloud in lesson 4
 _READ_ONLY = re.compile(r"[:;()—–\"“”/]")     # punctuation that reads well but sounds bad
 _SLUG = re.compile(r"[^a-z0-9]+")
@@ -26,7 +26,7 @@ CHARS_PER_SECOND = 15.0       # pt-BR narration (Piper faber: 166 characters in 
 PAUSE_S = 0.45                # between sentences
 MIN_S, MAX_S = 150, 390       # 2.5–6.5 min
 MAX_SCENE_S, MAX_THREE = 60, 3
-MAX_3D, MAX_EACH_3D = 3, 2    # HyperFrames: scenes in vectors3d or volume3d
+MAX_3D, MAX_EACH_3D = 4, 2    # HyperFrames: scenes in vectors3d, volume3d or mechanism3d (2026-11-11: up from 3)
 
 
 class Term(_Portuguese):
@@ -131,7 +131,7 @@ def lint(plan, n_sources) -> list:
     if motion:
         used = [s.template for s in plan.scenes]
         if sum(t in TEMPLATES_3D for t in used) > MAX_3D:
-            problems.append(f"no máximo {MAX_3D} cenas em 3D (vectors3d e volume3d)")
+            problems.append(f"no máximo {MAX_3D} cenas em 3D (vectors3d, volume3d e mechanism3d)")
         for t in TEMPLATES_3D:
             if used.count(t) > MAX_EACH_3D:
                 problems.append(f"{used.count(t)} cenas {t}; use no máximo {MAX_EACH_3D}")

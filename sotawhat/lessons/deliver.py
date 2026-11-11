@@ -5,6 +5,7 @@ test. Callback data: q:<lesson>:<round>:<question>:<option> · l:<lesson>:<ok|er
 import json
 import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from sotawhat.lessons.plan import load_plan
 from sotawhat.notify.telegram import TelegramError, esc
@@ -62,12 +63,24 @@ def send_lesson(store, notifier, lesson_id) -> None:
     plan = load_plan(lesson["plan_json"])
     report = json.loads(lesson["report_json"] or "{}")
     height = (report.get("video") or {}).get("height", 1080)
+    page = (report.get("interactive") or {}).get("path")
+    page = page if page and Path(page).exists() else None
+    if report.get("engine") != "hyperframes":
+        tail = "Quiz e revisão logo abaixo; cenas 3D interativas em http://127.0.0.1:8765/#aulas"
+    else:
+        tail = "3D interativo, quiz e revisão logo abaixo." if page else "Quiz e revisão logo abaixo."
     caption = (f"🎓 <b>{esc(plan.title)}</b>\n{esc(plan.objective)}\n⏱ {clock(lesson['duration_s'])} · "
-               f"{len(plan.scenes)} cenas · {cost_text(lesson['cost_usd'], report)}\n"
-               + ("Quiz e revisão logo abaixo." if report.get("engine") == "hyperframes"
-                  else "Quiz e revisão logo abaixo; cenas 3D interativas em http://127.0.0.1:8765/#aulas"))
+               f"{len(plan.scenes)} cenas · {cost_text(lesson['cost_usd'], report)}\n" + tail)
     notifier.send_video(lesson["video_path"], caption=caption[:1024], duration=lesson["duration_s"],
                         width=1920 if height == 1080 else 1280, height=height)
+    if page:
+        scenes = (report.get("interactive") or {}).get("scenes") or []
+        try:
+            notifier.send_document(page, name=f"aula-{int(lesson_id):03d}-3d-interativo.html", disable_notification=True,
+                                   caption=f"🧊 <b>3D interativo</b> · {len(scenes)} cena(s) · abra no navegador: "
+                                           "ouça a cena, arraste para girar, pinça para aproximar")
+        except TelegramError:
+            pass                       # the video and the quiz still go; the page is also on the Aulas tab
     send_quiz(notifier, lesson_id, plan, 0)
     notifier.send_message("Sua revisão desta aula (o checklist está na página da aula) e a comparação com o Video "
                           "Overview do NotebookLM gerado do fontes.md:", reply_markup=review_keyboard(lesson_id),

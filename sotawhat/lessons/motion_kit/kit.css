@@ -214,6 +214,10 @@
 .mk-tag3d { position: absolute; left: 0; top: 0; padding: 8px 16px 10px; border-radius: 12px; white-space: nowrap;
   font: 700 28px/1 var(--sans); color: var(--ink); background: rgba(10, 16, 30, 0.78);
   border: 2px solid color-mix(in srgb, var(--c) 80%, transparent); }
+.mk-tag3d-gloss { display: block; margin-top: 7px; font: 600 19px/1.1 var(--sans); color: var(--muted); }
+.mk-leaders { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: visible; pointer-events: none; }
+.mk-leader { stroke: color-mix(in srgb, var(--c) 75%, transparent); stroke-width: 2.5; }
+.mk-leader-dot { fill: var(--c); stroke: rgba(10, 16, 30, 0.9); stroke-width: 3; }
 .mk-score3d { position: absolute; left: 0; top: 0; padding: 7px 14px 9px; border-radius: 999px; white-space: nowrap;
   font: 700 26px/1 var(--sans); font-variant-numeric: tabular-nums; color: #0a101e; background: var(--score);
   box-shadow: 0 0 24px rgba(255, 213, 74, 0.45); }

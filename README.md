@@ -184,12 +184,13 @@ After P6, newsletters by RSS (2026-11-09):
   `pythonw.exe`: with no console window, closing a window can no longer kill a run.
 
 Animated lessons (aulas; research in `docs/research/reports/Aulas didáticas animadas em 3D.md`; plans in
-`docs/superpowers/plans/2026-11-09-aulas-3d-f0-f1.md` and `docs/superpowers/plans/2026-11-10-aulas-motor-hyperframes.md`):
+`docs/superpowers/plans/2026-11-09-aulas-3d-f0-f1.md`, `docs/superpowers/plans/2026-11-10-aulas-motor-hyperframes.md` and
+`docs/superpowers/plans/2026-11-11-aulas-3d-hibrido.md`):
 
 - `sotawhat lessons make --tema "Atenção no Transformer" [--entidade 105 …]` (or `--auto`, the strongest weekly
   trend without a lesson) makes a 3–6 minute lesson in the HyperFrames engine (since 2026-11-10):
   1. The source pack is built from the graph.
-  2. An LLM writes the plan (`lesson_plan_v3`). Each scene names the kit template that shows it, and one worked
+  2. An LLM writes the plan (`lesson_plan_v4`). Each scene names the kit template that shows it, and one worked
      example with its numbers travels through the lesson. The plan goes through the G2 lint and the G1 fact gate,
      with one revision round.
   3. An LLM writes the storyboard (`sotawhat/lessons/storyboard.py`). It fills the template of each scene with data
@@ -197,9 +198,18 @@ Animated lessons (aulas; research in `docs/research/reports/Aulas didáticas ani
      failure here spends no credits.
   4. ElevenLabs narrates each scene (`eleven_v4`, voice Klaus), with the time of every word. Those times drive
      the captions and the cue words. Every scene is cached, so a rerun spends no credits.
-  5. The kit (`sotawhat/lessons/motion_kit`: HTML, CSS, GSAP; three.js for the 3D) owns layout, links, motion, type
+  5. The `mechanism3d` scenes get their three.js from an LLM (`sotawhat/lessons/three3d.py`, prompt
+     `lesson_three_v2`). The LLM writes only geometry and motion. The kit owns the camera, the labels, the timing
+     and the look. Each scene is checked by a headless probe (`probe3d.py`: errors, parts off the frame) and the
+     visual critic, with repairs. A scene that never passes is drawn as the graph of its parts. The module is
+     cached in `data/lessons/<id>/3d/`.
+  6. The kit (`sotawhat/lessons/motion_kit`: HTML, CSS, GSAP; three.js for the 3D) owns layout, links, motion, type
      and colour, and HyperFrames renders the video: headless Chrome plus FFmpeg, deterministic. The MP4 fits in
      48 MB. A resume with nothing changed keeps the video.
+  7. `interativo.html` (`sotawhat/lessons/interactive.py`) puts every 3D scene of the lesson in one self-contained
+     file: the same code as the video, bundled with three.js by HyperFrames' esbuild, plus the narration of each
+     scene. You hear the scene, drag the timeline, drag to turn and pinch or scroll to zoom. It goes to Telegram
+     after the video and is linked on the Aulas tab.
 - The kit templates:
   - `graph`: parts and arrows routed border to border.
   - `bars`: scores, softmax and weights.
@@ -210,7 +220,11 @@ Animated lessons (aulas; research in `docs/research/reports/Aulas didáticas ani
   - `patches`: an image cut into tokens.
   - `volume3d`: synthetic CT/MRI slices that stack into a volume, a cut with its 2D image, an organ segmented into a
     marching-cubes surface, and a finding.
+  - `mechanism3d`: a physical mechanism in 3D, written for the scene (the CT gantry turning with tube, beam and
+    detector; a probe sweeping; a voxel grid being segmented). The plan uses 2–4 scenes in 3D when the topic has
+    spatial steps.
 - The video goes to Telegram with:
+  - the interactive 3D file, when the lesson has 3D scenes;
   - the cost of the lesson, LLM plus voice, in US$ and in R$ at the PTAX of the Banco Central;
   - the quiz;
   - your review buttons (✅ / ⚠️);
@@ -223,12 +237,13 @@ Animated lessons (aulas; research in `docs/research/reports/Aulas didáticas ani
   - The R$ comes from the PTAX of the Banco Central (open-data API, `sotawhat/fx.py`).
   - The LLM cap per lesson (`SOTAWHAT_LLM_BUDGET_USD_LESSON`) counts only the LLM.
 - Other commands:
-  - `lessons resume N [--refazer plano,storyboard,voz,video]` continues a lesson or redoes some steps (`voz`
+  - `lessons resume N [--refazer plano,storyboard,voz,3d,video]` continues a lesson or redoes some steps (`voz`
     spends credits again);
   - `lessons hf N` remakes an older lesson (its plan and sources) in the HyperFrames engine;
   - `lessons send N`, `lessons pack N` and `lessons list` deliver a lesson, export its pack and list the lessons.
 - The Aulas tab of the interface shows:
   - the videos;
+  - the interactive 3D page;
   - the plan with the template of each scene;
   - the gates and the HyperFrames check;
   - what the lesson cost;

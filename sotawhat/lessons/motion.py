@@ -4,9 +4,11 @@ to remake an older lesson in it.
 
     source pack → plan (LLM, lesson_plan_v3: one kit template per scene, one worked example) → fact gate G1 and
     lint G2 → storyboard (LLM: the data of each template and the actions of each sentence, validated)
-    → ElevenLabs narration per scene, with the time of every word → HyperFrames project (kit templates, captions,
+    → ElevenLabs narration per scene, with the time of every word → the three.js of the mechanism3d scenes (LLM,
+    checked by a headless probe and the visual critic; three3d.py) → HyperFrames project (kit templates, captions,
     the narration track) → `hyperframes check` → render (headless Chrome + FFmpeg) → MP4 under the Telegram limit
-    → Telegram (video, quiz, review buttons)
+    → interativo.html (the 3D scenes to turn by hand; interactive.py) → Telegram (video, the 3D file, quiz,
+    review buttons)
 
 The storyboard comes before the voice, so a failure there spends no ElevenLabs credits. Every step leaves its file
 in data/lessons/<id>/ and is skipped when the file exists; the render is skipped when the composed project is the
@@ -19,7 +21,7 @@ import shutil
 import time
 from pathlib import Path
 
-from sotawhat.lessons import eleven
+from sotawhat.lessons import eleven, interactive, three3d
 from sotawhat.lessons.plan import MotionPlan, check_facts, load_plan, make_plan, revise_plan
 from sotawhat.lessons.storyboard import Storyboard, clean_narration, make_storyboard, planned_templates, validate
 
@@ -33,7 +35,7 @@ _DIGIT_PAIR = re.compile(r"\bvírgula (um|dois|três|quatro|cinco|seis|sete|oito
                          r"(zero|um|dois|três|quatro|cinco|seis|sete|oito|nove)\b")
 INTRO_S = 3.2
 ENGINE = "hyperframes"
-REDO = ("plano", "storyboard", "voz", "video")
+REDO = ("plano", "storyboard", "voz", "3d", "video")
 
 
 def two_digits(n) -> str:
@@ -211,6 +213,8 @@ def forget(work, redo) -> None:
         (work / "storyboard.json").unlink(missing_ok=True)
     if "voz" in redo:
         shutil.rmtree(work / "voz", ignore_errors=True)
+    if "3d" in redo:
+        shutil.rmtree(work / "3d", ignore_errors=True)
 
 
 def run_motion_lesson(settings, store, lesson_id, deliver=True, redo=(), mode="economico", log=print,
@@ -258,7 +262,12 @@ def run_motion_lesson(settings, store, lesson_id, deliver=True, redo=(), mode="e
         store.update_lesson(lesson_id, status="narrada")
         timings["voz"] = round(time.monotonic() - t, 1)
         t = time.monotonic()
-        layout = hfm.compose(hf, work / "hf", plan, board, nar, lesson_id)
+        free = three3d.code_step(gateway, tools, hf, work, plan, board, nar, log=log)
+        if free["scenes"]:
+            report["free3d"] = {str(n): r for n, r in free["scenes"].items()}
+            timings["3d"] = round(time.monotonic() - t, 1)
+            t = time.monotonic()
+        layout = hfm.compose(hf, work / "hf", plan, board, nar, lesson_id, codes=free["codes"])
         key = project_key(work / "hf")
         checked = hfm.check(hf, work / "hf")
         report["check"] = {"ok": checked["ok"], "errors": checked["errors"][:30], "warnings": checked["warnings"][:30]}
@@ -273,6 +282,13 @@ def run_motion_lesson(settings, store, lesson_id, deliver=True, redo=(), mode="e
             report["render_key"] = key
             timings["render"] = video["render_s"]
         report["video"] = video
+        try:
+            report["interactive"] = interactive.build(hf, tools.ffmpeg(), work, plan, board, nar, lesson_id, free["codes"])
+            if report["interactive"]:
+                log(f"[3D interativo] {report['interactive']['path']} · {report['interactive']['bytes'] / 1e6:.1f} MB")
+        except Exception as exc:      # noqa: BLE001 - the video stands without its interactive page
+            report["interactive"] = {"error": str(exc)[:300]}
+            log(f"[3D interativo] não saiu: {str(exc)[:200]}")
     except Exception as exc:      # noqa: BLE001 - any step failure is recorded on the lesson and the run
         store.update_lesson(lesson_id, status="falhou", error=str(exc)[:500], report=report)
         store.finish_run(run_id, False, {"lesson": lesson_id}, error=str(exc)[:500])
@@ -280,7 +296,8 @@ def run_motion_lesson(settings, store, lesson_id, deliver=True, redo=(), mode="e
         return 1
     report.update(price(settings, store, report, nar))
     report.update(total_s=round(time.monotonic() - started, 1),
-                  scenes={str(n): {"template": s["template"], "ok": True} for n, s in enumerate(layout["scenes"], 1)})
+                  scenes={str(n): {"template": s["template"], "ok": True,
+                                   "fallback": n in free["fallback"]} for n, s in enumerate(layout["scenes"], 1)})
     _save(work / "report.json", report)
     store.update_lesson(lesson_id, status="pronta", video_path=str(work / "aula.mp4"), duration_s=video["seconds"],
                         size_bytes=video["bytes"], cost_usd=report["cost_usd"], voice=report["narration"]["voice"],

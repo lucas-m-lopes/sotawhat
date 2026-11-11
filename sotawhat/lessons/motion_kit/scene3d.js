@@ -27,6 +27,23 @@ function arcPoints(a, b, r, n) {      // points on the great arc from unit vecto
   return out;
 }
 
+/* ---- the viewer's orbit (the interactive page): the scripted camera turned around its own target -------------
+   The video never moves it (all zero), so a render is the scripted camera. On the page, dragging turns and zooms
+   the same camera the overlay projects with, so the HTML labels stay on their parts. */
+export const orbit = { yaw: 0, pitch: 0, zoom: 1 };
+function applyOrbit(camera, target) {
+  if (!orbit.yaw && !orbit.pitch && orbit.zoom === 1) return;
+  const off = camera.position.clone().sub(target);
+  const r = off.length() * Math.max(0.35, Math.min(2.6, orbit.zoom));
+  const el = Math.max(-1.3, Math.min(1.3, Math.asin(Math.max(-1, Math.min(1, off.y / (off.length() || 1)))) + orbit.pitch));
+  const az = Math.atan2(off.x, off.z) + orbit.yaw;
+  camera.position.set(target.x + r * Math.cos(el) * Math.sin(az), target.y + r * Math.sin(el), target.z + r * Math.cos(el) * Math.cos(az));
+  camera.lookAt(target);
+  camera.updateMatrixWorld();
+}
+// a page that hosts several scenes seeks only the one on screen (`only`); HyperFrames never sets it
+const seekOf = (id, offset, renderAt) => (e) => { if (!e.detail.only || e.detail.only === id) renderAt(e.detail.time - offset); };
+
 export function mount3d(id, data, offset) {
   MK.fontsReady().then(() => {
     const root = MK.rootOf(id);
@@ -174,6 +191,7 @@ export function mount3d(id, data, offset) {
         center.z + r * Math.cos(phi) * Math.cos(theta));
       camera.lookAt(center.x, center.y + 0.1, center.z);
       camera.updateMatrixWorld();
+      applyOrbit(camera, new THREE.Vector3(center.x, center.y + 0.1, center.z));
       const s0 = toScreen(new THREE.Vector3(0, 0, 0));
       const boxes = [];
       for (const v of vecs) {
@@ -213,7 +231,7 @@ export function mount3d(id, data, offset) {
       }
       renderer.render(scene, camera);
     }
-    window.addEventListener("hf-seek", (e) => renderAt(e.detail.time - offset));
+    window.addEventListener("hf-seek", seekOf(id, offset, renderAt));
     renderAt(0);
     MK.exit(T, layer, data.dur);
     tl.set({}, {}, data.dur);
@@ -468,6 +486,7 @@ export function mountVolume(id, data, offset) {
         target.z + dist * Math.cos(phi) * Math.cos(theta));
       camera.lookAt(target);
       camera.updateMatrixWorld();
+      applyOrbit(camera, target);
       // the cut: the plane moves to the height of the latest slice action
       let cutV = null;
       for (let i = 0; i < cuts.length; i++) {
@@ -536,7 +555,370 @@ export function mountVolume(id, data, offset) {
       }
       renderer.render(scene, camera);
     }
-    window.addEventListener("hf-seek", (e) => renderAt(e.detail.time - offset));
+    window.addEventListener("hf-seek", seekOf(id, offset, renderAt));
+    renderAt(0);
+    MK.exit(T, layer, data.dur);
+    tl.set({}, {}, data.dur);
+    window.__timelines = window.__timelines || {};
+    window.__timelines[id] = tl;
+  });
+}
+
+/* ---- mechanism3d: a 3D mechanism written for one scene ----------------------------------------------------------
+   The scene module (written by the LLM, checked by the code policy and a headless probe) exports `build(kit)` and
+   returns { update(t), view? }. It creates the geometry once, registers each part of the storyboard with
+   kit.part(id, object, { anchor }) and moves things in update(t), a pure function of the scene time.
+   The kit owns everything else: renderer and lights; the camera (it frames the parts over the whole scene between
+   the title and the captions, orbits slowly, comes closer on focus); the HTML labels of the parts, with a leader
+   line and without overlaps; the notes; and when each part appears, dims, pulses or leaves (the storyboard actions,
+   at the spoken word). Every frame starts from the state the build left, so update(t) never accumulates. */
+const PALETTE = { text: "#eef2f7", muted: "#9aa8bf", blue: "#4ea1ff", green: "#3ddc97", orange: "#ff9f45",
+  yellow: "#ffd54a", purple: "#b48cff", red: "#ff5c70", pink: "#ff6f91", teal: "#2dd4d0", gray: "#8f9cb4",
+  skin: "#d9a184", bone: "#e8e1d0", organ: "#d0706f", metal: "#aab6c8", dark: "#1a2438" };
+const SAFE = { x0: 40, x1: W - 40, y0: 118, y1: 900 };
+const UP = new THREE.Vector3(0, 1, 0);
+const vec3 = (p) => (p && p.isVector3 ? p.clone() : new THREE.Vector3(...(p || [0, 0, 0])));
+
+export function mountFree(id, data, offset, build) {
+  MK.fontsReady().then(() => {
+    const root = MK.rootOf(id);
+    const stage = MK.el("div", "mk-scene", root);
+    const layer = MK.el("div", "mk-stage", stage);
+    const canvas = MK.el("canvas", "mk-canvas3d", layer);
+    canvas.width = W; canvas.height = H;
+    const overlay = MK.el("div", "mk-stage", layer);
+    const leaders = MK.svgEl("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, class: "mk-leaders" }, overlay);
+    const tl = gsap.timeline({ paused: true });
+    const T = MK.Track(tl);
+    T.init(layer, { opacity: 1, filter: "blur(0px)" });
+    MK.header(T, layer, data.num, data.title);
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(1);
+    renderer.setSize(W, H, false);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(FOV, W / H, 0.05, 400);
+    scene.add(new THREE.HemisphereLight(0xa8c0ff, 0x0a101e, 1.15));
+    const key = new THREE.DirectionalLight(0xffe6c8, 2.3); key.position.set(4, 7, 6); scene.add(key);
+    const rim = new THREE.DirectionalLight(0x6fa8ff, 1.7); rim.position.set(-6, 3, -5); scene.add(rim);
+    const world = new THREE.Group();
+    scene.add(world);
+
+    // the storyboard: parts (nodes) and what happens to them, at the spoken word
+    const nodes = data.nodes || [], byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
+    const beats = (data.beats || []).map(([a, b]) => ({ start: a, end: b, duration: Math.max(0.01, b - a) }));
+    const acts = data.actions || [];
+    const touches = (a, pid) => !a.ids.length || a.ids.includes(pid);
+    const sched = {};
+    for (const n of nodes) {
+      const show = acts.find((a) => a.do === "show" && touches(a, n.id));
+      const shownAt = show ? show.t : 0.4;
+      const hide = acts.find((a) => a.do === "hide" && a.ids.includes(n.id) && a.t > shownAt);
+      const level = [[0, 1]], pulses = [], labels = [[0, n.label]];
+      for (const a of acts) {
+        if (a.do === "focus") level.push([a.t, a.ids.includes(n.id) ? 1 : 0.24]);
+        else if (a.do === "unfocus") level.push([a.t, 1]);
+        else if (a.do === "dim" && a.ids.includes(n.id)) level.push([a.t, 0.22]);
+        else if (a.do === "pulse" && a.ids.includes(n.id)) pulses.push(a.t);
+        else if (a.do === "label" && a.ids[0] === n.id && a.text) labels.push([a.t, a.text]);
+      }
+      sched[n.id] = { shownAt, hideAt: hide ? hide.t : Infinity, level, pulses, labels };
+    }
+    const focusTrack = [[0, 0, []]];
+    for (const a of acts) if (a.do === "focus" || a.do === "unfocus") focusTrack.push([a.t, a.do === "focus" ? 1 : 0, a.ids]);
+    const levelAt = (track, t, d) => {          // eased steps through (time, level) pairs
+      let v = track[0][1];
+      for (let i = 1; i < track.length; i++) { const [at, to] = track[i]; if (t <= at) break; v = v + (to - v) * ease((t - at) / d); }
+      return v;
+    };
+
+    // the kit the scene module gets
+    const parts = new Map(), errors = [];
+    let glowTex = null;
+    const kit = {
+      THREE, palette: PALETTE, beats, dur: data.dur, root: world,
+      color: (pid) => (byId[pid] && MK.ROLE[byId[pid].role]) || PALETTE.gray,
+      part(pid, obj, opts = {}) {
+        if (!obj.parent) world.add(obj);
+        parts.set(pid, { obj, anchor: opts.anchor ? vec3(opts.anchor) : null });
+        return obj;
+      },
+      add(obj) { if (!obj.parent) world.add(obj); return obj; },
+      material: (color, o = {}) => new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.42, metalness: 0.08,
+        emissive: color, emissiveIntensity: 0.14 }, o)),
+      glow: (color, o = {}) => new THREE.MeshBasicMaterial(Object.assign({ color, transparent: true, opacity: 0.55,
+        blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }, o)),
+      sprite(color, size = 1) {
+        glowTex = glowTex || glowTexture();
+        const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, blending: THREE.AdditiveBlending,
+          transparent: true, depthWrite: false }));
+        s.scale.setScalar(size);
+        return s;
+      },
+      stretch(mesh, a, b) {        // a mesh of height 1 along y (a rod, a beam) from point a to point b
+        const A = vec3(a), d = vec3(b).sub(A), L = Math.max(1e-4, d.length());
+        mesh.position.copy(A).addScaledVector(d, 0.5);
+        mesh.quaternion.setFromUnitVectors(UP, d.normalize());
+        mesh.scale.y = L;
+        return mesh;
+      },
+      rod(a, b, r = 0.05, mat) {
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 1, 24), mat || kit.material(PALETTE.yellow));
+        return kit.stretch(m, a, b);
+      },
+      progress(t, i, share = 0.6) {
+        const b = beats[Math.max(0, Math.min(i, beats.length - 1))];
+        return b ? Math.max(0, Math.min(1, (t - b.start) / (b.duration * share))) : 1;
+      },
+      shownAt: (pid) => (sched[pid] ? sched[pid].shownAt : 0),
+      ease, lerp: (a, b, x) => a + (b - a) * x, clamp: (x, a = 0, b = 1) => Math.max(a, Math.min(b, x)),
+      random: (seed = 1) => MK.rng(seed),
+      fade(obj, alpha) {             // scenery that is not a part: hide it, or fade it (alpha 0–1)
+        obj.visible = alpha > 0.01;
+        obj.traverse((o) => { for (const m of o.material ? [].concat(o.material) : []) { m.transparent = true; m.opacity *= alpha; } });
+      },
+    };
+    const user = build(kit) || {};
+    const view = Object.assign({ azimuth: 32, elevation: 18, distance: 1, orbit: 0.22 }, user.view || {});
+
+    // the state the build left: every frame starts from it, so update(t) is a pure function of t
+    const base = [], seenMats = new Set();
+    world.traverse((o) => {
+      base.push([o, o.visible]);
+      for (const m of o.material ? [].concat(o.material) : []) {
+        if (seenMats.has(m)) continue;
+        seenMats.add(m);
+        m.transparent = true;
+        base.push([m, m.opacity, m.emissiveIntensity]);
+      }
+    });
+    const restore = () => {
+      for (const b of base) {
+        if (b.length === 2) b[0].visible = b[1];
+        else { b[0].opacity = b[1]; if (b[2] !== undefined) b[0].emissiveIntensity = b[2]; }
+      }
+    };
+    const step = (t) => {
+      restore();
+      if (user.update) { try { user.update(t); } catch (e) { if (errors.length < 3) errors.push(String((e && e.message) || e)); } }
+      world.updateMatrixWorld(true);
+    };
+    // what each part owns: its meshes, without the parts nested in it (a tube on a turning gantry is its own part)
+    const partObjs = new Set([...parts.values()].map((p) => p.obj));
+    const own = new Map();
+    for (const [pid, p] of parts) {
+      const meshes = [];
+      const walk = (o) => { if (o !== p.obj && partObjs.has(o)) return; if (o.material) meshes.push(o); o.children.forEach(walk); };
+      walk(p.obj);
+      own.set(pid, meshes);
+    }
+
+    // framing: the parts over the whole scene (motion included) fit between the title and the captions
+    // (the points are the vertices of the parts, sampled: a ring or a disc does not fill the corners of its box)
+    const box = new THREE.Box3(), tmpBox = new THREE.Box3(), cloud = [], partR = {};
+    const sampleMesh = (m) => {
+      if (m.isInstancedMesh) {
+        m.computeBoundingBox();
+        const bb = m.boundingBox;
+        for (const x of [bb.min.x, bb.max.x]) for (const y of [bb.min.y, bb.max.y]) for (const z of [bb.min.z, bb.max.z]) cloud.push(new THREE.Vector3(x, y, z).applyMatrix4(m.matrixWorld));
+        return;
+      }
+      const pos = m.geometry && m.geometry.attributes && m.geometry.attributes.position;
+      if (!pos) return;
+      const stride = Math.max(1, Math.floor(pos.count / 160));
+      for (let i = 0; i < pos.count; i += stride) cloud.push(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld));
+    };
+    const every = Math.max(0.4, data.dur / 60), times = [...beats.map((b) => b.end - 0.05), data.dur];
+    for (let t = 0; t < data.dur; t += every) times.push(t);
+    for (const t of times) {
+      step(t);
+      for (const p of parts.values()) {
+        tmpBox.setFromObject(p.obj);
+        if (!tmpBox.isEmpty()) box.union(tmpBox);
+        const pid = [...parts].find(([, q]) => q === p)[0];
+        if (!tmpBox.isEmpty()) partR[pid] = Math.max(partR[pid] || 0, tmpBox.getBoundingSphere(new THREE.Sphere()).radius);
+        p.obj.traverse((o) => { if (o.visible !== false && (o.isMesh || o.isLine || o.isPoints)) sampleMesh(o); });
+      }
+    }
+    if (box.isEmpty()) box.setFromObject(world);
+    if (box.isEmpty()) box.set(new THREE.Vector3(-1, -1, -1), new THREE.Vector3(1, 1, 1));
+    const sphere = box.getBoundingSphere(new THREE.Sphere());
+    const center = sphere.center.clone(), radius = Math.max(0.1, sphere.radius);
+    const hasNotes = acts.some((a) => a.do === "note");
+    const tmp = new THREE.Vector3();
+    const toScreen = (p) => { tmp.copy(p).project(camera); return { x: (tmp.x + 1) / 2 * W, y: (1 - tmp.y) / 2 * H, z: tmp.z }; };
+    // the box of the parts, seen from the start, the middle and the end of the orbit, fills the free area (room
+    // for the labels at the sides, the notes column on the right, the title above and the captions below)
+    const corners = [];
+    if (cloud.length) { const k = Math.max(1, Math.floor(cloud.length / 4000)); for (let i = 0; i < cloud.length; i += k) corners.push(cloud[i]); }
+    else for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) corners.push(new THREE.Vector3(x, y, z));
+    const area = { x0: 230, x1: hasNotes ? W - 540 : W - 230, y0: 170, y1: 846 };
+    const el0 = THREE.MathUtils.degToRad(view.elevation), az0 = THREE.MathUtils.degToRad(view.azimuth);
+    const dirAt = (az) => new THREE.Vector3(Math.cos(el0) * Math.sin(az), Math.sin(el0), Math.cos(el0) * Math.cos(az));
+    const rectAt = (d, az) => {
+      camera.clearViewOffset();
+      camera.position.copy(center).addScaledVector(dirAt(az), d);
+      camera.lookAt(center);
+      camera.updateMatrixWorld();
+      const xs = [], ys = [];
+      for (const c of corners) { const q = toScreen(c); xs.push(q.x); ys.push(q.y); }
+      return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+    };
+    let dist0 = radius / Math.sin(THREE.MathUtils.degToRad(FOV / 2)) / 0.8;
+    for (let i = 0; i < 5; i++) {
+      let k = 0;
+      for (const az of [az0, az0 + view.orbit / 2, az0 + view.orbit]) {
+        const r = rectAt(dist0, az);
+        k = Math.max(k, (r.x1 - r.x0) / (area.x1 - area.x0), (r.y1 - r.y0) / (area.y1 - area.y0));
+      }
+      dist0 = Math.max(radius * 1.2, dist0 * Math.max(0.5, Math.min(2, k)));
+    }
+    dist0 *= view.distance;
+    const mid = rectAt(dist0, az0 + view.orbit / 2);
+    camera.setViewOffset(W, H, (mid.x0 + mid.x1) / 2 - (area.x0 + area.x1) / 2, (mid.y0 + mid.y1) / 2 - (area.y0 + area.y1) / 2, W, H);
+    camera.far = dist0 * 4 + radius * 6;
+    camera.updateProjectionMatrix();
+    scene.fog = new THREE.Fog(0x0a101e, dist0 + radius * 0.6, dist0 + radius * 5);
+    const grid = new THREE.GridHelper(radius * 5, 20, 0x2f4470, 0x1b2a49);
+    grid.position.set(center.x, box.min.y - radius * 0.04, center.z);
+    grid.material.transparent = true; grid.material.opacity = 0.16;
+    scene.add(grid);
+
+    // overlay: a label per part (with its leader line) and the notes in the right column
+    const tags = {};
+    for (const n of nodes) {
+      const tag = MK.el("div", `mk-tag3d mk-r-${n.role}`, overlay);
+      const line = MK.svgEl("line", { class: `mk-leader mk-r-${n.role}`, x1: 0, y1: 0, x2: 0, y2: 0 }, leaders);
+      const dot = MK.svgEl("circle", { class: `mk-leader-dot mk-r-${n.role}`, cx: 0, cy: 0, r: 6 }, leaders);
+      tags[n.id] = { tag, line, dot, text: null, w: 0, h: 0 };
+      tag.style.opacity = "0"; line.style.opacity = "0"; dot.style.opacity = "0";
+    }
+    const setTag = (n, text) => {
+      const g = tags[n.id];
+      if (g.text === text) return;
+      g.tag.innerHTML = MK.esc(text) + (n.gloss ? `<span class="mk-tag3d-gloss">${MK.esc(n.gloss)}</span>` : "");
+      g.text = text; g.w = g.tag.offsetWidth; g.h = g.tag.offsetHeight;
+    };
+    const colR = W - 120;
+    let colY = 160;
+    for (const a of acts) {
+      if (a.do !== "note") continue;
+      const el = MK.el("div", "mk-note mk-r-info", overlay, `<i></i>${MK.esc(a.text)}`);
+      el.style.left = (colR - el.offsetWidth) + "px"; el.style.top = colY + "px"; colY += el.offsetHeight + 12;
+      T.init(el, { opacity: 0, x: -12, filter: "blur(6px)" }); T.to(el, { opacity: 1, x: 0, filter: "blur(0px)" }, a.t, 0.45, "expo.out");
+    }
+    const labelX1 = hasNotes ? W - 600 : W - 120;
+
+    const anchorOf = (p) => {
+      if (p.anchor) return p.obj.localToWorld(p.anchor.clone());
+      tmpBox.setFromObject(p.obj);
+      if (tmpBox.isEmpty()) return p.obj.getWorldPosition(new THREE.Vector3());
+      return tmpBox.getCenter(new THREE.Vector3()).setY(tmpBox.max.y);
+    };
+    const alphaOf = (pid, t) => {
+      const s = sched[pid];
+      return s ? ramp(t, s.shownAt, 0.6) * (1 - ramp(t, s.hideAt, 0.4)) * levelAt(s.level, t, 0.45) : 1;
+    };
+    const pulseOf = (pid, t) => {
+      let p = 0;
+      for (const at of sched[pid] ? sched[pid].pulses : []) { const x = (t - at) / 0.9; if (x > 0 && x < 1) p = Math.max(p, Math.sin(Math.PI * x)); }
+      return p;
+    };
+    const focusedAt = (t) => { let ids = []; for (const f of focusTrack) if (f[0] <= t) ids = f[1] === 1 ? f[2] : []; return ids; };
+    let lastFocus = center.clone(), lastSmall = 1;
+
+    function renderAt(t) {
+      const tt = Math.max(0, Math.min(data.dur, t));
+      step(tt);
+      // the parts: appear, dim, pulse (on top of what update(t) did)
+      const fids = focusedAt(tt);
+      for (const [pid, meshes] of own) {
+        const a = alphaOf(pid, tt), boost = 0.9 * pulseOf(pid, tt) + (fids.includes(pid) ? 0.25 : 0);
+        for (const m of meshes) {
+          if (a <= 0.01) m.visible = false;
+          for (const mat of [].concat(m.material)) {
+            mat.opacity *= a;
+            if (mat.emissiveIntensity !== undefined) mat.emissiveIntensity += boost;
+          }
+        }
+      }
+      // the camera: a slow orbit around the parts; closer to what the narration focuses on
+      // a small part (a nodule) gets the whole zoom, a part as big as the scene (a detector arc) none: it stays framed
+      const fids2 = fids.filter((pid) => parts.has(pid));
+      if (fids2.length) lastSmall = Math.min(...fids2.map((pid) => Math.max(0, Math.min(1, 1 - (partR[pid] || radius) / (0.45 * radius)))));
+      const fp = levelAt(focusTrack, tt, 1.2) * lastSmall;
+      const pts = fids2.map((pid) => anchorOf(parts.get(pid)));
+      if (pts.length) lastFocus = pts.reduce((s, p) => s.add(p), new THREE.Vector3()).multiplyScalar(1 / pts.length);
+      const target = center.clone().lerp(lastFocus, 0.55 * fp);
+      const dist = dist0 * (1 - 0.26 * fp);
+      const az = THREE.MathUtils.degToRad(view.azimuth) + view.orbit * (tt / data.dur);
+      const el = THREE.MathUtils.degToRad(view.elevation);
+      camera.position.set(target.x + dist * Math.cos(el) * Math.sin(az), target.y + dist * Math.sin(el), target.z + dist * Math.cos(el) * Math.cos(az));
+      camera.lookAt(target);
+      camera.updateMatrixWorld();
+      applyOrbit(camera, target);
+      // the labels: beside the anchor, away from the middle, never over each other
+      const midS = toScreen(target), boxes = [];
+      for (const n of nodes) {
+        const g = tags[n.id], p = parts.get(n.id), s = sched[n.id];
+        if (!p) continue;
+        let text = n.label;
+        for (const [at, txt] of s.labels) if (at <= tt) text = txt;
+        setTag(n, text);
+        const a = toScreen(anchorOf(p)), side = a.x < midS.x ? -1 : 1;
+        const show = ramp(tt, s.shownAt + 0.35, 0.4) * (1 - ramp(tt, s.hideAt, 0.3)) * Math.max(levelAt(s.level, tt, 0.45), 0.35);
+        boxes.push({ g, a, side, show, x: side > 0 ? a.x + 64 : a.x - 64 - g.w, y: a.y - g.h - 34, w: g.w, h: g.h, behind: a.z > 1 });
+      }
+      boxes.sort((p, q) => p.y - q.y);
+      for (let i = 0; i < boxes.length; i++) {
+        const b = boxes[i];
+        b.x = Math.max(120, Math.min(labelX1 - b.w, b.x)); b.y = Math.max(150, Math.min(862 - b.h, b.y));
+        for (let k = 0; k < 6; k++) {
+          const hit = boxes.slice(0, i).find((o) => o.show > 0.05 && b.x < o.x + o.w + 10 && o.x < b.x + b.w + 10 && b.y < o.y + o.h + 10 && o.y < b.y + b.h + 10);
+          if (!hit) break;
+          b.y = hit.y + hit.h + 12;
+          if (b.y + b.h > 862) { b.y = Math.max(150, hit.y - b.h - 12); b.x = b.side > 0 ? hit.x + hit.w + 16 : hit.x - b.w - 16; }
+        }
+      }
+      for (const b of boxes) {
+        const op = b.behind ? 0 : b.show;
+        b.g.tag.style.left = b.x.toFixed(1) + "px"; b.g.tag.style.top = b.y.toFixed(1) + "px"; b.g.tag.style.opacity = op.toFixed(3);
+        const ex = b.side > 0 ? b.x : b.x + b.w, ey = b.y + b.h / 2;
+        b.g.line.setAttribute("x1", b.a.x.toFixed(1)); b.g.line.setAttribute("y1", b.a.y.toFixed(1));
+        b.g.line.setAttribute("x2", ex.toFixed(1)); b.g.line.setAttribute("y2", ey.toFixed(1));
+        b.g.dot.setAttribute("cx", b.a.x.toFixed(1)); b.g.dot.setAttribute("cy", b.a.y.toFixed(1));
+        b.g.line.style.opacity = (0.85 * op).toFixed(3); b.g.dot.style.opacity = op.toFixed(3);
+      }
+      renderer.render(scene, camera);
+    }
+
+    // the probe (a headless check before the render): the parts the storyboard names, parts off the frame, errors
+    function check(t) {
+      renderAt(t);
+      const out = errors.map((e) => `erro em update(t): ${e}`);
+      for (const n of nodes) if (!parts.has(n.id)) out.push(`a peça "${n.id}" do storyboard não foi registrada: use kit.part("${n.id}", objeto)`);
+      for (const pid of parts.keys()) if (!byId[pid]) out.push(`kit.part("${pid}"): "${pid}" não é uma peça do storyboard (use ${nodes.map((n) => n.id).join(", ")}; o cenário vai em kit.add)`);
+      for (const [pid, p] of parts) {
+        if (!byId[pid] || alphaOf(pid, t) < 0.5) continue;
+        tmpBox.setFromObject(p.obj);
+        if (tmpBox.isEmpty()) { out.push(`a peça "${pid}" não tem malha visível`); continue; }
+        if (![tmpBox.min.x, tmpBox.min.y, tmpBox.min.z, tmpBox.max.x, tmpBox.max.y, tmpBox.max.z].every(Number.isFinite)) { out.push(`a peça "${pid}" tem posição inválida (NaN)`); continue; }
+        const xs = [], ys = [], from = cloud.length;
+        p.obj.traverse((o) => { if (o.visible !== false && (o.isMesh || o.isLine || o.isPoints)) sampleMesh(o); });
+        for (const v of cloud.splice(from)) { const s = toScreen(v); xs.push(s.x); ys.push(s.y); }
+        if (!xs.length) continue;
+        const r = { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+        if (r.x0 < SAFE.x0 - 40 || r.x1 > SAFE.x1 + 40 || r.y0 < SAFE.y0 - 40 || r.y1 > SAFE.y1 + 40) out.push(`a peça "${pid}" sai do quadro`);
+        else if (r.x1 - r.x0 < 28 && r.y1 - r.y0 < 28) out.push(`a peça "${pid}" fica pequena demais na tela (aumente-a)`);
+      }
+      return [...new Set(out)];
+    }
+    window.__check3d = window.__check3d || {};
+    window.__check3d[id] = check;
+    window.addEventListener("hf-seek", seekOf(id, offset, renderAt));
     renderAt(0);
     MK.exit(T, layer, data.dur);
     tl.set({}, {}, data.dur);

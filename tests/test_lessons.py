@@ -208,6 +208,9 @@ class FakeNotifier:
     def send_video(self, path, **kw):
         self.sent.append(("video", path, kw))
 
+    def send_document(self, path, **kw):
+        self.sent.append(("document", path, kw))
+
     def send_message(self, text, reply_markup=None, disable_notification=False):
         self.sent.append(("message", text, reply_markup))
 

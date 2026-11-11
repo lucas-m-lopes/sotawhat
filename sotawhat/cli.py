@@ -76,7 +76,7 @@ def parse_args(argv):
     p_lessons.add_argument("--modo", choices=["economico", "equilibrado"], default="economico",
                            help="equilibrado: Kimi K3.1 Pro writes the storyboard")
     p_lessons.add_argument("--sem-envio", dest="no_send", action="store_true", help="do not send it to Telegram")
-    p_lessons.add_argument("--refazer", default="", help="resume/hf: steps to redo (plano,storyboard,voz,video; voz spends "
+    p_lessons.add_argument("--refazer", default="", help="resume/hf: steps to redo (plano,storyboard,voz,3d,video; voz spends "
                                                           "ElevenLabs credits); Manim lessons: scenes, e.g. 2,5")
     p_lessons.add_argument("--aula", type=int, default=None, help="hf: resume this remake instead of making a new one")
 

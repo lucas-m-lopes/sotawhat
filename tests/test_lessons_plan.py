@@ -117,10 +117,10 @@ def motion_plan_with(templates=("graph",) * 7, beats=4, example="o token nódulo
 
 
 def test_motion_plan_lint_counts_3d_scenes_and_wants_the_example():
-    assert lint(motion_plan_with(("graph", "bars", "chart", "vectors3d", "volume3d", "compare", "graph")), 2) == []
-    problems = " | ".join(lint(motion_plan_with(("graph", "vectors3d", "vectors3d", "vectors3d", "volume3d", "bars",
-                                                  "graph")), 2))
-    assert "no máximo 3 cenas em 3D" in problems and "3 cenas vectors3d" in problems
+    assert lint(motion_plan_with(("graph", "bars", "mechanism3d", "vectors3d", "volume3d", "mechanism3d", "graph")), 2) == []
+    problems = " | ".join(lint(motion_plan_with(("graph", "vectors3d", "vectors3d", "vectors3d", "volume3d",
+                                                  "mechanism3d", "graph")), 2))
+    assert "no máximo 4 cenas em 3D" in problems and "3 cenas vectors3d" in problems
     assert any("example" in p for p in lint(motion_plan_with(example=""), 2))
     staged = motion_plan_with()
     staged.scenes[1].beats[0].narration = "Limpa a tela. " + SENTENCE

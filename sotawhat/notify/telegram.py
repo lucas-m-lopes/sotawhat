@@ -134,6 +134,13 @@ class TelegramNotifier:
         return self._call("sendVideo", payload, timeout=600,
                           files={"video": (Path(path).name, path, "video/mp4")}) or {}
 
+    def send_document(self, path, caption="", mime="text/html", name=None, disable_notification=False) -> dict:
+        """A file (the interactive 3D page of a lesson); up to 50 MB with the cloud Bot API."""
+        payload = {"chat_id": self.chat_id, "caption": caption, "parse_mode": "HTML"}
+        if disable_notification:
+            payload["disable_notification"] = "true"
+        return self._call("sendDocument", payload, timeout=300, files={"document": (name or Path(path).name, path, mime)}) or {}
+
     def send_audio(self, path, title="", caption="", reply_markup=None) -> dict:
         payload = {"chat_id": self.chat_id, "title": title, "caption": caption, "parse_mode": "HTML"}
         if reply_markup:

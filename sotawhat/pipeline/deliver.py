@@ -222,6 +222,12 @@ _MAIL = {
     "card": "border:1px solid #e3e0d8;border-radius:8px;padding:10px 12px;margin:0 0 10px",
     "title": "font-size:15px;font-weight:bold;margin:0 0 4px", "meta": "color:#5d6670;font-size:12px;margin:0 0 6px",
     "p": "font-size:14px;line-height:1.45;margin:0 0 6px", "a": "color:#0b6e4f", "li": "font-size:14px;margin:0 0 6px",
+    # "Por que importa" stands apart from the summary, like the 💡 italic line in Telegram: a tinted callout
+    # with an accent bar, italic text in a darker green, the label upright.
+    "why_box": "margin:8px 0 2px;padding:8px 10px;background:#eef6f2;border-left:3px solid #0b6e4f;"
+               "border-radius:0 6px 6px 0",
+    "why": "font-size:14px;line-height:1.45;margin:0;color:#24564a;font-style:italic",
+    "why_label": "font-style:normal;font-weight:bold;color:#0b6e4f",
 }
 
 
@@ -255,7 +261,8 @@ def render_email(d) -> tuple:
                         f'<p style="{s["meta"]}"><b>{num(e.total)}</b> · {esc(_scores(e))} · {esc(_sources(e))} · '
                         f"{esc(' · '.join(_tag_labels(e)))}</p>"
                         f'<p style="{s["p"]}">{esc(e.summary)}</p>'
-                        f'<p style="{s["p"]}"><b>Por que importa:</b> {esc(e.why)}</p></div>')
+                        f'<div style="{s["why_box"]}"><p style="{s["why"]}">'
+                        f'<span style="{s["why_label"]}">💡 Por que importa:</span> {esc(e.why)}</p></div></div>')
     if d.radar:
         body.append(f'<p style="{s["h2"]}">{brand.RADAR} Radar</p><ol>' + "".join(
             f'<li style="{s["li"]}">{a(e)} <span style="{s["meta"]}">— {esc(_sources(e))} · {esc(_scores(e))}</span></li>'

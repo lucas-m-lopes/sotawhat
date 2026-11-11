@@ -57,6 +57,19 @@ def test_email_copy_has_both_sections_inline_styles_and_a_plain_part():
     assert "Telegram" in html                                    # votes stay in Telegram
 
 
+def test_email_sets_why_it_matters_apart_from_the_summary():
+    _, _, html = render_email(_digest())
+
+    def opening(tag, text):                       # the tag that opens right before the text
+        end = html.index(text)
+        return html[html.rindex(tag, 0, end):end]
+
+    summary, why = opening("<p", "Resumo 1."), opening("<p", "Útil para o PS.")
+    assert "font-style:italic" in why and "font-style:italic" not in summary
+    assert "💡" in why and "Por que importa" in why
+    assert "border-left" in opening("<div", "Útil para o PS.")   # a callout box, not a plain paragraph
+
+
 def test_send_over_starttls_with_the_app_password_without_spaces():
     log = []
     mail = EmailNotifier("smtp.gmail.com", 587, "eu@gmail.com", "abcd efgh ijkl mnop", smtp=fake_smtp(log))

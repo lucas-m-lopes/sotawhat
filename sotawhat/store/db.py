@@ -11,6 +11,8 @@ from pathlib import Path
 
 import numpy as np
 
+from sotawhat.textmatch import fold
+
 SCHEMA_VERSION = 6
 APPROVED = ("main", "frontier", "radar")
 ROLE_RANK = {"tag": 0, "mentioned": 1, "used": 2, "main": 3}
@@ -374,6 +376,7 @@ class Store:
         self._lock = threading.RLock()
         self.conn = sqlite3.connect(str(path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        self.conn.create_function("fold", 1, fold, deterministic=True)   # accent-free search (graph/query.py)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(_SCHEMA)
         self.conn.executescript(_SCHEMA_V2)

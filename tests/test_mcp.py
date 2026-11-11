@@ -113,3 +113,17 @@ def test_intelligence_and_idea_tools(db):
     trends = m.trends_tool(db)
     assert set(trends) == {"trends", "communities", "last_weekly_report"} and trends["last_weekly_report"] is None
     assert set(m.gaps_tool(db, limit=5)) == {"recent_technique", "community_bridge", "serendipity"}
+
+
+def test_entity_lookup_prefers_the_exact_alias_and_neighbors_skip_categories(db):
+    """entity("EHR") and entity("LLM") returned taxonomy categories that merely contain the acronym."""
+    with Store(db) as st:
+        ehr = st.add_entity("technique", "electronic health record", "electronic health record")
+        st.add_alias("technique", "ehr", ehr, "EHR")
+        tabular = st.add_entity("technique_family", "preditivos tabulares em EHR", "c09", category="C09")
+        st.add_mention("pmid:1", ehr, "main", "2026-11-08T10:00:00+00:00")
+        for n in (1, 2):
+            st.add_mention(f"pmid:{n}", tabular, "tag", "2026-11-08T10:00:00+00:00")
+    for key in ("EHR", "ehr", "electronic health record"):
+        assert m.entity_tool(db, key)["name"] == "electronic health record", key
+    assert {n["name"] for n in m.neighbors_tool(db, "EHR")} == {"MedGemma 1.5", "Google"}     # no category

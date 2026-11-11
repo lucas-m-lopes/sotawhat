@@ -64,9 +64,12 @@ Phase P3 adds the knowledge graph and its own interface (no Obsidian):
   audit trail of merges. The triage categories become graph nodes too. `sotawhat graph extract
   [--limit N]` does the same on demand, e.g. for the items approved before P3.
 - `sotawhat serve` opens the interface at http://127.0.0.1:8765: the graph (sigma.js + graphology,
-  shipped in the package), filters by period, type and mentions, search, entity and item panels, and
-  👍 👎 🧪 votes that count like the Telegram ones. It reads SQLite, so it works with Docker closed.
-  `scripts\schedule_daily.ps1 -Web` starts it at every logon.
+  shipped in the package), filters by period, type and mentions, search (accents optional; an exact
+  name or alias such as "EHR" comes first, the triage categories after the entities), entity and item
+  panels, and 👍 👎 🧪 votes that count like the Telegram ones. It reads SQLite, so it works with Docker
+  closed. `scripts\schedule_daily.ps1 -Web` starts it at every logon; the task keeps the Python code it
+  started with, so after an update restart it (`Stop-ScheduledTask sotawhat-web; Start-ScheduledTask
+  sotawhat-web`).
 - Neo4j mirror (optional): set `NEO4J_PASSWORD`, run `sotawhat graph up` (opens Docker Desktop and
   starts `compose.yaml`, ports only on 127.0.0.1) and `sotawhat graph sync [--rebuild]`. The daily run
   keeps it in sync. Neo4j Browser: http://127.0.0.1:7474 (user `neo4j`).

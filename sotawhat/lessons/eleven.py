@@ -23,6 +23,7 @@ import httpx
 
 API = "https://api.elevenlabs.io"
 DEFAULT_VOICE = "UQ3s9h7N3CVJBL2USizn"      # Klaus, Brazilian professional narrator (in the user's library)
+VOICE_NAMES = {DEFAULT_VOICE: "Klaus"}           # what the lesson cards show instead of the id
 DEFAULT_MODEL = "eleven_v4"
 SETTINGS = {"stability": 0.45, "similarity_boost": 0.8, "style": 0.15, "use_speaker_boost": True, "speed": 1.0}
 RATE = 44100

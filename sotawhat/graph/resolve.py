@@ -3,9 +3,14 @@
 
 1. `normalize`: lowercase, no accents, punctuation or leading "the"; techniques and problems singular.
    `split_acronym`: a trailing acronym in parentheses becomes an alias ("retrieval-augmented generation
-   (RAG)"); any other trailing parenthesis is dropped from the name.
+   (RAG)"); any other trailing parenthesis is dropped from the name. `strip_inner_acronyms`: one inside
+   the name belongs to the words before it and leaves ("large language model (LLM) agent").
 2. Exact match by (group, normalized name) in the aliases, seeded from config/aliases.yaml. Model and
-   product form one group ("artifact"), because texts draw the line between them differently.
+   product form one group ("artifact"), because texts draw the line between them differently. An alias
+   may lead to an entity of another type (`sotawhat repair entities` merges across types): relations
+   and categories then follow the type of the entity found. Then the same name but for its spacing
+   ("GPT4" is "GPT-4", "nnUnet" is "nnU-Net"), with no judge. Names dropped in
+   config/entity_fixes.yaml never become entities.
 3. Similar names, always with the same numbers ("GPT-4o" never meets "GPT-4.1"): similar text, one name
    inside the other ("DeepMind" ⊂ "Google DeepMind") or close name embeddings. They go to the LLM judge
    (task `resolve`), at most `max_judge_calls` per run. Without a judge, past the cap or on a "no", the
@@ -60,7 +65,8 @@ GENERIC = {"ai", "artificial intelligence", "machine learning", "ml", "deep lear
            "approach", "technology", "software", "paper", "company", "startup", "user", "problem"}
 MAX_NAME, MAX_ENTITIES, MAX_RELATIONS = 80, 12, 10
 SIMILAR_TEXT, SIMILAR_VECTOR, MAX_CANDIDATES = 0.88, 0.90, 3
-PATTERNS = {   # relation -> (allowed source types, allowed target types); compared_with: same group
+METHOD_TYPES = {"technique", "model", "product"}   # benchmarks compare them with one another
+PATTERNS = {   # relation -> (allowed source types, allowed target types); compared_with: same group or methods
     "uses": ({"technique", "model", "product", "organization"}, {"technique", "model", "dataset", "product"}),
     "addresses": ({"technique", "model", "product", "organization"}, {"problem"}),
     "developed_by": ({"model", "product", "dataset", "technique"}, {"organization"}),
@@ -70,6 +76,7 @@ PATTERNS = {   # relation -> (allowed source types, allowed target types); compa
 }
 _MINOR = {"and", "of", "the", "for", "in", "on", "with", "to", "a", "an", "de", "da", "do", "e"}
 _PAREN = re.compile(r"^(.+?)\s*\(([^()]{1,60})\)$")
+_INNER_ACRONYM = re.compile(r"\s*\(([A-Z][A-Za-z0-9]{1,9})\)(?=[\s\-/])")
 log = logging.getLogger("sotawhat.resolve")
 
 
@@ -161,11 +168,34 @@ def split_acronym(name) -> tuple:
     return outer, None
 
 
+def strip_inner_acronyms(name) -> str:
+    """'large language model (LLM) agent' -> 'large language model agent'. The prompt asks for "name (ACRONYM)",
+    and in a compound name the acronym lands inside it, where it belongs to the words before it and not to the
+    entity (a trailing acronym is an alias of the entity: `split_acronym`)."""
+    def drop(match):
+        words = name[:match.start()].split()
+        if any(_is_acronym_of(match.group(1), " ".join(words[-k:])) for k in range(1, min(len(words), 8) + 1)):
+            return ""
+        return match.group(0)
+
+    return _INNER_ACRONYM.sub(drop, name)
+
+
 def allowed(relation, source_type, target_type) -> bool:
-    if relation == "compared_with":
-        return group(source_type) == group(target_type)
+    if relation == "compared_with":    # architectures typed as technique meet models in the same benchmark
+        return group(source_type) == group(target_type) or {source_type, target_type} <= METHOD_TYPES
     sources, targets = PATTERNS.get(relation, (set(), set()))
     return source_type in sources and target_type in targets
+
+
+def fit_relation(relation, source_type, target_type):
+    """The relation to store between these types, or None. "uses" a problem becomes "addresses" it: an alias or a
+    merge may have turned a task the extraction typed as technique into a problem ("radiology report generation")."""
+    if allowed(relation, source_type, target_type):
+        return relation
+    if relation == "uses" and target_type == "problem" and allowed("addresses", source_type, target_type):
+        return "addresses"
+    return None
 
 
 @dataclass
@@ -193,9 +223,11 @@ def _field(row, key, default=None):
 
 
 class Resolver:
-    def __init__(self, store, embedder=None, judge=None, aliases=None, max_judge_calls=40):
+    def __init__(self, store, embedder=None, judge=None, aliases=None, max_judge_calls=40, ignore=()):
         self.store, self.embedder, self.judge = store, embedder, judge
         self.max_judge_calls, self.judge_calls = max_judge_calls, 0
+        # names that config/entity_fixes.yaml drops: (type, name) -> (group, key)
+        self._ignore = {(group(type_), normalize(name, type_)) for type_, name in ignore}
         self._seeds = {}         # (group, normalized alias) -> canonical name, from config/aliases.yaml
         for type_, table in (aliases or {}).items():
             for canonical, names in table.items():
@@ -277,6 +309,16 @@ class Resolver:
                 return known.id
         return None
 
+    def _same_but_spacing(self, grp, norm):
+        """'GPT4' is 'GPT-4' and 'nnUnet' is 'nnU-Net': the same letters and digits in the same order."""
+        squashed = norm.replace(" ", "")
+        for known in self._known(grp):
+            if known.norm != norm and known.norm.replace(" ", "") == squashed:
+                row = self.store.get_entity(known.id)
+                if row is not None:
+                    return row
+        return None
+
     def _create(self, type_, grp, name, norm, category, vector, out) -> int:
         known = self._known(grp)                 # load the group before the new row exists
         table = ENTITY_CATEGORY.get(type_, (None, {}))[1]
@@ -297,6 +339,12 @@ class Resolver:
                 extra.append((norm, name))
             name, norm = canonical, canonical_norm
         hit = self.store.entity_by_alias(grp, norm)
+        if hit is None:
+            hit = self._same_but_spacing(grp, norm)
+            if hit is not None:
+                self.store.add_alias(grp, norm, hit["id"], name)
+                self.store.record_merge(hit["id"], name, "spacing", score=1.0, item_id=item_id)
+                out.merges += 1
         if hit is not None:
             eid = hit["id"]
         else:
@@ -318,27 +366,32 @@ class Resolver:
         names = {}
         for ent in extraction.entities[:MAX_ENTITIES]:
             base, acronym = split_acronym(ent.name)
+            base = strip_inner_acronyms(base)
             shown, norm = display_name(base, ent.type), normalize(base, ent.type)
-            if not norm or len(base) > MAX_NAME or norm in GENERIC or (_CJK.search(base) and not foreign_ok):
+            if not norm or len(base) > MAX_NAME or norm in GENERIC or (_CJK.search(base) and not foreign_ok) \
+                    or (group(ent.type), norm) in self._ignore:
                 out.dropped += 1
                 continue
             eid = self.resolve(ent.type, shown, norm, ent.category, context, item_id, out)
+            found = self.store.get_entity(eid)       # an alias may lead to another type (merged by `repair entities`)
+            type_ = found["type"] if found is not None else ent.type
             if acronym:
                 self.store.add_alias(group(ent.type), normalize(acronym, ent.type), eid, acronym)
             if self.store.add_mention(item_id, eid, ent.role, seen):
                 out.mentions += 1
-            if ent.type in ENTITY_CATEGORY and ent.category in ENTITY_CATEGORY[ent.type][1]:
-                cat_type, table = ENTITY_CATEGORY[ent.type]
+            if type_ in ENTITY_CATEGORY and ent.category in ENTITY_CATEGORY[type_][1]:
+                cat_type, table = ENTITY_CATEGORY[type_]
                 if self.store.add_relation(eid, "in_category", self._category(cat_type, ent.category, table), item_id):
                     out.relations += 1
             for key in {ent.name.strip().lower(), base.lower(), shown.lower(), (acronym or "").lower()} - {""}:
-                names.setdefault(key, (eid, ent.type))
+                names.setdefault(key, (eid, type_))
         for rel in extraction.relations[:MAX_RELATIONS]:
             source, target = names.get(rel.source.strip().lower()), names.get(rel.target.strip().lower())
-            if source is None or target is None or source[0] == target[0] or not allowed(rel.relation, source[1], target[1]):
+            relation = fit_relation(rel.relation, source[1], target[1]) if source and target else None
+            if relation is None or source[0] == target[0]:
                 out.dropped += 1
                 continue
-            if self.store.add_relation(source[0], rel.relation, target[0], item_id):
+            if self.store.add_relation(source[0], relation, target[0], item_id):
                 out.relations += 1
         return out
 

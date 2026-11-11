@@ -6,7 +6,8 @@ import numpy as np
 import pytest
 
 from sotawhat.configfiles import ConfigError, load_aliases
-from sotawhat.graph.resolve import Resolver, display_name, make_judge, normalize, split_acronym
+from sotawhat.graph.resolve import (Resolver, display_name, make_judge, normalize, split_acronym,
+                                     strip_inner_acronyms)
 from sotawhat.items import Item
 from sotawhat.llm.schemas import Extraction, SameEntity
 from sotawhat.store.db import Store
@@ -266,3 +267,70 @@ def test_aliases_yaml_is_validated(tmp_path):
         good.write_text(bad, encoding="utf-8")
         with pytest.raises(ConfigError):
             load_aliases(good)
+
+
+# --- 2026-11-11 graph repair: duplicates the resolver let in ------------------------------------
+def test_an_acronym_inside_a_name_leaves_it():
+    """The prompt asks for "name (ACRONYM)"; in a compound name the acronym lands in the middle."""
+    assert strip_inner_acronyms("large language model (LLM) agent") == "large language model agent"
+    assert strip_inner_acronyms("agentic large language model (LLM) pipeline") == "agentic large language model pipeline"
+    assert strip_inner_acronyms("electronic health record (EHR)-based risk prediction") == \
+        "electronic health record-based risk prediction"
+    assert strip_inner_acronyms("vision-language-action (VLA) model") == "vision-language-action model"
+    assert strip_inner_acronyms("ReAct-Plan-Exec-Reflect (RPR) workflow") == "ReAct-Plan-Exec-Reflect (RPR) workflow"
+    assert strip_inner_acronyms("retrieval-augmented generation (RAG)") == "retrieval-augmented generation (RAG)"
+
+
+def test_spacing_variants_and_inner_acronyms_meet_the_known_entity(tmp_path):
+    st = _store(tmp_path)
+    judge = Judge()                                     # would say no: these matches never ask it
+    resolver = Resolver(st, judge=judge)
+    resolver.apply(_row(st, 1), _x(_e("GPT-4", "model"), _e("nnU-Net", "model"), _e("large language model (LLM) agent")))
+    out = resolver.apply(_row(st, 2), _x(_e("GPT4", "model"), _e("nnUnet", "model"), _e("large language model agent")))
+    assert out.new_entities == 0 and judge.calls == []
+    assert [len(_ids(st, n)) for n in ("GPT-4", "nnU-Net", "large language model agent")] == [1, 1, 1]
+    assert _ids(st, "GPT4") == [] and st.get_entity(_ids(st, "GPT-4")[0])["mention_count"] == 2
+    assert st.entity_by_alias("artifact", "gpt4")["name"] == "GPT-4"
+    st.close()
+
+
+def test_a_moved_alias_crosses_types_and_relations_follow_the_real_type(tmp_path):
+    """After `repair entities` merges "regulation: MCP" into the technique, its alias keeps pointing there."""
+    st = _store(tmp_path)
+    resolver = Resolver(st)
+    resolver.apply(_row(st, 1), _x(_e("Model Context Protocol (MCP)"), _e("HealthAPI", "product"),
+                                   relations=[("HealthAPI", "uses", "Model Context Protocol")]))
+    mcp = _ids(st, "Model Context Protocol")[0]
+    st.add_alias("regulation", "model context protocol", mcp, "Model Context Protocol")
+    out = resolver.apply(_row(st, 2), _x(_e("Model Context Protocol", "regulation"), _e("Codex", "product"),
+                                         relations=[("Codex", "uses", "Model Context Protocol"),
+                                                    ("Codex", "regulated_by", "Model Context Protocol")]))
+    assert out.new_entities == 1 and _ids(st, "Model Context Protocol") == [mcp]     # Codex is the only new one
+    assert st.get_entity(mcp)["mention_count"] == 2
+    names = {r["id"]: r["name"] for r in st.conn.execute("SELECT id, name FROM entities")}
+    kept = sorted((names[s], p, names[o]) for s, p, o in st.relations_of_item("pmid:2") if p != "in_category")
+    assert kept == [("Codex", "uses", "Model Context Protocol")]            # regulated_by needs a regulation
+    st.close()
+
+
+def test_dropped_names_never_become_entities(tmp_path):
+    st = _store(tmp_path)
+    resolver = Resolver(st, ignore=[("organization", "level 3 delivery NICU")])
+    out = resolver.apply(_row(st, 1), _x(_e("level 3 delivery NICU", "organization"), _e("Pieces", "product")))
+    assert out.dropped == 1 and _ids(st, "level 3 delivery NICU") == [] and _ids(st, "Pieces")
+    st.close()
+
+
+def test_methods_compare_across_types_and_using_a_task_means_addressing_it(tmp_path):
+    """Benchmarks compare architectures typed as technique with models; and an alias may turn the target of a
+    "uses" into a problem (a task such as "radiology report generation")."""
+    st = _store(tmp_path)
+    Resolver(st).apply(_row(st, 1), _x(
+        _e("nnU-Net"), _e("Swin-Unet", "model"), _e("RadRef"), _e("radiology report generation", "problem"),
+        _e("MIMIC-CXR", "dataset"),
+        relations=[("nnU-Net", "compared_with", "Swin-Unet"), ("RadRef", "uses", "radiology report generation"),
+                   ("nnU-Net", "compared_with", "MIMIC-CXR")]))
+    names = {r["id"]: r["name"] for r in st.conn.execute("SELECT id, name FROM entities")}
+    kept = sorted((names[s], p, names[o]) for s, p, o in st.relations_of_item("pmid:1") if p != "in_category")
+    assert kept == [("RadRef", "addresses", "radiology report generation"), ("nnU-Net", "compared_with", "Swin-Unet")]
+    st.close()

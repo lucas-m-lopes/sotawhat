@@ -1,5 +1,5 @@
 # tests/test_textmatch.py
-from sotawhat.textmatch import contains_term, contains_any
+from sotawhat.textmatch import contains_any, contains_term, fold
 
 def test_contains_term_word_boundary():
     assert contains_term("we built an agent system", "agent")
@@ -18,3 +18,9 @@ def test_contains_term_multiword_phrase():
 def test_contains_any():
     assert contains_any("deep learning in radiology", ["machine learning", "deep learning"])
     assert not contains_any("a clinical trial of aspirin", ["machine learning", "deep learning"])
+
+
+def test_fold_drops_case_and_accents_only():
+    assert fold("Diagnóstico") == "diagnostico" and fold("SAÚDE") == "saude" and fold("Fréchet") == "frechet"
+    assert fold("GPT-5") == "gpt-5" and fold("ß") == "ss" and fold("IA ∩ Saúde") == "ia ∩ saude"
+    assert fold("β-amiloide") == "β-amiloide" and fold(None) is None

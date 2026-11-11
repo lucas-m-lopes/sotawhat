@@ -54,7 +54,7 @@ def neighbors_tool(db_path, name_or_id, limit=20):
         entity_id = _entity_id(store, name_or_id)
         if entity_id is None:
             return {"error": f"entidade não encontrada: {name_or_id}; tente search"}
-        return q.neighbors(store, entity_id, limit=max(1, min(int(limit), 100)))
+        return q.neighbors(store, entity_id, limit=max(1, min(int(limit), 100)), types=q.ENTITY_TYPES)
 
 
 def recent_items_tool(db_path, days=7, section="", topic="", limit=20) -> list:
@@ -134,7 +134,8 @@ def build_server(db_path, mirror_factory=None):
 
     @server.tool()
     def neighbors(name_or_id: str, limit: int = 20) -> list | dict:
-        """Entidades que aparecem nos mesmos itens que esta, com o número de itens em comum."""
+        """Entidades que aparecem nos mesmos itens que esta, com o número de itens em comum (sem as categorias
+        da triagem, que aparecem junto com quase tudo; elas vêm no campo neighbors de entity)."""
         return neighbors_tool(db_path, name_or_id, limit)
 
     @server.tool()

@@ -151,3 +151,61 @@ def test_stats_and_export(g, tmp_path):
     assert {r["label"] for r in rows} >= {"MedGemma 1.5", "radiologia/imagem"} and "type" in rows[0]
     with edges_csv.open(encoding="utf-8") as fh:
         assert {r["kind"] for r in csv.DictReader(fh)} >= {"developed_by", "co"}
+
+
+# --- found in the 2026-11-11 interface test ---------------------------------------------------
+def test_search_puts_the_exact_name_or_alias_first(g):
+    """"EHR" + Enter opened a category: results came by mention count only, so the alias owner lost."""
+    st, ids = g
+    ehr = st.add_entity("technique", "electronic health record", "electronic health record")
+    st.add_alias("technique", "ehr", ehr, "EHR")
+    fragmentation = st.add_entity("problem", "EHR data fragmentation", "ehr data fragmentation")
+    tabular = st.add_entity("technique_family", "preditivos tabulares em EHR", "c09", category="C09")
+    st.add_mention("pmid:1", ehr, "main", ITEMS[1][1])
+    st.add_mention("pmid:2", fragmentation, "used", ITEMS[2][1])
+    for n in (1, 2, 3):                                     # the category is the most mentioned of the three
+        st.add_mention(f"pmid:{n}", tabular, "tag", ITEMS[n][1])
+    assert [e["name"] for e in q.search(st, "EHR")["entities"]] == [
+        "electronic health record", "EHR data fragmentation", "preditivos tabulares em EHR"]
+    assert q.search(st, "ehr")["entities"][0]["entity_id"] == ehr
+    assert q.search(st, "MedGemma")["entities"][0]["entity_id"] == ids["med"]
+
+
+def test_search_ignores_accents_case_and_like_wildcards(g):
+    st, ids = g
+    late = st.add_entity("problem_type", "erro/atraso diagnóstico", "b01", category="B01")
+    st.add_mention("pmid:1", late, "tag", ITEMS[1][1])
+    assert [e["name"] for e in q.search(st, "diagnostico")["entities"]] == ["erro/atraso diagnóstico"]
+    assert [e["name"] for e in q.search(st, "DIAGNÓSTICO")["entities"]] == ["erro/atraso diagnóstico"]
+    assert [i["id"] for i in q.search(st, "difusao")["items"]] == ["pmid:2"]      # "Modelo de difusão aberto."
+    assert [i["id"] for i in q.search(st, "NOTÍCIA")["items"]] == ["pmid:3"]      # SQLite lower() keeps "Í"
+    assert [i["id"] for i in q.recent_items(st, days=0, text="difusao")] == ["pmid:2"]
+    assert q.search(st, "%%") == {"entities": [], "items": []}                 # wildcards are literal
+    assert q.search(st, "__") == {"entities": [], "items": []}
+
+
+def test_entity_detail_keeps_entity_neighbors_apart_from_categories(g):
+    """Categories co-occur with almost everything: they took all 15 neighbor slots of the central entities."""
+    st, ids = g
+    for k in range(20):
+        category = st.add_entity("domain", f"domínio {k}", f"a{k:02d}x", category=f"A{k:02d}")
+        for n in (1, 3):
+            st.add_mention(f"pmid:{n}", category, "tag", ITEMS[n][1])
+    d = q.entity_detail(st, ids["med"])
+    entities = [n["name"] for n in d["neighbors"] if n["type"] in q.ENTITY_TYPES]
+    categories = [n for n in d["neighbors"] if n["type"] in q.CATEGORY_TYPES]
+    assert set(entities) == {"Google", "missed fracture"}
+    assert 0 < len(categories) <= 8 and categories[0]["shared"] == 2
+    assert [n["name"] for n in q.neighbors(st, ids["med"], types=q.ENTITY_TYPES)] == ["Google", "missed fracture"]
+
+
+def test_entity_detail_shows_a_symmetric_relation_once(g):
+    st, ids = g
+    other = st.add_entity("model", "Gemini", "gemini")
+    st.add_mention("pmid:3", other, "mentioned", ITEMS[3][1])
+    st.add_relation(ids["med"], "compared_with", other, "pmid:1")
+    st.add_relation(other, "compared_with", ids["med"], "pmid:3")
+    compared = [r for r in q.entity_detail(st, ids["med"])["relations"] if r["relation"] == "compared_with"]
+    assert [(r["direction"], r["other"]["name"], r["items"]) for r in compared] == [("both", "Gemini", 2)]
+    back = [r for r in q.entity_detail(st, other)["relations"] if r["relation"] == "compared_with"]
+    assert [(r["direction"], r["other"]["name"], r["items"]) for r in back] == [("both", "MedGemma 1.5", 2)]

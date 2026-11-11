@@ -12,6 +12,7 @@ from pathlib import Path
 from sotawhat import taxonomy as tx
 from sotawhat.graph.resolve import normalize
 from sotawhat.store.db import APPROVED, ROLE_RANK
+from sotawhat.textmatch import fold
 
 ENTITY_TYPES = ("technique", "model", "dataset", "organization", "product", "problem", "regulation")
 CATEGORY_TYPES = ("domain", "problem_type", "technique_family")
@@ -22,11 +23,17 @@ RELATION_LABELS = {"uses": "usa", "addresses": "aborda", "developed_by": "desenv
                    "evaluated_on": "avaliado em", "compared_with": "comparado com", "builds_on": "baseado em",
                    "regulated_by": "regulado por", "in_category": "na categoria", "co": "aparecem juntos"}
 SECTIONS = {"main": "IA ∩ Saúde", "frontier": "Fronteira de IA", "radar": "Radar"}
+SYMMETRIC = {"compared_with"}          # one relation, whichever side the item put first
 _APPROVED_SQL = ",".join("?" * len(APPROVED))
 
 
 def _in(values) -> str:
     return ",".join("?" * len(values))
+
+
+def _like(text) -> str:
+    """A LIKE pattern that finds `text` anywhere, with its % and _ taken literally (ESCAPE '\\')."""
+    return "%" + text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
 
 def _since(days, now=None):
@@ -159,13 +166,19 @@ def _items_payload(store, rows) -> list:
              "role": r["role"] if "role" in r.keys() else None, "vote": votes.get(r["id"])} for r in rows]
 
 
-def neighbors(store, entity_id, limit=20, since=None) -> list:
+def neighbors(store, entity_id, limit=20, since=None, types=None) -> list:
+    """Entities that share items with this one, most shared first. `types` keeps only those types: the
+    taxonomy categories co-occur with almost everything and took every slot of the central entities."""
     pairs = _cooccurrence(store, None, since, anchor=int(entity_id))
     shared = {(b if a == int(entity_id) else a): n for (a, b), n in pairs.items()}
     if not shared:
         return []
-    rows = store.conn.execute(f"SELECT * FROM entities WHERE id IN ({_in(shared)})", list(shared)).fetchall()
-    rows = sorted(rows, key=lambda r: (-shared[r["id"]], -r["mention_count"], r["name"]))[:limit]
+    sql, args = f"SELECT * FROM entities WHERE id IN ({_in(shared)})", list(shared)
+    if types:
+        sql += f" AND type IN ({_in(types)})"
+        args += list(types)
+    rows = sorted(store.conn.execute(sql, args).fetchall(),
+                  key=lambda r: (-shared[r["id"]], -r["mention_count"], r["name"]))[:limit]
     return [{"id": f"e{r['id']}", "entity_id": r["id"], "name": r["name"], "type": r["type"],
              "type_label": TYPE_LABELS.get(r["type"], r["type"]), "shared": shared[r["id"]]} for r in rows]
 
@@ -185,17 +198,21 @@ def entity_detail(store, entity_id, items_limit=40) -> dict | None:
         " JOIN items i ON i.id = m.item_id JOIN triage t ON t.item_id = i.id"
         f" WHERE m.entity_id = ? AND t.decision IN ({_APPROVED_SQL}) ORDER BY i.fetched_at DESC LIMIT ?",
         [entity_id] + list(APPROVED) + [items_limit]).fetchall()
-    relations = []
+    stated = {}             # (predicate, direction, other entity) -> the items that state it
     for r in store.conn.execute(
-            "SELECT r.predicate, r.subject_id, r.object_id, COUNT(DISTINCT r.item_id) AS n FROM entity_relations r"
-            " WHERE (r.subject_id = ? OR r.object_id = ?) AND r.predicate != 'in_category'"
-            " GROUP BY r.predicate, r.subject_id, r.object_id ORDER BY n DESC", (entity_id, entity_id)):
+            "SELECT predicate, subject_id, object_id, item_id FROM entity_relations"
+            " WHERE (subject_id = ? OR object_id = ?) AND predicate != 'in_category'", (entity_id, entity_id)):
         out = r["subject_id"] == entity_id
-        other = store.get_entity(r["object_id"] if out else r["subject_id"])
-        relations.append({"direction": "out" if out else "in", "relation": r["predicate"],
-                          "label": RELATION_LABELS.get(r["predicate"], r["predicate"]), "items": r["n"],
+        direction = "both" if r["predicate"] in SYMMETRIC else "out" if out else "in"
+        stated.setdefault((r["predicate"], direction, r["object_id"] if out else r["subject_id"]), set()).add(r["item_id"])
+    relations = []
+    for (predicate, direction, other_id), item_ids in stated.items():
+        other = store.get_entity(other_id)
+        relations.append({"direction": direction, "relation": predicate,
+                          "label": RELATION_LABELS.get(predicate, predicate), "items": len(item_ids),
                           "other": {"id": f"e{other['id']}", "entity_id": other["id"], "name": other["name"],
                                     "type": other["type"]}})
+    relations.sort(key=lambda r: (-r["items"], r["relation"], r["other"]["name"].lower()))
     claims, seen_claims = [], set()
     for item in items:
         if item["role"] != "main":
@@ -211,7 +228,9 @@ def entity_detail(store, entity_id, items_limit=40) -> dict | None:
             "type_label": TYPE_LABELS.get(row["type"], row["type"]), "category": row["category"],
             "category_label": _category_label(row["category"]), "mention_count": row["mention_count"],
             "first_seen": row["first_seen"], "last_seen": row["last_seen"], "aliases": aliases,
-            "items": _items_payload(store, items), "neighbors": neighbors(store, entity_id, limit=15),
+            "items": _items_payload(store, items),
+            "neighbors": neighbors(store, entity_id, limit=15, types=ENTITY_TYPES)
+            + neighbors(store, entity_id, limit=8, types=CATEGORY_TYPES),
             "relations": relations, "claims": claims[:10]}
 
 
@@ -255,20 +274,48 @@ def item_detail(store, item_id) -> dict | None:
             "vote": store.item_votes(ids=[item_id]).get(item_id)}
 
 
+def _search_rank(row, aliases, folded, norm):
+    """The exact name or alias first, then a name or alias that starts with the text, then the rest; inside
+    each group the entities before the taxonomy categories, then the most mentioned."""
+    name = fold(row["name"])
+    keys = {row["norm"], *aliases} if norm else set()
+    if name == folded or norm in keys:
+        match = 0
+    elif name.startswith(folded) or any(k.startswith(norm) for k in keys):
+        match = 1
+    else:
+        match = 2
+    return match, row["type"] in CATEGORY_TYPES, -row["mention_count"], name
+
+
 def search(store, text, limit=20) -> dict:
     text = (text or "").strip()
     if len(text) < 2:
         return {"entities": [], "items": []}
-    like, like_norm = f"%{text.lower()}%", f"%{normalize(text)}%"
-    entities = store.conn.execute(
-        "SELECT DISTINCT e.* FROM entities e LEFT JOIN entity_aliases a ON a.entity_id = e.id"
-        " WHERE lower(e.name) LIKE ? OR a.alias_norm LIKE ? OR lower(a.alias) LIKE ?"
-        " ORDER BY e.mention_count DESC, e.name LIMIT ?", (like, like_norm, like, limit)).fetchall()
+    folded, norm = fold(text), normalize(text)
+    like = _like(folded)
+    names, aliases, args = ["fold(e.name) LIKE ? ESCAPE '\\'"], ["fold(a.alias) LIKE ? ESCAPE '\\'"], [like]
+    if norm:                # punctuation alone normalizes to "", and "%%" would match every name
+        names.append("e.norm LIKE ? ESCAPE '\\'")
+        aliases.append("a.alias_norm LIKE ? ESCAPE '\\'")
+        args.append(_like(norm))
+    # one pass over the aliases: a subquery per entity rescanned them all (no index on entity_id), ~200 ms a search
+    by_alias = [r[0] for r in store.conn.execute(
+        f"SELECT DISTINCT entity_id FROM entity_aliases a WHERE {' OR '.join(aliases)}", args)]
+    rows = store.conn.execute(f"SELECT * FROM entities e WHERE {' OR '.join(names)}"
+                              + (f" OR e.id IN ({_in(by_alias)})" if by_alias else ""), args + by_alias).fetchall()
+    alias_norms = {}
+    if rows:
+        ids = [r["id"] for r in rows]
+        for entity_id, alias_norm in store.conn.execute(
+                f"SELECT entity_id, alias_norm FROM entity_aliases WHERE entity_id IN ({_in(ids)})", ids):
+            alias_norms.setdefault(entity_id, set()).add(alias_norm)
+    entities = sorted(rows, key=lambda r: _search_rank(r, alias_norms.get(r["id"], ()), folded, norm))[:limit]
     items = store.conn.execute(
         "SELECT i.*, t.decision, t.total, t.summary_pt, t.why_it_matters_pt FROM items i"
         f" JOIN triage t ON t.item_id = i.id WHERE t.decision IN ({_APPROVED_SQL})"
-        " AND (lower(i.title) LIKE ? OR lower(t.summary_pt) LIKE ?) ORDER BY i.fetched_at DESC LIMIT ?",
-        list(APPROVED) + [like, like, limit]).fetchall()
+        " AND (fold(i.title) LIKE ? ESCAPE '\\' OR fold(t.summary_pt) LIKE ? ESCAPE '\\')"
+        " ORDER BY i.fetched_at DESC LIMIT ?", list(APPROVED) + [like, like, limit]).fetchall()
     return {"entities": [{"id": f"e{r['id']}", "entity_id": r["id"], "name": r["name"], "type": r["type"],
                           "type_label": TYPE_LABELS.get(r["type"], r["type"]), "mentions": r["mention_count"]}
                          for r in entities],
@@ -290,8 +337,8 @@ def recent_items(store, days=7, section=None, entity_id=None, text=None, limit=2
         sql += " AND EXISTS (SELECT 1 FROM entity_mentions m WHERE m.item_id = i.id AND m.entity_id = ?)"
         args.append(int(str(entity_id).lstrip("e")))
     if text:
-        sql += " AND (lower(i.title) LIKE ? OR lower(t.summary_pt) LIKE ?)"
-        args += [f"%{text.lower()}%"] * 2
+        sql += " AND (fold(i.title) LIKE ? ESCAPE '\\' OR fold(t.summary_pt) LIKE ? ESCAPE '\\')"
+        args += [_like(fold(text))] * 2
     sql += " ORDER BY i.fetched_at DESC LIMIT ?"
     args.append(limit)
     return _items_payload(store, store.conn.execute(sql, args).fetchall())

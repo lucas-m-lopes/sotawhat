@@ -79,8 +79,9 @@ def send_lesson(store, notifier, lesson_id) -> None:
             notifier.send_document(page, name=f"aula-{int(lesson_id):03d}-3d-interativo.html", disable_notification=True,
                                    caption=f"🧊 <b>3D interativo</b> · {len(scenes)} cena(s) · abra no navegador: "
                                            "ouça a cena, arraste para girar, pinça para aproximar")
-        except TelegramError:
-            pass                       # the video and the quiz still go; the page is also on the Aulas tab
+        except TelegramError as exc:   # the video and the quiz still go; the page is also on the Aulas tab
+            report["interactive"]["error"] = f"Telegram: {exc}"[:300]
+            store.update_lesson(lesson_id, report=report)
     send_quiz(notifier, lesson_id, plan, 0)
     notifier.send_message("Sua revisão desta aula (o checklist está na página da aula) e a comparação com o Video "
                           "Overview do NotebookLM gerado do fontes.md:", reply_markup=review_keyboard(lesson_id),

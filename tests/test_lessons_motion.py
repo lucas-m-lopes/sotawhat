@@ -81,7 +81,7 @@ def engine(tmp_path, monkeypatch):
 
     from sotawhat.lessons import hyperframes as hfm
 
-    def compose(hf, project, plan, board, nar, lesson_id):
+    def compose(hf, project, plan, board, nar, lesson_id, codes=None):
         events.append("compose")
         (project / "compositions").mkdir(parents=True, exist_ok=True)
         (project / "index.html").write_text(board.model_dump_json(), encoding="utf-8")
@@ -96,6 +96,7 @@ def engine(tmp_path, monkeypatch):
     monkeypatch.setattr(hfm, "compose", compose)
     monkeypatch.setattr(hfm, "check", lambda hf, project: {"ok": True, "errors": [], "warnings": ["layout: x"]})
     monkeypatch.setattr(motion, "render_step", render)
+    monkeypatch.setattr(motion.interactive, "build", lambda *a, **k: None)
     monkeypatch.setattr("sotawhat.fx.usd_brl", lambda store=None, **k: Rate(5.584, "2026-11-10"))
     store = Store(tmp_path / "insight.db")
     lesson_id = store.create_lesson("Atenção", [1])

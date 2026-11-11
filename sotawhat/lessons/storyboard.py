@@ -20,9 +20,10 @@ from pydantic import Field
 from sotawhat.llm.prompts import load as load_prompt
 from sotawhat.llm.schemas import _Portuguese
 
-PROMPT = "lesson_storyboard_v2"
-TEMPLATES = ("graph", "bars", "chart", "timeline", "compare", "vectors3d", "patches", "volume3d")
-TEMPLATES_3D = ("vectors3d", "volume3d")
+PROMPT = "lesson_storyboard_v3"
+TEMPLATES = ("graph", "bars", "chart", "timeline", "compare", "vectors3d", "patches", "volume3d", "mechanism3d")
+TEMPLATES_3D = ("vectors3d", "volume3d", "mechanism3d")
+MAX_PARTS = 6           # mechanism3d: the physical parts the kit labels
 ROLES = ("token", "embedding", "query", "key", "value", "score", "weight", "output", "neutral", "alert", "info")
 MAX_VISIBLE, MAX_COLS, MAX_ROWS = 7, 6, 5
 LABEL_MAX, GLOSS_MAX, NOTE_MAX = 24, 34, 44
@@ -343,6 +344,11 @@ def validate(board, sentences, planned=None) -> list:
             problems.append(f"{where}: template bars precisa de 2 a 6 barras")
         if scene.template == "vectors3d" and not 2 <= len(scene.vectors) <= 6:
             problems.append(f"{where}: template vectors3d precisa de 2 a 6 vetores")
+        if scene.template == "mechanism3d":
+            if not 2 <= len(scene.nodes) <= MAX_PARTS:
+                problems.append(f"{where}: template mechanism3d precisa de 2 a {MAX_PARTS} peças em nodes")
+            for node in scene.nodes:          # parts are cards if the 3D falls back to the graph
+                node.kind = "box"
         if scene.template == "patches":
             p = scene.patches
             if p.image == "nenhuma" or p.rows < 1 or p.cols < 1:

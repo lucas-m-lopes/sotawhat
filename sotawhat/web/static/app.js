@@ -969,6 +969,8 @@
       lesson.video ? el("video", { controls: true, preload: "metadata", src: lesson.video, class: "lesson-video" }) : null,
       lesson.scenes3d.length ? el("div", { class: "chips" }, el("span", { class: "muted" }, "Cenas 3D interativas: "),
         ...lesson.scenes3d.map((s) => el("a", { class: "chip", href: s.url, target: "_blank", rel: "noopener" }, `${s.n}. ${s.title}`))) : null,
+      lesson.interactive ? el("div", { class: "chips" }, el("a", { class: "chip", href: lesson.interactive, target: "_blank",
+        rel: "noopener" }, "🧊 3D interativo"), el("span", { class: "muted" }, "ouça cada cena 3D, arraste para girar")) : null,
       lesson.sources_md ? el("p", { class: "muted" }, "Linha de base: suba ",
         el("a", { href: lesson.sources_md, target: "_blank", rel: "noopener" }, "fontes.md"),
         " no NotebookLM e gere um Video Overview (Explainer, pt-BR) para comparar.") : null);

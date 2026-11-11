@@ -235,6 +235,7 @@ def lesson_payload(st, row, lessons_dir, detail=False) -> dict:
            "error": row["error"], "objective": (plan or {}).get("objective"),
            "video": f"/lessons/{folder}/aula.mp4" if row["video_path"] and (lessons_dir / folder / "aula.mp4").exists() else None,
            "sources_md": f"/lessons/{folder}/fontes.md" if (lessons_dir / folder / "fontes.md").exists() else None,
+           "interactive": f"/lessons/{folder}/interativo.html" if (lessons_dir / folder / "interativo.html").exists() else None,
            "quiz_score": [st.lesson_score(row["id"], 0), st.lesson_score(row["id"], 1)],
            "scenes3d": [{"n": n, "title": s["title"], "url": f"/lessons/{folder}/scenes/{n:02d}/index.html"}
                         for n, s in enumerate((plan or {}).get("scenes") or [], 1)

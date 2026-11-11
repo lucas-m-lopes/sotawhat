@@ -194,16 +194,52 @@ def copy_assets(hf, project, wav) -> None:
     for f in KIT.iterdir():
         if f.suffix in (".js", ".css"):
             shutil.copy2(f, assets / "kit")
-    shutil.copy2(wav, assets / "narration.wav")
+    if Path(wav).resolve() != (assets / "narration.wav").resolve():
+        shutil.copy2(wav, assets / "narration.wav")
 
 
-def compose(hf, project, plan, board, nar, lesson_id) -> dict:
-    """Writes the HyperFrames project of a lesson. -> {"duration", "scenes": [{"id", "start", "dur", "template"}]}."""
+def scene_data(n, scene, bscene, nscene, start, dur, template=None) -> dict:
+    """What the kit gets for scene n (times local to its slot): the same for the video, the probe of a mechanism3d
+    scene and the interactive page."""
+    return {"num": n, "title": scene.title, "dur": dur, "template": template or bscene.template,
+            "nodes": [x.model_dump() for x in bscene.nodes], "edges": [x.model_dump() for x in bscene.edges],
+            "bars": [x.model_dump() for x in bscene.bars], "vectors": [x.model_dump() for x in bscene.vectors],
+            "patches": bscene.patches.model_dump(), "formula": [x.model_dump() for x in bscene.formula],
+            "axes": bscene.axes.model_dump(), "series": [x.model_dump() for x in bscene.series],
+            "events": [x.model_dump() for x in bscene.events], "columns": [x.model_dump() for x in bscene.columns],
+            "rows": [x.model_dump() for x in bscene.rows], "volume": bscene.volume.model_dump(),
+            "beats": [(round(a - start, 3), round(b - start, 3)) for a, b in nscene["beats"]],
+            "actions": scene_actions(bscene, nscene, start)}
+
+
+def scene_captions(nscene, start) -> list:
+    """The caption groups of one scene, in its local time (the interactive page plays scenes on their own)."""
+    out = []
+    for g in caption_groups(nscene["words"]):
+        out.append({"start": round(g["start"] - start, 3), "end": round(g["end"] - start, 3),
+                    "words": [{"text": w["text"], "start": round(w["start"] - start, 3)} for w in g["words"]]})
+    return out
+
+
+def free_module(cid, data, start) -> str:
+    """The script of a mechanism3d composition: the kit runtime and the scene module the LLM wrote."""
+    return (f'import {{ mountFree }} from "./assets/kit/scene3d.js"; import build from "./assets/scenes/{cid}.js"; '
+            f'mountFree("{cid}", {_js(data)}, {start}, build);')
+
+
+def compose(hf, project, plan, board, nar, lesson_id, codes=None) -> dict:
+    """Writes the HyperFrames project of a lesson. -> {"duration", "scenes": [{"id", "start", "dur", "template"}]}.
+    `codes`: {scene number: path of its checked three.js module} for the mechanism3d scenes; one without a module
+    (its code never passed the probe) is drawn as the graph of the same parts."""
     project = Path(project)
+    codes = codes or {}
     if (project / "compositions").exists():
         shutil.rmtree(project / "compositions")
     (project / "compositions").mkdir(parents=True)
     copy_assets(hf, project, nar["wav"])
+    if (project / "assets" / "scenes").exists():
+        shutil.rmtree(project / "assets" / "scenes")
+    (project / "assets" / "scenes").mkdir(parents=True)
     duration = round(nar["duration"], 3)
     intro = nar["intro"]
     hosts = [_host("bg", 0, duration, 0), _host("intro", 0, intro, 10)]
@@ -215,24 +251,23 @@ def compose(hf, project, plan, board, nar, lesson_id) -> dict:
     scenes = []
     for n, ((start, dur), scene, nscene, bscene) in enumerate(zip(slots(nar), plan.scenes, nar["scenes"], board.scenes), 1):
         cid = f"s{n:02d}"
-        data = {"num": n, "title": scene.title, "dur": dur, "template": bscene.template,
-                "nodes": [x.model_dump() for x in bscene.nodes], "edges": [x.model_dump() for x in bscene.edges],
-                "bars": [x.model_dump() for x in bscene.bars], "vectors": [x.model_dump() for x in bscene.vectors],
-                "patches": bscene.patches.model_dump(), "formula": [x.model_dump() for x in bscene.formula],
-                "axes": bscene.axes.model_dump(), "series": [x.model_dump() for x in bscene.series],
-                "events": [x.model_dump() for x in bscene.events], "columns": [x.model_dump() for x in bscene.columns],
-                "rows": [x.model_dump() for x in bscene.rows], "volume": bscene.volume.model_dump(),
-                "actions": scene_actions(bscene, nscene, start)}
-        if bscene.template in ("vectors3d", "volume3d"):
-            mount = "mount3d" if bscene.template == "vectors3d" else "mountVolume"
+        template = bscene.template
+        if template == "mechanism3d" and n not in codes:
+            template = "graph"
+        data = scene_data(n, scene, bscene, nscene, start, dur, template)
+        if template in ("vectors3d", "volume3d"):
+            mount = "mount3d" if template == "vectors3d" else "mountVolume"
             script = (f'import {{ {mount} }} from "./assets/kit/scene3d.js"; {mount}("{cid}", {_js(data)}, {start});')
             (project / "compositions" / f"{cid}.html").write_text(_scene_file(cid, script, module=True), encoding="utf-8")
+        elif template == "mechanism3d":
+            shutil.copy2(codes[n], project / "assets" / "scenes" / f"{cid}.js")
+            (project / "compositions" / f"{cid}.html").write_text(
+                _scene_file(cid, free_module(cid, data, start), module=True), encoding="utf-8")
         else:
             (project / "compositions" / f"{cid}.html").write_text(_scene_file(cid, f'MK.scene("{cid}", {_js(data)});'),
                                                                    encoding="utf-8")
         hosts.append(_host(cid, start, dur, 20 + n))
-        scenes.append({"id": cid, "start": start, "dur": dur, "template": bscene.template,
-                       "beats": [(round(a - start, 3), round(b - start, 3)) for a, b in nscene["beats"]]})
+        scenes.append({"id": cid, "start": start, "dur": dur, "template": template, "beats": data["beats"]})
     words = [w for s in nar["scenes"] for w in s["words"]]
     (project / "compositions" / "caps.html").write_text(_scene_file("caps", "MK.captions(\"caps\", " + _js(
         caption_groups(words)) + f", {duration});"), encoding="utf-8")

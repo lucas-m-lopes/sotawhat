@@ -5,6 +5,8 @@
 #   .\scripts\schedule_daily.ps1 -Web                    # also: graph interface at logon (P3)
 #   .\scripts\schedule_daily.ps1 -Weekly                 # also: weekly report and ideas, Sundays 20:00 (P4)
 # Runs as the current user while logged on; a missed run starts as soon as possible (StartWhenAvailable).
+# A restart while logged off (Windows Update, 03:15 on 2026-11-11) still skipped the 07:00 run, so the task also
+# fires at logon with `--catch-up <Time>`: it runs only after <Time> and while today's daily has not finished ok.
 param(
     [string]$Time = "07:00",
     [string]$TaskName = "sotawhat-daily",
@@ -21,14 +23,16 @@ $exe = Join-Path $repo ".venv\Scripts\pythonw.exe"
 if (-not (Test-Path $exe)) { throw "Not found: $exe - install first: uv pip install -e .[dev]" }
 if (-not (Test-Path (Join-Path $repo ".env"))) { Write-Warning "No .env in $repo - copy .env.example to .env and fill it in." }
 
-$arguments = "-m sotawhat.cli run daily"
+$arguments = "-m sotawhat.cli run daily --catch-up $Time"
 
 # WorkingDirectory = repo root, so the `.env` file, `config\` and `data\insight.db` are found.
 $action = New-ScheduledTaskAction -Execute $exe -Argument $arguments -WorkingDirectory $repo
 $trigger = New-ScheduledTaskTrigger -Daily -At $Time
+$atLogon = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+$atLogon.Delay = "PT2M"   # let the network come up first; an ordinary logon only logs "[catch-up] ... já rodou"
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun -MultipleInstances IgnoreNew `
     -ExecutionTimeLimit (New-TimeSpan -Hours 1)
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings `
+Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger @($trigger, $atLogon) -Settings $settings `
     -Description "sotawhat 3.0 - coleta diaria + resumo no Telegram" -Force | Out-Null
 Get-ScheduledTask -TaskName $TaskName | Select-Object TaskName, State
 

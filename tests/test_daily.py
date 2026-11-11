@@ -1,11 +1,65 @@
 # tests/test_daily.py
-from datetime import date
+import logging
+from datetime import date, datetime, time, timedelta, timezone
 
+from sotawhat.cli import parse_args
 from sotawhat.models import Result
-from sotawhat.pipeline.daily import ALERT_AFTER, render_summary, run_daily, to_plain
+from sotawhat.pipeline.daily import ALERT_AFTER, daily_due, main_daily, render_summary, run_daily, to_plain
 from sotawhat.store.db import Store
 
 DAY = date(2026, 11, 8)
+BRT = timezone(timedelta(hours=-3))
+AT_7 = time(7, 0)
+
+
+def _daily_run(st, started_utc, ok=True, finished=True):
+    st.conn.execute("INSERT INTO runs(kind, started_at, finished_at, ok) VALUES('daily', ?, ?, ?)",
+                    (started_utc, started_utc if finished else None, int(ok) if finished else None))
+    st.conn.commit()
+
+
+def test_catch_up_waits_for_the_scheduled_time(tmp_path):
+    with Store(tmp_path / "insight.db") as st:
+        due, why = daily_due(st, AT_7, now=datetime(2026, 11, 11, 6, 30, tzinfo=BRT))
+    assert not due and "07:00" in why
+
+
+def test_catch_up_runs_the_missed_daily_of_today(tmp_path):
+    with Store(tmp_path / "insight.db") as st:
+        _daily_run(st, "2026-11-10T10:00:02+00:00")     # yesterday 07:00 in Brasília
+        _daily_run(st, "2026-11-11T01:30:00+00:00")     # 22:30 of the 10th in Brasília: still yesterday
+        due, _ = daily_due(st, AT_7, now=datetime(2026, 11, 11, 8, 7, tzinfo=BRT))
+    assert due
+
+
+def test_catch_up_skips_when_today_already_ran(tmp_path):
+    with Store(tmp_path / "insight.db") as st:
+        _daily_run(st, "2026-11-11T10:00:01+00:00")     # today 07:00 in Brasília, ok
+        due, why = daily_due(st, AT_7, now=datetime(2026, 11, 11, 8, 7, tzinfo=BRT))
+    assert not due and "07:00" in why
+
+
+def test_catch_up_retries_a_failed_or_interrupted_run(tmp_path):
+    with Store(tmp_path / "insight.db") as st:
+        _daily_run(st, "2026-11-11T10:00:01+00:00", ok=False)
+        _daily_run(st, "2026-11-11T10:20:00+00:00", finished=False)   # killed by a restart half-way
+        due, _ = daily_due(st, AT_7, now=datetime(2026, 11, 11, 9, 0, tzinfo=BRT))
+    assert due
+
+
+def test_main_daily_catch_up_returns_before_collecting(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("SOTAWHAT_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(logging.getLogger("sotawhat"), "handlers", [])
+    with Store(tmp_path / "insight.db") as st:
+        st.finish_run(st.start_run("daily"), ok=True, stats={})
+    try:
+        assert main_daily(parse_args(["run", "daily", "--catch-up", "00:00"])) == 0
+    finally:
+        for handler in logging.getLogger("sotawhat").handlers:
+            handler.close()
+    assert "[catch-up]" in capsys.readouterr().out
+    with Store(tmp_path / "insight.db") as st:
+        assert st.conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 1
 
 
 class FakeSource:

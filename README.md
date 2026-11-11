@@ -305,6 +305,9 @@ accounts you follow, so it stays out of git.
 To set it up, copy `.env.example` to `.env` and fill in at least `OPENROUTER_API_KEY`,
 `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Then schedule the runs with
 `powershell -ExecutionPolicy Bypass -File scripts\schedule_daily.ps1 [-Listener] [-Web] [-Weekly]`.
+The daily task also fires at logon with `run daily --catch-up 07:00`. When a restart has logged you off at 07:00
+(Windows Update, for example), the missed run happens at your next logon. On any other logon it only logs that
+today's run already happened.
 
 Obsidian is no longer used (SDD §9): nothing reads or writes a vault, and the 2.0 `digest` and
 `backfill-links` commands are gone.

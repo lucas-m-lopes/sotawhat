@@ -8,7 +8,7 @@ import logging
 import re
 import sys
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 
 from sotawhat.items import to_item
 from sotawhat.notify import brand
@@ -92,6 +92,23 @@ def run_daily(store, sources_by_profile, limit=10, today=None, triage=None, on_s
     row = store.conn.execute("SELECT cost_usd FROM runs WHERE id = ?", (report.run_id,)).fetchone()
     report.cost_usd = row[0]
     return report
+
+
+def daily_due(store, not_before, now=None) -> tuple[bool, str]:
+    """`run daily --catch-up HH:MM`, the logon trigger of the scheduled task. A restart while logged off
+    (Windows Update at 03:15 on 2026-11-11) skips the 07:00 run, and StartWhenAvailable does not cover "user
+    not logged on". Due only after HH:MM (local) while no daily of today (local date) has finished ok: a failed
+    run, or one killed half-way, runs again. Two instances never overlap (the task ignores a new one)."""
+    now = now or datetime.now().astimezone()
+    if now.time() < not_before:
+        return False, f"antes das {not_before:%H:%M}: o gatilho das {not_before:%H:%M} roda o daily"
+    rows = store.conn.execute("SELECT id, started_at FROM runs WHERE kind = 'daily' AND ok = 1 "
+                              "ORDER BY id DESC LIMIT 20").fetchall()
+    for row in rows:
+        started = datetime.fromisoformat(row["started_at"]).astimezone(now.tzinfo)
+        if started.date() == now.date():
+            return False, f"o daily de hoje já rodou (run {row['id']}, às {started:%H:%M})"
+    return True, f"o daily de hoje não rodou: rodando agora ({now:%H:%M})"
 
 
 @dataclass
@@ -264,6 +281,13 @@ def main_daily(ns) -> int:
     settings = load_settings()
     day = date.today().isoformat()
     setup_logging(settings.sotawhat_data_dir, day, settings.sotawhat_log_level)
+    if getattr(ns, "catch_up", None) is not None:      # the logon trigger: only a daily missed today
+        with Store(settings.db_path) as store:
+            due, why = daily_due(store, ns.catch_up)
+        log.info("catch-up: %s", why)
+        print(f"[catch-up] {why}")
+        if not due:
+            return 0
     try:
         config = load_config(settings.sotawhat_config_dir)
     except ConfigError as exc:

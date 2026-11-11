@@ -1,4 +1,8 @@
 # tests/test_cli.py
+from datetime import time
+
+import pytest
+
 from sotawhat.cli import parse_args
 
 def test_parse_classic_keyword_and_number():
@@ -23,6 +27,12 @@ def test_parse_run_daily():
     assert (ns.command, ns.kind, ns.no_notify, ns.limit) == ("run", "daily", True, 5)
     ns = parse_args(["run", "daily"])
     assert ns.no_notify is False and ns.limit == 10
+
+def test_parse_run_daily_catch_up():
+    assert parse_args(["run", "daily", "--catch-up", "07:00"]).catch_up == time(7, 0)
+    assert parse_args(["run", "daily"]).catch_up is None
+    with pytest.raises(SystemExit):
+        parse_args(["run", "daily", "--catch-up", "7h"])
 
 def test_parse_doctor():
     assert parse_args(["doctor"]).llm is False

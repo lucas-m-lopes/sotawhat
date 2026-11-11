@@ -9,7 +9,8 @@ from sotawhat.lessons import hyperframes as hfm
 from sotawhat.lessons import interactive, three3d
 from sotawhat.lessons.coder import SceneCode, VisualReview
 from sotawhat.lessons.deliver import send_lesson
-from sotawhat.lessons.storyboard import Edge, Node, Step, Storyboard, validate
+from sotawhat.lessons.storyboard import Node, Step, Storyboard, validate
+from sotawhat.notify.telegram import TelegramError
 from sotawhat.store.db import Store
 from sotawhat.web.app import lesson_payload
 from tests.test_lessons import FakeNotifier
@@ -202,3 +203,21 @@ def test_a_missing_page_is_not_sent(tmp_path):
         n = FakeNotifier()
         send_lesson(st, n, lid)
         assert "document" not in [s[0] for s in n.sent] and "Quiz e revisão logo abaixo." in n.sent[0][2]["caption"]
+
+
+def test_a_document_telegram_refuses_is_written_in_the_report_and_the_quiz_still_goes(tmp_path):
+    page = tmp_path / "interativo.html"
+    page.write_text("x", encoding="utf-8")
+
+    class Refusing(FakeNotifier):
+        def send_document(self, path, **kw):
+            raise TelegramError("sendDocument: HTTP 413 Request Entity Too Large")
+    with Store(tmp_path / "insight.db") as st:
+        lid = st.create_lesson("TC", [1])
+        st.update_lesson(lid, plan=motion_plan_with().model_dump(), video_path="aula.mp4", duration_s=200.0,
+                         cost_usd=0.1, report={"engine": "hyperframes", "video": {"height": 1080},
+                                               "interactive": {"path": str(page), "scenes": [2]}})
+        n = Refusing()
+        send_lesson(st, n, lid)
+        assert "message" in [s[0] for s in n.sent]
+        assert "413" in json.loads(st.get_lesson(lid)["report_json"])["interactive"]["error"]

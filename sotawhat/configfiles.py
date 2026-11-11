@@ -176,12 +176,48 @@ def load_aliases(path) -> dict:
     return out
 
 
+FIX_SECTIONS = ("merge", "rename", "drop")
+
+
+def _fix_ref(text, section) -> tuple:
+    type_, sep, name = str(text).partition(":")
+    type_, name = type_.strip(), name.strip()
+    if not sep or type_ not in ALIAS_TYPES or not name:
+        raise ConfigError(f'entity_fixes.yaml: {section} «{text}» precisa ser "tipo: nome" (tipos: '
+                          f"{', '.join(ALIAS_TYPES)})")
+    return type_, name
+
+
+def load_entity_fixes(path) -> dict:
+    """config/entity_fixes.yaml (2026-11-11): merges, renames and drops of the entity graph, applied by
+    `sotawhat repair entities`; the resolver also skips the dropped names. Entities are "type: name"."""
+    data = read_yaml(path)
+    unknown = sorted(set(data) - set(FIX_SECTIONS))
+    if unknown:
+        raise ConfigError(f"entity_fixes.yaml: seções desconhecidas {unknown} (use {', '.join(FIX_SECTIONS)})")
+    merge, rename, drop = data.get("merge") or {}, data.get("rename") or {}, data.get("drop") or []
+    if not isinstance(merge, dict) or not isinstance(rename, dict) or not isinstance(drop, list):
+        raise ConfigError('entity_fixes.yaml: merge e rename mapeiam "tipo: nome" → destino; drop é uma lista')
+    out = {"merge": [], "rename": [], "drop": [_fix_ref(x, "drop") for x in drop]}
+    for source, target in merge.items():
+        pair = (_fix_ref(source, "merge"), _fix_ref(target, "merge"))
+        if pair[0] == pair[1]:
+            raise ConfigError(f"entity_fixes.yaml: merge de «{source}» nela mesma")
+        out["merge"].append(pair)
+    for source, new_name in rename.items():
+        if not isinstance(new_name, str) or not new_name.strip():
+            raise ConfigError(f"entity_fixes.yaml: rename de «{source}» precisa de um nome novo")
+        out["rename"].append((_fix_ref(source, "rename"), new_name.strip()))
+    return out
+
+
 @dataclass(frozen=True)
 class AppConfig:
     rubric: Rubric
     mutes: Mutes
     llm: dict
     aliases: dict = field(default_factory=dict)   # config/aliases.yaml (P3, entity resolution)
+    entity_fixes: dict = field(default_factory=lambda: {"merge": [], "rename": [], "drop": []})
 
 
 def load_config(config_dir) -> AppConfig:
@@ -189,4 +225,5 @@ def load_config(config_dir) -> AppConfig:
     return AppConfig(rubric=load_rubric(config_dir / "rubric.yaml"),
                      mutes=load_mutes(config_dir / "mute.yaml"),
                      llm=load_llm_config(config_dir / "llm.yaml"),
-                     aliases=load_aliases(config_dir / "aliases.yaml"))
+                     aliases=load_aliases(config_dir / "aliases.yaml"),
+                     entity_fixes=load_entity_fixes(config_dir / "entity_fixes.yaml"))

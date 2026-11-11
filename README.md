@@ -163,6 +163,16 @@ Phase P6 hardens it and measures the SDD goals:
   kept in the extractions, moves names and keys to the current rule (only the head noun goes singular; acronyms,
   symbols and words such as "bias" keep their s) and reports a key that already belongs to another entity instead
   of merging it.
+- `sotawhat repair entities [--dry-run]` applies `config/entity_fixes.yaml`, with merges ("regulation: Model
+  Context Protocol" into the technique, "model: GPT4" into "GPT-4"), renames and drops. A merge works across
+  types: mentions, relations and aliases move, so the next extraction of that name lands on the entity that
+  stays. It also takes the acronym out of the middle of names ("large language model (LLM) agent"). It makes a
+  backup first and rebuilds the Neo4j mirror, now or at the next sync. Running it again changes nothing.
+  The extraction follows the same rules:
+  - "GPT4" meets "GPT-4" and "nnUnet" meets "nnU-Net" without the judge;
+  - dropped names are skipped;
+  - "compared with" may join a technique, a model and a product;
+  - "uses" a problem is stored as "addresses".
 - The interface gains the Hoje tab: the latest digest with its votes and the recent runs.
 
 After P6, newsletters by RSS (2026-11-09):

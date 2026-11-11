@@ -1,0 +1,50 @@
+# config/entity_fixes.yaml — correções do grafo de entidades, aplicadas por `sotawhat repair entities`
+# (simule antes com --dry-run). Cada entidade é "tipo: nome"; tipos: technique, model, dataset, organization,
+# product, problem, regulation.
+#
+# merge: a entidade da esquerda some dentro da da direita, mesmo entre tipos. Menções, relações e aliases vão
+#        junto, e a próxima extração do nome da esquerda cai direto na da direita.
+# rename: troca o nome exibido; o nome antigo continua como alias.
+# drop: entidades que não deveriam existir; somem com menções e relações, e a extração passa a descartar o nome.
+#
+# O comando também tira a sigla entre parênteses do meio dos nomes ("large language model (LLM) agent"), como
+# a extração faz desde 2026-11-11, e funde com a entidade que já tinha o nome limpo. Rodar de novo não refaz nada.
+
+merge:
+  # o mesmo nome em dois tipos: fica o tipo que serve ao grafo
+  "regulation: Model Context Protocol": "technique: Model Context Protocol"   # protocolo que agentes usam; como
+                                                                              # técnica entra nos pares técnica × problema
+  "model: Vision Transformer": "technique: vision transformer"               # arquitetura
+  "model: XGBoost": "technique: XGBoost"                                      # algoritmo
+  "model: WGAN-GP": "technique: WGAN-GP"                                      # método de treino de GAN
+  "technique: PyTorch": "product: PyTorch"                                    # framework
+  "technique: radiology report generation": "problem: radiology report generation"   # tarefa
+  "model: nnU-Net": "technique: nn-UNet"
+  "model: nnUnet": "technique: nn-UNet"
+  # o mesmo nome escrito de outro jeito
+  "model: GPT4": "model: GPT-4"
+  "model: ResNet50": "model: ResNet-50"
+  "model: Qwen 3.6-27B": "model: Qwen3.6-27B"
+  "model: Qwen 3.8 27B": "model: Qwen3.8-27B"
+  "organization: DeepSeek-AI": "organization: DeepSeek"
+  # sinônimos (técnicas por extenso, como em aliases.yaml)
+  "technique: latent diffusion": "technique: latent diffusion model"
+  "technique: deep learning-based segmentation": "technique: deep learning segmentation"
+  "technique: deep learning segmentation pipeline": "technique: deep learning segmentation"
+  "technique: multi-agent AI pipeline": "technique: multi-agent pipeline"
+  "technique: agentic large language model pipeline": "technique: agentic large language model"
+  "technique: LLM agent": "technique: large language model agent"
+  "technique: language model agent": "technique: large language model agent"
+  "technique: GRPO": "technique: group relative policy optimization"
+  "technique: SQL": "technique: Structured Query Language"
+  "dataset: National Lung Screening Trial": "dataset: NLST"
+  # nomes vagos
+  "model: Anthropic AI": "organization: Anthropic"
+  "model: Anthropic model": "model: Claude"
+
+rename:
+  "technique: nn-UNet": nnU-Net
+
+drop:
+  - "organization: level 3 delivery NICU"     # tipos de UTI neonatal de um estudo, não organizações
+  - "organization: level 4 referral NICU"

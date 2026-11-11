@@ -245,3 +245,33 @@ def test_lessons_api_and_media(client):
     js = c.get(f"/lessons/{lid:03d}/scenes/02/scene.js")
     assert js.status_code == 200 and js.headers["content-type"].startswith("text/javascript")
     assert c.get("/api/lessons/999").status_code == 404
+
+
+def test_lesson_voice_label():
+    from sotawhat.web.app import voice_label
+
+    assert voice_label("elevenlabs:UQ3s9h7N3CVJBL2USizn") == "ElevenLabs · Klaus"
+    assert voice_label("elevenlabs:someOtherVoice") == "ElevenLabs"
+    assert voice_label("piper:faber") == "Piper · faber"
+    assert voice_label(None) is None
+
+
+@pytest.mark.skipif(__import__("shutil").which("node") is None, reason="node não instalado")
+def test_dates_without_time_keep_their_calendar_day():
+    """"2026-11-24" read as UTC midnight showed 23/11 in Brazil: the radar's 2-week quarantine looked a day shorter."""
+    import json
+    import re
+    import subprocess
+
+    from sotawhat.web.app import STATIC
+
+    app_js = (STATIC / "app.js").read_text(encoding="utf-8")
+    body = re.search(r"\n  function fmtDate\(iso\) \{\n.*?\n  \}\n", app_js, re.S).group(0)
+    force_brazil = ("const local = Date.prototype.toLocaleDateString;"
+                    "Date.prototype.toLocaleDateString = function (l, o) {"
+                    " return local.call(this, l, { ...o, timeZone: 'America/Sao_Paulo' }); };")
+    values = ["2026-11-24", "2026-11-11T02:30:00+00:00", "", "x"]
+    out = subprocess.run(["node", "-e", force_brazil + body + f"console.log(JSON.stringify({json.dumps(values)}.map(fmtDate)))"],
+                         capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stderr
+    assert json.loads(out.stdout) == ["24/11/26", "10/11/26", "?", "x"]

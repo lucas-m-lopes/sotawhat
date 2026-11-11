@@ -29,6 +29,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from sotawhat.graph import query as q
 from sotawhat.ideation import ledger
+from sotawhat.lessons.eleven import VOICE_NAMES
 from sotawhat.store.db import Store
 
 STATIC = Path(__file__).parent / "static"
@@ -223,6 +224,20 @@ def create_app(db_path, static_dir=STATIC) -> FastAPI:
     return app
 
 
+VOICE_PROVIDERS = {"elevenlabs": "ElevenLabs", "piper": "Piper", "google": "Google"}
+
+
+def voice_label(voice) -> str | None:
+    """'elevenlabs:<id>' -> 'ElevenLabs · Klaus': the card showed the raw voice id."""
+    if not voice:
+        return None
+    provider, _, name = str(voice).partition(":")
+    if provider == "elevenlabs":
+        name = VOICE_NAMES.get(name, "")
+    label = VOICE_PROVIDERS.get(provider, provider)
+    return f"{label} · {name}" if name else label
+
+
 def lesson_payload(st, row, lessons_dir, detail=False) -> dict:
     plan = json.loads(row["plan_json"] or "null")
     report = json.loads(row["report_json"] or "{}")
@@ -231,7 +246,8 @@ def lesson_payload(st, row, lessons_dir, detail=False) -> dict:
     out = {"id": row["id"], "topic": row["topic"], "title": row["title"] or row["topic"], "status": row["status"],
            "created_at": row["created_at"], "duration_s": row["duration_s"], "size_bytes": row["size_bytes"],
            "cost_usd": row["cost_usd"], "cost_brl": report.get("cost_brl"), "engine": report.get("engine") or "manim",
-           "voice": row["voice"], "review": row["review"], "comparison": row["comparison"],
+           "voice": row["voice"], "voice_label": voice_label(row["voice"]), "review": row["review"],
+           "comparison": row["comparison"],
            "error": row["error"], "objective": (plan or {}).get("objective"),
            "video": f"/lessons/{folder}/aula.mp4" if row["video_path"] and (lessons_dir / folder / "aula.mp4").exists() else None,
            "sources_md": f"/lessons/{folder}/fontes.md" if (lessons_dir / folder / "fontes.md").exists() else None,

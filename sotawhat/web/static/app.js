@@ -53,6 +53,9 @@
 
   function fmtDate(iso) {
     if (!iso) return "?";
+    // a date without time ("2026-11-24") is a calendar day: read as UTC midnight it showed the day before in Brazil
+    const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso));
+    if (day) return `${day[3]}/${day[2]}/${day[1].slice(2)}`;
     const d = new Date(iso);
     return Number.isNaN(d.getTime()) ? String(iso).slice(0, 10)
       : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
@@ -230,6 +233,39 @@
     return res;
   }
 
+  // sigma's label grid keeps about one label per cell, but long labels spill into the next cells and pile up in
+  // the middle of the graph. So sigma only queues them while it renders; at the end of the frame they are drawn
+  // with the highlighted and the biggest nodes first, and a label that would cover one already drawn is skipped
+  // (hovering a node still shows its name).
+  let pendingLabels = [];
+
+  function queueLabel(context, data) {
+    if (data.label) pendingLabels.push(data);
+  }
+
+  function drawLabels() {
+    const queued = pendingLabels;
+    pendingLabels = [];
+    const canvas = renderer && renderer.getCanvases().labels;
+    if (!canvas || !queued.length) return;
+    const context = canvas.getContext("2d");
+    const size = renderer.getSetting("labelSize");
+    context.font = `${renderer.getSetting("labelWeight")} ${size}px ${renderer.getSetting("labelFont")}`;
+    context.fillStyle = renderer.getSetting("labelColor").color;
+    queued.sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0) || b.size - a.size);
+    const placed = [];
+    for (const data of queued) {
+      const x = data.x + data.size + 3;
+      const box = { left: x - 2, right: x + context.measureText(data.label).width + 2,
+                    top: data.y - size * 0.8, bottom: data.y + size * 0.45 };
+      if (placed.some((p) => box.left < p.right && box.right > p.left && box.top < p.bottom && box.bottom > p.top)) {
+        continue;
+      }
+      placed.push(box);
+      context.fillText(data.label, x, data.y + size / 3);
+    }
+  }
+
   function draw(data) {
     graph = new graphology.Graph({ type: "undirected", multi: false, allowSelfLoops: false });
     for (const node of data.nodes) {
@@ -260,8 +296,12 @@
       labelFont: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", labelSize: 13, labelWeight: "500",
       labelColor: { color: css("--fg") }, defaultEdgeColor: css("--edge"), defaultNodeColor: CATEGORY_COLOR,
       minCameraRatio: 0.05, maxCameraRatio: 4, defaultDrawNodeHover: drawHover, nodeReducer, edgeReducer,
+      defaultDrawNodeLabel: queueLabel,
       allowInvalidContainer: true,   // the graph view can be hidden while another tab is open
     });
+    renderer.on("beforeRender", () => { pendingLabels = []; });
+    renderer.on("afterRender", drawLabels);
+    renderer.refresh({ skipIndexation: true });   // the constructor already rendered once, before these handlers
     renderer.on("enterNode", ({ node }) => { state.hovered = node; renderer.refresh({ skipIndexation: true }); });
     renderer.on("leaveNode", () => { state.hovered = null; renderer.refresh({ skipIndexation: true }); });
     renderer.on("leaveStage", () => {   // the pointer can leave the canvas without a leaveNode
@@ -301,11 +341,16 @@
     camera.animate({ x: display.x, y: display.y, ratio: Math.min(camera.ratio, 0.7) }, { duration: 450 });
   }
 
-  function selectNode(node, open = true) {
+  function selectInGraph(node) {   // highlight and center a node, when the current graph has it
+    if (!renderer || !graph || !graph.hasNode(node)) return;
     state.selected = node;
     state.hovered = null;
     renderer.refresh({ skipIndexation: true });
     centerOn(node);
+  }
+
+  function selectNode(node, open = true) {
+    selectInGraph(node);
     if (open) openEntity(graph.getNodeAttribute(node, "entity").entity_id);
   }
 
@@ -392,9 +437,10 @@
     let d;
     try { d = await api(`/api/entity/${encodeURIComponent(entityId)}`); }
     catch (e) { showPanel(el("p", { class: "error" }, `Entidade não encontrada (${e.message}).`)); return; }
-    history.push(() => openEntity(entityId));
+    history.push(() => { selectInGraph(`e${entityId}`); openEntity(entityId); });   // "← voltar" moves the graph too
+    const arrow = { out: (label) => `${label} →`, in: (label) => `← ${label}`, both: (label) => `${label} ↔` };
     const relations = d.relations.map((r) => el("div", { class: "rel" },
-      el("span", { class: "muted" }, r.direction === "out" ? `${r.label} →` : `← ${r.label}`),
+      el("span", { class: "muted" }, (arrow[r.direction] || arrow.out)(r.label)),
       entityChip(r.other), r.items > 1 ? el("small", { class: "muted" }, `${r.items} itens`) : null));
     showPanel(
       backButton(),
@@ -892,7 +938,8 @@
 
   // --- today (P6) --------------------------------------------------------------------
   const TODAY_SECTIONS = [["main", "IA ∩ Saúde"], ["frontier", "Fronteira de IA"], ["radar", "Radar"]];
-  const RUN_KINDS = { daily: "diário", weekly: "semanal", ideate: "ideação", eval: "avaliação", graph: "grafo" };
+  const RUN_KINDS = { daily: "diário", weekly: "semanal", ideate: "ideação", eval: "avaliação", graph: "grafo",
+                      lesson: "aula", radar: "radar" };
 
   function todayCard(item) {
     const url = safeUrl(item.url);
@@ -960,7 +1007,7 @@
       el("div", { class: "head" }, el("span", { class: "badge" }, LESSON_STATUS[lesson.status] || lesson.status),
         meta(`aula #${lesson.id}`, fmtDate(lesson.created_at), lesson.duration_s ? clock(lesson.duration_s) : null,
              lesson.cost_usd !== null ? `US$ ${num(lesson.cost_usd, 3)}` + (lesson.cost_brl != null ? ` · R$ ${num(lesson.cost_brl, 2)}` : "") : null,
-             lesson.voice,
+             lesson.voice ? el("span", { title: lesson.voice }, lesson.voice_label || lesson.voice) : null,
              r0[1] ? `quiz ${r0[0]}/${r0[1]}` : null, r1[1] ? `re-quiz ${r1[0]}/${r1[1]}` : null,
              REVIEW[lesson.review], COMPARISON[lesson.comparison])),
       el("h2", {}, lesson.title),

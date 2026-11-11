@@ -53,6 +53,11 @@ export default function build(kit) {
 - Schematic and clean, not photoreal: simple geometry (Box, Cylinder, Torus, Sphere, Capsule, Cone, Tube,
   Lathe, Extrude, InstancedMesh for many small elements). A body or a casing is translucent (opacity 0.25–0.45)
   when something inside matters. Beams and fields use `glow`.
+- The viewer is a physician: anatomy must read as anatomy at a glance, simplified but faithful. A torso is a
+  translucent elliptic cylinder; lungs are two translucent lobes; the spine is a column of short vertebrae behind
+  them; ribs, if any, are separate thin curved bands that follow the body wall (never a spring or a helix); a
+  nodule or a mass is a small sphere inside the organ. Devices follow their real geometry (a CT gantry is a ring
+  around the table with the tube and the detector arc on opposite sides).
 - Scale: the whole mechanism within about 6 units of the origin, y up. Every part is big enough to see (at least
   a tenth of the whole); a detector is a visible arc or block, not a sliver.
 - Choose `view` so the mechanism reads at once: a CT gantry seen three-quarters (azimuth 25–40, elevation 12–22),

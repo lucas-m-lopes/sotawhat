@@ -105,7 +105,8 @@ def probe_page(work, cid, data, captions, module) -> str:
 def run_probe(tools, work, page, times, out_dir) -> dict:
     """-> {"errors", "issues": [[k, text]], "frames"} from the probe of one page."""
     try:
-        done = tools.run([tools.python, PROBE, work, page, out_dir, "--at", ",".join(f"{t:.2f}" for t in times)],
+        done = tools.run([tools.python, PROBE, Path(work).resolve(), page, Path(out_dir).resolve(), "--at",
+                          ",".join(f"{t:.2f}" for t in times)],
                          cwd=tools.root, timeout=PROBE_TIMEOUT)
     except subprocess.TimeoutExpired:
         raise ProbeError(f"a sonda passou de {PROBE_TIMEOUT // 60} min: simplifique a cena") from None

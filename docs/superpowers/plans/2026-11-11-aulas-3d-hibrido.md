@@ -98,3 +98,22 @@ Aula 8: a aula 7 refeita com a cena 2 ("A aquisição gira e mede") em `mechanis
   - Usa sonda e LLM falsos.
 - **Interativo:** o HTML único tem as cenas 3D, os dados locais de cada cena e nenhuma URL externa.
 - **Entrega:** manda o documento após o vídeo, e a API mostra `interactive`.
+
+## Resultado do piloto (aula 8, 2026-11-11)
+
+- **Custo:** US$ 0,099 (R$ 0,55), só de LLM: storyboard, código 3D, crítico e correções. 0 crédito de voz.
+- **Cenas 3D livres:** as duas passaram na sonda de primeira, e o crítico pediu uma correção visual em cada.
+  - **Cena 2:** gantry com raios, tubo e detector girando em lados opostos, feixe atravessando o tórax (pulmões e
+    vértebras) e sinograma com traços senoidais preenchendo.
+  - **Cena 6:** corte axial, grade de cubos 16 × 16, probabilidades, máscara 3D e aproximação da câmera no foco.
+- **O que o piloto ensinou ao kit:**
+  - enquadrar pelos vértices das peças, porque os cantos da caixa de um anel são espaço vazio;
+  - amostrar o movimento a cada ~0,4 s;
+  - o zoom do foco depende do tamanho da peça: um nódulo ganha tudo, o arco do detector nada;
+  - a checagem de "fora do quadro" usa os vértices.
+- **O que o piloto ensinou ao prompt:** anatomia legível para médico (costelas nunca em mola) e aparelhos com a
+  geometria real.
+- **Interativo** (`interativo.html`, 2,1 MB, 3 abas: cenas 2, 4 e 6):
+  - abre do disco sem rede e sem erros;
+  - o giro move a câmera com os rótulos presos às peças;
+  - no celular deitado, título e dica somem para o quadro ganhar a altura.

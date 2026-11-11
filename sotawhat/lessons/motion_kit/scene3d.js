@@ -717,10 +717,31 @@ export function mountFree(id, data, offset, build) {
     }
 
     // framing: the parts over the whole scene (motion included) fit between the title and the captions
-    const box = new THREE.Box3(), tmpBox = new THREE.Box3();
-    for (const t of [0, ...beats.map((b) => b.end - 0.05), data.dur * 0.5, data.dur]) {
+    // (the points are the vertices of the parts, sampled: a ring or a disc does not fill the corners of its box)
+    const box = new THREE.Box3(), tmpBox = new THREE.Box3(), cloud = [], partR = {};
+    const sampleMesh = (m) => {
+      if (m.isInstancedMesh) {
+        m.computeBoundingBox();
+        const bb = m.boundingBox;
+        for (const x of [bb.min.x, bb.max.x]) for (const y of [bb.min.y, bb.max.y]) for (const z of [bb.min.z, bb.max.z]) cloud.push(new THREE.Vector3(x, y, z).applyMatrix4(m.matrixWorld));
+        return;
+      }
+      const pos = m.geometry && m.geometry.attributes && m.geometry.attributes.position;
+      if (!pos) return;
+      const stride = Math.max(1, Math.floor(pos.count / 160));
+      for (let i = 0; i < pos.count; i += stride) cloud.push(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld));
+    };
+    const every = Math.max(0.4, data.dur / 60), times = [...beats.map((b) => b.end - 0.05), data.dur];
+    for (let t = 0; t < data.dur; t += every) times.push(t);
+    for (const t of times) {
       step(t);
-      for (const p of parts.values()) { tmpBox.setFromObject(p.obj); if (!tmpBox.isEmpty()) box.union(tmpBox); }
+      for (const p of parts.values()) {
+        tmpBox.setFromObject(p.obj);
+        if (!tmpBox.isEmpty()) box.union(tmpBox);
+        const pid = [...parts].find(([, q]) => q === p)[0];
+        if (!tmpBox.isEmpty()) partR[pid] = Math.max(partR[pid] || 0, tmpBox.getBoundingSphere(new THREE.Sphere()).radius);
+        p.obj.traverse((o) => { if (o.visible !== false && (o.isMesh || o.isLine || o.isPoints)) sampleMesh(o); });
+      }
     }
     if (box.isEmpty()) box.setFromObject(world);
     if (box.isEmpty()) box.set(new THREE.Vector3(-1, -1, -1), new THREE.Vector3(1, 1, 1));
@@ -732,8 +753,9 @@ export function mountFree(id, data, offset, build) {
     // the box of the parts, seen from the start, the middle and the end of the orbit, fills the free area (room
     // for the labels at the sides, the notes column on the right, the title above and the captions below)
     const corners = [];
-    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) corners.push(new THREE.Vector3(x, y, z));
-    const area = { x0: 300, x1: hasNotes ? W - 620 : W - 300, y0: 175, y1: 840 };
+    if (cloud.length) { const k = Math.max(1, Math.floor(cloud.length / 4000)); for (let i = 0; i < cloud.length; i += k) corners.push(cloud[i]); }
+    else for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) corners.push(new THREE.Vector3(x, y, z));
+    const area = { x0: 230, x1: hasNotes ? W - 540 : W - 230, y0: 170, y1: 846 };
     const el0 = THREE.MathUtils.degToRad(view.elevation), az0 = THREE.MathUtils.degToRad(view.azimuth);
     const dirAt = (az) => new THREE.Vector3(Math.cos(el0) * Math.sin(az), Math.sin(el0), Math.cos(el0) * Math.cos(az));
     const rectAt = (d, az) => {
@@ -806,7 +828,7 @@ export function mountFree(id, data, offset, build) {
       return p;
     };
     const focusedAt = (t) => { let ids = []; for (const f of focusTrack) if (f[0] <= t) ids = f[1] === 1 ? f[2] : []; return ids; };
-    let lastFocus = center.clone();
+    let lastFocus = center.clone(), lastSmall = 1;
 
     function renderAt(t) {
       const tt = Math.max(0, Math.min(data.dur, t));
@@ -824,8 +846,11 @@ export function mountFree(id, data, offset, build) {
         }
       }
       // the camera: a slow orbit around the parts; closer to what the narration focuses on
-      const fp = levelAt(focusTrack, tt, 1.2);
-      const pts = fids.filter((pid) => parts.has(pid)).map((pid) => anchorOf(parts.get(pid)));
+      // a small part (a nodule) gets the whole zoom, a part as big as the scene (a detector arc) none: it stays framed
+      const fids2 = fids.filter((pid) => parts.has(pid));
+      if (fids2.length) lastSmall = Math.min(...fids2.map((pid) => Math.max(0, Math.min(1, 1 - (partR[pid] || radius) / (0.45 * radius)))));
+      const fp = levelAt(focusTrack, tt, 1.2) * lastSmall;
+      const pts = fids2.map((pid) => anchorOf(parts.get(pid)));
       if (pts.length) lastFocus = pts.reduce((s, p) => s.add(p), new THREE.Vector3()).multiplyScalar(1 / pts.length);
       const target = center.clone().lerp(lastFocus, 0.55 * fp);
       const dist = dist0 * (1 - 0.26 * fp);
@@ -881,10 +906,10 @@ export function mountFree(id, data, offset, build) {
         tmpBox.setFromObject(p.obj);
         if (tmpBox.isEmpty()) { out.push(`a peça "${pid}" não tem malha visível`); continue; }
         if (![tmpBox.min.x, tmpBox.min.y, tmpBox.min.z, tmpBox.max.x, tmpBox.max.y, tmpBox.max.z].every(Number.isFinite)) { out.push(`a peça "${pid}" tem posição inválida (NaN)`); continue; }
-        const xs = [], ys = [];
-        for (const x of [tmpBox.min.x, tmpBox.max.x]) for (const y of [tmpBox.min.y, tmpBox.max.y]) for (const z of [tmpBox.min.z, tmpBox.max.z]) {
-          const s = toScreen(new THREE.Vector3(x, y, z)); xs.push(s.x); ys.push(s.y);
-        }
+        const xs = [], ys = [], from = cloud.length;
+        p.obj.traverse((o) => { if (o.visible !== false && (o.isMesh || o.isLine || o.isPoints)) sampleMesh(o); });
+        for (const v of cloud.splice(from)) { const s = toScreen(v); xs.push(s.x); ys.push(s.y); }
+        if (!xs.length) continue;
         const r = { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
         if (r.x0 < SAFE.x0 - 40 || r.x1 > SAFE.x1 + 40 || r.y0 < SAFE.y0 - 40 || r.y1 > SAFE.y1 + 40) out.push(`a peça "${pid}" sai do quadro`);
         else if (r.x1 - r.x0 < 28 && r.y1 - r.y0 < 28) out.push(`a peça "${pid}" fica pequena demais na tela (aumente-a)`);

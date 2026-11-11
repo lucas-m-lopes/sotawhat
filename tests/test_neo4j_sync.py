@@ -153,3 +153,14 @@ def test_cli_graph_commands():
     assert (ns.command, ns.graph_action, ns.rebuild) == ("graph", "sync", True)
     assert parse_args(["graph", "status"]).rebuild is False
     assert parse_args(["graph", "export", "--out", "X"]).out == "X"
+
+
+def test_a_pending_rebuild_runs_at_the_next_sync(st):
+    """`repair entities` deletes entities; a plain sync would leave their nodes in the mirror."""
+    Neo4jMirror(FakeDriver()).sync(st)
+    st.meta_set("graph_rebuild", "1")
+    driver = FakeDriver(nodes_to_delete=10)
+    stats = Neo4jMirror(driver).sync(st)
+    assert stats.rebuilt and _queries(driver, "DETACH DELETE") and st.meta_get("graph_rebuild") == ""
+    assert sorted(r["id"] for r in _queries(driver, "MERGE (i:Item")[0][1]["rows"]) == ["pmid:1", "pmid:2"]
+    assert not Neo4jMirror(FakeDriver()).sync(st).rebuilt

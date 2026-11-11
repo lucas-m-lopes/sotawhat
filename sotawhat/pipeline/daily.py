@@ -185,7 +185,7 @@ def _graph_parts(settings, store, gateway, embedder, config):
     from sotawhat.graph.resolve import Resolver, make_judge
 
     resolver = Resolver(store, embedder=embedder, judge=make_judge(gateway) if gateway is not None else None,
-                        aliases=config.aliases)
+                        aliases=config.aliases, ignore=config.entity_fixes["drop"])
     return resolver, Neo4jMirror.from_settings(settings)
 
 

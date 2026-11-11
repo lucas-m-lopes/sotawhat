@@ -4,7 +4,8 @@
 `sync` sends the approved items whose graph rows changed since the last sync (watermark
 `items.graph_synced_at`), the entities they touch, their MENTIONS and the typed relations, aggregated
 over every item that states them (`items`, `weight`). Everything is MERGE, so a sync can be repeated.
-`rebuild` empties the database in batches and sends everything again (RNF8).
+`rebuild` empties the database in batches and sends everything again (RNF8); `sotawhat repair entities` asks
+for one at the next sync (meta graph_rebuild), since the entities it removes would linger in the mirror.
 Labels and relationship types come from closed tables: an unknown type in SQLite is skipped, never
 interpolated into Cypher."""
 from dataclasses import asdict, dataclass
@@ -85,6 +86,7 @@ class Neo4jMirror:
         return {"nodes": nodes, "relationships": relationships}
 
     def sync(self, store, rebuild=False, batch=500) -> SyncStats:
+        rebuild = rebuild or store.meta_get("graph_rebuild") == "1"
         stats = SyncStats(rebuilt=rebuild)
         self.ensure_schema()
         if rebuild:
@@ -101,6 +103,8 @@ class Neo4jMirror:
             self._sync_items(store, ids, stats)
             store.mark_graph_synced(ids)
         store.meta_set("graph_synced_at", utcnow())
+        if rebuild:
+            store.meta_set("graph_rebuild", "")
         return stats
 
     def _sync_items(self, store, ids, stats) -> None:

@@ -10,7 +10,10 @@ delivered twice.
 names (2026-11-10): until then the resolver cut the s of the last word of every technique and problem name, also
 when it was no plural ("AI bias" → "AI bia", "CAMS" → "CAM", "Harness-S" → "Harness-") or no head ("mixture of
 experts" → "mixture of expert"). The repair finds what that rule wrote from the raw names kept in the extractions
-and moves names and keys to the current rule (graph/resolve.py), so new extractions meet the same entities."""
+and moves names and keys to the current rule (graph/resolve.py), so new extractions meet the same entities.
+
+entities (2026-11-11): merges, renames and drops listed in config/entity_fixes.yaml, and acronyms inside names
+(graph/fixes.py)."""
 import json
 
 import numpy as np
@@ -184,6 +187,55 @@ def main_repair_names(settings, dry_run=False) -> int:
     return 0
 
 
+def main_repair_entities(settings, dry_run=False) -> int:
+    """`sotawhat repair entities [--dry-run]` (2026-11-11): config/entity_fixes.yaml and the naming rule
+    (graph/fixes.py). A backup comes first; the Neo4j mirror is rebuilt now when it answers, else at the next sync."""
+    from sotawhat.configfiles import ConfigError, load_entity_fixes
+    from sotawhat.graph import fixes as fx
+    from sotawhat.graph.neo4j_sync import Neo4jMirror
+    from sotawhat.store.backup import backup
+    from sotawhat.store.db import Store
+    from sotawhat.store.vectors import get_embedder
+
+    try:
+        fixes = load_entity_fixes(settings.sotawhat_config_dir / "entity_fixes.yaml")
+    except ConfigError as exc:
+        print(f"[config] {exc}")
+        return 2
+    with Store(settings.db_path) as store:
+        plan = fx.plan_fixes(store, fixes)
+        for step in plan.steps:
+            print(f"  {fx.describe(step)}")
+        for note in plan.skipped:
+            print(f"  pulado: {note}")
+        if dry_run or not plan.steps:
+            print(f"{len(plan.steps)} correções" + (" (simulação: nada foi gravado)" if dry_run and plan.steps else ""))
+            return 0
+        copy = backup(settings.db_path, settings.sotawhat_data_dir / "backups")
+        report = fx.apply_fixes(store, plan)
+        renamed = [(s.source["id"], s.source["type"], s.new_name) for s in plan.steps if s.action == "rename"]
+        try:                                        # the judge compares names by these vectors too
+            embedder = get_embedder(settings) if renamed else None
+            if embedder is not None:
+                vectors = embedder.embed([f"{type_}: {name}" for _, type_, name in renamed])
+                store.save_entity_embeddings(embedder.name, [(eid, np.asarray(vec, dtype=np.float32))
+                                                             for (eid, _, _), vec in zip(renamed, vectors)])
+        except Exception as exc:  # noqa: BLE001 - the names are fixed anyway; the old vectors stay
+            print(f"[embeddings] {exc}: vetores mantidos")
+        mirror, note = Neo4jMirror.from_settings(settings), "o espelho Neo4j será refeito no próximo sync"
+        if mirror is not None:
+            try:
+                if mirror.ping():
+                    note = f"espelho Neo4j refeito ({mirror.sync(store).items} itens)"
+            except Exception as exc:  # noqa: BLE001 - the flag stays set: the next sync rebuilds it
+                note = f"Neo4j falhou ({exc}); será refeito no próximo sync"
+            finally:
+                mirror.close()
+    print(f"{report['merged']} fusões · {report['renamed']} renomeações · {report['dropped']} remoções · "
+          f"{report['relations_dropped']} relações descartadas · backup em {copy} · {note}")
+    return 0
+
+
 def main_repair(ns) -> int:
     from datetime import date
 
@@ -198,6 +250,8 @@ def main_repair(ns) -> int:
     setup_logging(settings.sotawhat_data_dir, date.today().isoformat(), settings.sotawhat_log_level)
     if ns.repair_action == "names":
         return main_repair_names(settings, dry_run=getattr(ns, "dry_run", False))
+    if ns.repair_action == "entities":
+        return main_repair_entities(settings, dry_run=getattr(ns, "dry_run", False))
     try:
         config = load_config(settings.sotawhat_config_dir)
     except ConfigError as exc:

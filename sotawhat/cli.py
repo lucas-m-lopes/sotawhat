@@ -124,10 +124,12 @@ def parse_args(argv):
     p_extract.add_argument("--force", action="store_true", help="overwrite an existing draft")
 
     p_repair = sub.add_parser("repair", help="fix stored texts (P6)")
-    p_repair.add_argument("repair_action", choices=["cjk", "names"],
+    p_repair.add_argument("repair_action", choices=["cjk", "names", "entities"],
                           help="cjk: triage texts with Chinese/Japanese/Korean characters; names: entity names the "
-                               "old singular rule cut ('AI bia' → 'AI bias')")
-    p_repair.add_argument("--dry-run", action="store_true", help="names: show what would change, write nothing")
+                               "old singular rule cut ('AI bia' → 'AI bias'); entities: merges, renames and drops of "
+                               "config/entity_fixes.yaml and acronyms inside names (a backup comes first)")
+    p_repair.add_argument("--dry-run", action="store_true",
+                          help="names, entities: show what would change, write nothing")
 
     p_radar = sub.add_parser("radar", help="tools radar: skills, MCPs and tools on the rise on GitHub (2026-11-10)")
     p_radar.add_argument("radar_action", choices=["scan", "report", "backfill"],

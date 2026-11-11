@@ -6,6 +6,13 @@ _SUBCOMMANDS = {"search", "run", "ideate", "doctor", "feedback", "eval", "serve"
                 "newsletters", "backup", "calibrate", "repair", "lessons", "radar"}
 _LESSON_ID_ACTIONS = ("resume", "rerender", "send", "pack", "hf")
 
+def _hhmm(text):
+    from datetime import datetime
+    try:
+        return datetime.strptime(text, "%H:%M").time()
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"use HH:MM, e.g. 07:00 (got {text!r})") from None
+
 def parse_args(argv):
     # Backward compat: `sotawhat <keyword...> [N]` with no subcommand -> search.
     if not argv:
@@ -25,6 +32,9 @@ def parse_args(argv):
     p_run.add_argument("--no-notify", action="store_true")
     p_run.add_argument("--no-llm", action="store_true", help="daily: collect and run stage A only (no LLM calls)")
     p_run.add_argument("--modo", choices=["economico", "completo"], default="economico", help="weekly: idea engine mode")
+    p_run.add_argument("--catch-up", type=_hhmm, default=None, metavar="HH:MM",
+                       help="daily: run only after HH:MM and while today's daily has not finished ok "
+                            "(the logon trigger of the scheduled task: a run missed while logged off)")
 
     p_ideate = sub.add_parser("ideate", help="idea engine on demand (report in data/weekly, ideas on Telegram)")
     p_ideate.add_argument("--tema", default=None, help='keep only technique × problem pairs about this theme, e.g. "UTI"')

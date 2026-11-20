@@ -316,7 +316,7 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--accent); }
 .term-head .chip { flex: none; }
 
 /* lessons (aulas 3D) */
-.lesson video.lesson-video { width: 100%; max-width: 960px; border-radius: 10px; background: #000; margin: 8px 0; display: block;
+.lesson video.lesson-video { width: 100%; max-width: 960px; border-radius: 10px; background: #000; margin: 14px auto; display: block;
                              border: 1px solid var(--line); }
 .lesson details { margin-top: 8px; font-size: 13.5px; }
 .lesson details h3 { margin: 14px 0 4px; }

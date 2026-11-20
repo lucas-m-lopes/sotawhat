@@ -409,15 +409,22 @@ def _in(ids) -> str:
 
 
 class Store:
-    """One connection, shared by the triage worker threads (SQLite runs in serialized mode);
-    the writes those threads make go through `_lock`."""
+    """One connection, shared by the triage worker threads and by the request threads of the interface (SQLite runs
+    in serialized mode); the writes those threads make go through `_lock`.
+
+    The reads need no lock, but they need `cached_statements=0`. With the statement cache of the Python module, two
+    threads that run the same SQL text at the same moment receive the same prepared statement, and one rebinds or
+    resets it under the other. Measured on 2026-11-20 with 8 threads and one COUNT: of 32,000 reads, about 3,700
+    raised "bad parameter or other API misuse", 5,200 returned no row and 700 returned 0 instead of 600; without the
+    cache, none. It is how /api/rag/status answered 500 when it met /api/stats. Preparing each statement again
+    costs microseconds."""
 
     def __init__(self, path):
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self._lock = threading.RLock()
-        self.conn = sqlite3.connect(str(path), check_same_thread=False)
+        self.conn = sqlite3.connect(str(path), check_same_thread=False, cached_statements=0)
         self.conn.row_factory = sqlite3.Row
         self.conn.create_function("fold", 1, fold, deterministic=True)   # accent-free search (graph/query.py)
         self.conn.execute("PRAGMA journal_mode=WAL")

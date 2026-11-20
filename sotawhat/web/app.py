@@ -8,7 +8,9 @@ A local server still gets requests that other web pages trigger in the browser, 
 P4 adds the ideas page (/api/ideas, /api/ideas/{id}, /api/ideas/vote) and the trends panel (/api/trends).
 The tools radar (2026-11-10) adds /api/radar and /api/radar/vote.
 The lessons (aulas 3D) add /api/lessons and the files of data/lessons under /lessons: the videos and the
-interactive pages of the 3D scenes."""
+interactive pages of the 3D scenes. The glossary of the digests (2026-11-20) adds /api/glossary and
+/api/glossary/status ("já sei"); the questions to the graph add /api/ask (hybrid retrieval, then the local SLM)
+and /api/rag/status."""
 import json
 import logging
 import mimetypes
@@ -25,8 +27,10 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from sotawhat import glossary
 from sotawhat.graph import query as q
 from sotawhat.ideation import ledger
 from sotawhat.lessons.eleven import VOICE_NAMES
@@ -57,6 +61,18 @@ class ToolVote(BaseModel):
     value: Literal["test", "up", "down", "archive"]
 
 
+class Question(BaseModel):
+    question: str = Field(min_length=3, max_length=500)
+    days: int | None = Field(default=None, ge=1, le=3650)
+    k: int | None = Field(default=None, ge=1, le=20)
+    sources_only: bool = False
+
+
+class TermStatus(BaseModel):
+    term_id: int
+    status: Literal["ativo", "conhecido"]
+
+
 async def json_body(request: Request) -> dict:
     """The checks every write goes through: JSON content type and a local (or absent) Origin."""
     if not request.headers.get("content-type", "").lower().startswith("application/json"):
@@ -73,8 +89,18 @@ async def json_body(request: Request) -> dict:
     return body
 
 
-def create_app(db_path, static_dir=STATIC) -> FastAPI:
+def create_app(db_path, static_dir=STATIC, rag=None) -> FastAPI:
+    """`rag`: a callable store -> (retriever, slm, settings-like with rag_sources and rag_context_chars), called at
+    the first question (the embedding model takes seconds to load); None answers 503 on /api/ask."""
     static_dir = Path(static_dir)
+    parts = {}
+    rag_lock = threading.Lock()
+
+    def rag_parts(st):
+        with rag_lock:
+            if "rag" not in parts:
+                parts["rag"] = rag(st)
+            return parts["rag"]
 
     @asynccontextmanager
     async def lifespan(app):
@@ -203,6 +229,57 @@ def create_app(db_path, static_dir=STATIC) -> FastAPI:
         st.add_feedback("tool", key, vote.value, "web")
         return {"repo": key, "vote": vote.value}
 
+    # --- glossary of the digests (2026-11-20) -------------------------------------------
+    @app.get("/api/glossary")
+    def api_glossary(request: Request, text: str = Query("", alias="q", max_length=100), status: str = ""):
+        if status and status not in glossary.STATUSES:
+            raise HTTPException(422, f"status inválido; use um de {', '.join(glossary.STATUSES)}")
+        return glossary.view(store(request), text=text, status=status)
+
+    @app.post("/api/glossary/status")
+    async def api_glossary_status(request: Request):
+        try:
+            change = TermStatus.model_validate(await json_body(request))
+        except ValidationError as exc:
+            raise HTTPException(422, f"pedido inválido: {exc}") from None
+        if not store(request).set_glossary_status(change.term_id, change.status):
+            raise HTTPException(404, "termo não encontrado")
+        return {"term_id": change.term_id, "status": change.status}
+
+    # --- questions to the graph (2026-11-20) --------------------------------------------
+    @app.post("/api/ask")
+    async def api_ask(request: Request):
+        from sotawhat.rag.answer import ask
+
+        try:
+            asked = Question.model_validate(await json_body(request))
+        except ValidationError as exc:
+            raise HTTPException(422, f"pergunta inválida: {exc}") from None
+        if rag is None:
+            raise HTTPException(503, "perguntas desligadas neste servidor")
+        st = store(request)
+
+        def work():
+            retriever, slm, knobs = rag_parts(st)
+            with rag_lock:                          # one question at a time: one GPU, one SQLite connection
+                return ask(retriever, None if asked.sources_only else slm, asked.question, days=asked.days,
+                           k=asked.k or knobs.rag_sources, budget=knobs.rag_context_chars)
+
+        answer = await run_in_threadpool(work)
+        if asked.sources_only:
+            answer.error = None
+        return answer.as_dict()
+
+    @app.get("/api/rag/status")
+    def api_rag_status(request: Request):
+        from sotawhat.rag import index
+
+        status = index.status(store(request))
+        if rag is not None and "rag" in parts:
+            ok, detail = parts["rag"][1].ping()
+            status["slm"] = {"ok": ok, "detail": detail}
+        return status
+
     # --- lessons (aulas 3D) ------------------------------------------------------------
     lessons_dir = Path(db_path).parent / "lessons"
     lessons_dir.mkdir(parents=True, exist_ok=True)
@@ -266,10 +343,12 @@ def lesson_payload(st, row, lessons_dir, detail=False) -> dict:
     return out
 
 
-def serve(db_path, port=8765, open_browser=True, host="127.0.0.1"):
+def serve(db_path, port=8765, open_browser=True, host="127.0.0.1", rag=None):
+    """`host` is 127.0.0.1 except inside a container (SOTAWHAT_IN_CONTAINER=1), whose own network is the boundary:
+    there the port is published on the host's 127.0.0.1 only (compose.vps.yaml). The Host check stays local."""
     import uvicorn
 
-    if host not in LOCAL_HOSTS:
+    if host not in LOCAL_HOSTS and not (host == "0.0.0.0" and os.environ.get("SOTAWHAT_IN_CONTAINER") == "1"):
         raise ValueError("a interface só escuta em 127.0.0.1")
     for name in ("stdout", "stderr"):      # pythonw (logon task) has no console
         if getattr(sys, name) is None:
@@ -279,7 +358,7 @@ def serve(db_path, port=8765, open_browser=True, host="127.0.0.1"):
         threading.Timer(1.5, webbrowser.open, args=(url,)).start()
     print(f"sotawhat · interface em {url} (Ctrl+C para parar)")
     log.info("serving %s", url)
-    uvicorn.run(create_app(db_path), host=host, port=port, log_config=None, access_log=False)
+    uvicorn.run(create_app(db_path, rag=rag), host=host, port=port, log_config=None, access_log=False)
 
 
 def main_serve(ns) -> int:
@@ -290,5 +369,12 @@ def main_serve(ns) -> int:
 
     settings = load_settings()
     setup_logging(settings.sotawhat_data_dir, date.today().isoformat(), settings.sotawhat_log_level)
-    serve(settings.db_path, port=ns.port or settings.sotawhat_web_port, open_browser=not ns.no_browser)
+    def rag(store):
+        from sotawhat.rag.commands import build
+
+        return (*build(settings, store), settings)
+
+    in_container = os.environ.get("SOTAWHAT_IN_CONTAINER") == "1"
+    serve(settings.db_path, port=ns.port or settings.sotawhat_web_port, open_browser=not ns.no_browser and not in_container,
+          host="0.0.0.0" if in_container else "127.0.0.1", rag=rag)
     return 0

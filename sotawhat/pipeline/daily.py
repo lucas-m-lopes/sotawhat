@@ -260,6 +260,7 @@ def setup_logging(data_dir, day, level="INFO"):
 
 
 def main_daily(ns) -> int:
+    from sotawhat import glossary
     from sotawhat.config import load_settings
     from sotawhat.configfiles import ConfigError, load_config
     from sotawhat.llm.gateway import LLMGateway
@@ -324,27 +325,39 @@ def main_daily(ns) -> int:
             except Exception:  # noqa: BLE001 - without a classifier the LLM simply sees every item
                 log.exception("classifier refresh")
                 gates = {}
-            return run_triage(st, run_id, gateway, config.rubric, config.mutes, embedder, gates)
+            return run_triage(st, run_id, gateway, config.rubric, config.mutes, embedder, gates,
+                              prompt_version=config.digest.triage_prompt)
 
         report = run_daily(store, sources, limit=ns.limit, triage=triage,
                            on_start=lambda run_id: setattr(gateway, "run_id", run_id) if gateway else None)
         digest = build_digest(store, report, config.rubric)
+        if config.digest.glossary:               # the ML/AI terms of the day; it never stops the digest
+            if gateway is not None:
+                gateway.run_id = report.run_id
+            digest.glossary = glossary.build(store, gateway, digest, limit=config.digest.glossary_limit,
+                                             repeats=config.digest.glossary_repeats, new=config.digest.glossary_new)
         md_path, _ = write_files(digest, settings.sotawhat_data_dir / "digests")
         print(render_markdown(digest) if report.triage and report.triage.llm else to_plain(render_summary(report)))
         print(f"\n[digest] {md_path}")
+        sent = False
         if not ns.no_notify and notifier.configured and digest.worth_sending:
             try:
                 send_digest(notifier, store, digest, report.run_id)
+                sent = True
             except TelegramError as exc:
                 print(f"[telegram] {exc}", file=sys.stderr)
                 log.error("telegram: %s", exc)
         if not ns.no_notify and settings.email_enabled and digest.worth_sending:
             try:
                 send_email(mailer_from(settings), digest, settings.digest_email_to)
+                sent = True
                 print(f"[e-mail] digest enviado para {settings.digest_email_to}")
             except EmailError as exc:
                 print(f"[e-mail] {exc}", file=sys.stderr)
                 log.error("e-mail: %s", exc)
+        if sent and digest.glossary:             # a term leaves the digests after it was sent `glossary_repeats` times
+            glossary.mark_shown(store, digest)
+            log.info("glossary: %s", ", ".join(g["term"] + ("*" if g["new"] else "") for g in digest.glossary))
         if not ns.no_notify and notifier.configured:     # aulas 3D: the quiz again, 2+ days after each lesson
             try:
                 from sotawhat.lessons.deliver import requiz_due
@@ -361,6 +374,14 @@ def main_daily(ns) -> int:
                     mirror.close()
             print(f"[{render_graph_line(graph_report)}]")
             log.info("graph %s", render_graph_line(graph_report))
+        try:                                     # the passages `sotawhat ask` searches: local embeddings, no LLM
+            from sotawhat.rag import index as rag_index
+
+            line = rag_index.render_line(rag_index.refresh(store, embedder))
+            print(f"[{line}]")
+            log.info(line)
+        except Exception as exc:  # noqa: BLE001 - the retrieval index never stops the daily run
+            log.warning("rag index: %s", exc)
         try:                                     # the tools radar: discovery and today's stars, no LLM
             from sotawhat.radar.commands import scan_step
 

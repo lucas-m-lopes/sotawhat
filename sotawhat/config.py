@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     embeddings_model: str = "google/embeddinggemma-300m"
 
     crossref_mailto: str = ""
+    semantic_scholar_api_key: str = ""   # free key: your own 1 request/s instead of the saturated anonymous pool
     github_token: str = ""            # P2 and the radar: GitHub search (30 req/min with a token, 10 without), star history
     hf_token: str = ""                # P2: Hugging Face Hub (higher rate limit)
     openalex_email: str = ""          # P4 prior art: OpenAlex polite pool (falls back to CROSSREF_MAILTO)
@@ -50,6 +51,20 @@ class Settings(BaseSettings):
     instagram_per_account: int = 3        # P5: newest posts per account in a scan
 
     sotawhat_web_port: int = 8765     # `sotawhat serve` (P3), always on 127.0.0.1
+
+    # questions to the graph (SDD §6.15): a local small language model behind an OpenAI-compatible endpoint
+    # (Ollama in Docker by default: `sotawhat rag up`) and the hybrid retrieval that feeds it
+    slm_base_url: str = "http://127.0.0.1:11434/v1"
+    slm_model: str = "qwen3.5:9b-q4_K_M"
+    slm_api_key: str = ""             # only for an endpoint that asks for one
+    slm_reasoning: str = "none"       # reasoning_effort: "none" turns the thinking off (faster, same grounded answer)
+    slm_timeout: int = 300
+    slm_context: int = 6144           # context window of the Ollama container: a question uses up to ~3,600 tokens,
+                                      # and with 6144 the 9B model sits whole in a GPU of 8 GB (8192 spills to the CPU)
+    slm_keep_alive: str = "15m"       # how long the model stays in memory after a question
+    rag_reranker: str = "BAAI/bge-reranker-v2-m3-int8"   # multilingual cross-encoder on the CPU; empty = off
+    rag_sources: int = 8              # sources in the context of an answer
+    rag_context_chars: int = 9000     # ~2,500 tokens of context; lower it for a small model on a CPU
 
     # lessons (aulas 3D, F0/F1): voice "piper:faber" (local) or "google:pt-BR-Chirp3-HD-Charon" (needs the key);
     # empty = the voice you chose in the blind test, else piper:faber

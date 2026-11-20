@@ -212,12 +212,41 @@ def load_entity_fixes(path) -> dict:
 
 
 @dataclass(frozen=True)
+class DigestStyle:
+    """config/digest.yaml (2026-11-20): how the digest is written. `didactic` picks the triage prompt
+    (triage_v4, written for a physician who is not an ML specialist, or triage_v3); the rest is the glossary
+    of the day (sotawhat/glossary.py)."""
+    didactic: bool = True
+    glossary: bool = True
+    glossary_limit: int = 8
+    glossary_repeats: int = 3
+    glossary_new: int = 10
+
+    @property
+    def triage_prompt(self) -> str:
+        return "triage_v4" if self.didactic else "triage_v3"
+
+
+def load_digest_style(path) -> DigestStyle:
+    data = read_yaml(path)
+    unknown = sorted(set(data) - {f.name for f in fields(DigestStyle)})
+    if unknown:
+        raise ConfigError(f"digest.yaml: chaves desconhecidas {unknown}")
+    for key, value in data.items():
+        wanted = bool if key in ("didactic", "glossary") else int
+        if type(value) is not wanted or (wanted is int and value < 0):
+            raise ConfigError(f"digest.yaml: {key} precisa ser {'true ou false' if wanted is bool else 'um inteiro ≥ 0'}")
+    return DigestStyle(**data)
+
+
+@dataclass(frozen=True)
 class AppConfig:
     rubric: Rubric
     mutes: Mutes
     llm: dict
     aliases: dict = field(default_factory=dict)   # config/aliases.yaml (P3, entity resolution)
     entity_fixes: dict = field(default_factory=lambda: {"merge": [], "rename": [], "drop": []})
+    digest: DigestStyle = field(default_factory=DigestStyle)
 
 
 def load_config(config_dir) -> AppConfig:
@@ -226,4 +255,5 @@ def load_config(config_dir) -> AppConfig:
                      mutes=load_mutes(config_dir / "mute.yaml"),
                      llm=load_llm_config(config_dir / "llm.yaml"),
                      aliases=load_aliases(config_dir / "aliases.yaml"),
-                     entity_fixes=load_entity_fixes(config_dir / "entity_fixes.yaml"))
+                     entity_fixes=load_entity_fixes(config_dir / "entity_fixes.yaml"),
+                     digest=load_digest_style(config_dir / "digest.yaml"))

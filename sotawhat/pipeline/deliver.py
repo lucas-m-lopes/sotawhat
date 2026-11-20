@@ -1,7 +1,8 @@
 # sotawhat/pipeline/deliver.py
 """Daily digest (SDD §6.11): two ranked sections ("IA ∩ Saúde" and "Fronteira de IA") plus a one-line
 radar, as Markdown + HTML files (always) and Telegram messages with 👍/👎/🧪 buttons. When nothing was
-approved and nothing broke, nothing is sent."""
+approved and nothing broke, nothing is sent. Since 2026-11-20 it ends with the glossary of the day: the
+ML/AI terms of its texts, one sentence each (sotawhat/glossary.py)."""
 import hashlib
 import json
 import time
@@ -62,6 +63,7 @@ class Digest:
     error: str | None = None
     notes: list = field(default_factory=list)
     frontier: list = field(default_factory=list)  # "Fronteira de IA": strong frontier AI, even without a health link
+    glossary: list = field(default_factory=list)  # [{"term", "expansion", "definition", "new"}] (glossary.build)
 
     @property
     def alerts(self) -> list:
@@ -143,6 +145,14 @@ def _sections(d) -> tuple:
     return ((f"{brand.HEALTH} IA ∩ Saúde", d.main), (f"{brand.FRONTIER} Fronteira de IA", d.frontier))
 
 
+def _term(g) -> str:
+    """'RAG (retrieval-augmented generation)': the term with what its acronym stands for."""
+    return f"{g['term']} ({g['expansion']})" if g.get("expansion") else g["term"]
+
+
+GLOSSARY_TITLE = "Glossário do dia"
+
+
 def render_markdown(d) -> str:
     out = [f"# {_title(d)}", "", f"{brand.STATS} {d.stats_line}", ""]
     out += [f"> {n}" for n in d.notes] + ([""] if d.notes else [])
@@ -162,6 +172,9 @@ def render_markdown(d) -> str:
     if d.extra:
         out += [f"## {brand.EXTRA} Também aprovados (além do limite diário)", ""]
         out += [f"- [{e.title}]({e.url}) — {num(e.total)} · {_sources(e)}" for e in d.extra] + [""]
+    if d.glossary:
+        out += [f"## {brand.GLOSSARY} {GLOSSARY_TITLE}", ""]
+        out += [f"- **{_term(g)}**: {g['definition']}" for g in d.glossary] + [""]
     if d.failing:
         out += [f"## {brand.FAILING} Fontes com falha", ""]
         out += [f"- {key}: {err[:160]}" + (f" — **{count}ª falha seguida**" if count >= ALERT_AFTER else "")
@@ -202,6 +215,9 @@ def render_html(d) -> str:
     if d.extra:
         body.append(f"<h2>{brand.EXTRA} Também aprovados</h2><ul>" + "".join(
             f"<li>{a(e)} <span class=\"meta\">— {num(e.total)}</span></li>" for e in d.extra) + "</ul>")
+    if d.glossary:
+        body.append(f"<h2>{brand.GLOSSARY} {GLOSSARY_TITLE}</h2><ul>" + "".join(
+            f"<li><b>{esc(_term(g))}</b>: {esc(g['definition'])}</li>" for g in d.glossary) + "</ul>")
     if d.failing:
         body.append(f"<h2>{brand.FAILING} Fontes com falha</h2><ul>" + "".join(
             f"<li>{esc(k)}: {esc(err[:160])}" + (f" — <b>{c}ª falha seguida</b>" if c >= ALERT_AFTER else "") + "</li>"
@@ -228,6 +244,10 @@ _MAIL = {
                "border-radius:0 6px 6px 0",
     "why": "font-size:14px;line-height:1.45;margin:0;color:#24564a;font-style:italic",
     "why_label": "font-style:normal;font-weight:bold;color:#0b6e4f",
+    # the glossary of the day: a quiet block at the end, one line per term
+    "gloss_box": "border-top:1px solid #e3e0d8;margin:22px 0 8px;padding:2px 0 0",
+    "gloss": "font-size:13.5px;line-height:1.45;margin:0 0 6px;color:#1f2328",
+    "gloss_term": "color:#0b6e4f",
 }
 
 
@@ -269,6 +289,10 @@ def render_email(d) -> tuple:
             for e in d.radar) + "</ol>")
     if not (d.main or d.frontier or d.radar):
         body.append(f'<p style="{s["p"]}">{brand.QUIET} Nada relevante hoje.</p>')
+    if d.glossary:
+        body.append(f'<div style="{s["gloss_box"]}"><p style="{s["h2"]}">{brand.GLOSSARY} {GLOSSARY_TITLE}</p>' + "".join(
+            f'<p style="{s["gloss"]}"><b style="{s["gloss_term"]}">{esc(_term(g))}</b>: {esc(g["definition"])}</p>'
+            for g in d.glossary) + f'<p style="{s["muted"]}">Todos os termos ficam na aba Glossário da interface.</p></div>')
     body.append(f'<p style="{s["muted"]}">Vote 👍 👎 🧪 nas mensagens do Telegram; este e-mail é uma cópia do digest.</p>')
     html = ('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width, initial-scale=1"></head>'
@@ -345,6 +369,10 @@ def telegram_messages(d) -> list:
         lines += [f'{e.position}. <a href="{esc_attr(e.url)}">{esc(_clip(e.title, 200))}</a> — {esc(_sources(e))} '
                   f"· A{e.scores.get('A', '?')}" for e in d.radar]
         messages.append({"text": "\n".join(lines)[:LIMIT], "rows": [e.row() for e in d.radar], "silent": True})
+    if d.glossary:
+        lines = [f"{brand.GLOSSARY} <b>{GLOSSARY_TITLE}</b>"]
+        lines += [f"• <b>{esc(_term(g))}</b>: {esc(_clip(g['definition'], 320))}" for g in d.glossary]
+        messages.append({"text": "\n".join(lines)[:LIMIT], "rows": [], "silent": True})
     return messages
 
 

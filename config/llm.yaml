@@ -10,6 +10,9 @@ tasks:
   triage:
     models: [deepseek/deepseek-v4.1-flash-1017, z-ai/glm-5.3-flash, minimax/minimax-m3.1-flash]
     reasoning: low
+    # O teto conta o raciocínio. Em 2026-11-20, 6–13% das respostas do golden set vieram vazias por gastá-lo
+    # inteiro raciocinando (viram uma segunda chamada). Subir para 2000 não reduziu isso (9 de 68 chamadas, e
+    # cada uma custou mais), então o teto continua em 1500.
     max_tokens: 1500
 
 # Candidatos do bake-off (`sotawhat eval models --task triage`). Só níveis de raciocínio aceitos por todos:

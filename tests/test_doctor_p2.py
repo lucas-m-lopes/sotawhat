@@ -64,3 +64,20 @@ def test_check_gmail():
     assert empty.status == "warn" and "filtro" in empty.detail
     failed = check_gmail(settings, imap_factory=lambda: FakeIMAP(fail=True))
     assert failed.status == "fail" and "senha de app" in failed.detail and "abcdefghijklmnop" not in failed.detail
+
+
+def test_check_semantic_scholar(tmp_path):
+    from sotawhat.doctor import check_semantic_scholar
+    from sotawhat.store.db import Store
+
+    with Store(tmp_path / "insight.db") as store:
+        for _ in range(3):
+            store.record_source_error("semantic_scholar", "429")
+        anonymous = check_semantic_scholar(Settings(_env_file=None), store)
+        assert anonymous.status == "warn" and "3 falhas seguidas" in anonymous.detail and "grátis" in anonymous.detail
+        keyed = Settings(_env_file=None, semantic_scholar_api_key="k")
+        assert check_semantic_scholar(keyed, store, get=_get(200, {"title": "x"})).status == "warn"   # still failing
+        store.record_source_ok("semantic_scholar")
+        assert check_semantic_scholar(keyed, store, get=_get(200, {"title": "x"})).status == "ok"
+        assert check_semantic_scholar(keyed, store, get=_get(403, {"message": "Forbidden"})).status == "fail"
+        assert check_semantic_scholar(keyed, store, get=_get(429, {})).status == "warn"

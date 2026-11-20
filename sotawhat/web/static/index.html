@@ -13,10 +13,12 @@
   <nav class="views" aria-label="Seções">
     <a href="#grafo" data-view="graph">Grafo</a>
     <a href="#hoje" data-view="today">Hoje</a>
+    <a href="#perguntar" data-view="ask">Perguntar</a>
     <a href="#ideias" data-view="ideas">Ideias</a>
     <a href="#tendencias" data-view="trends">Tendências</a>
     <a href="#aulas" data-view="lessons">Aulas</a>
     <a href="#ferramentas" data-view="tools">Ferramentas</a>
+    <a href="#glossario" data-view="glossary">Glossário</a>
   </nav>
   <div class="search">
     <input id="search" type="search" placeholder="Buscar entidade ou item…" autocomplete="off" aria-label="Buscar entidade ou item" aria-controls="results">
@@ -104,6 +106,36 @@
     </div>
   </div>
   <div id="tools-list" class="cards" aria-live="polite"></div>
+</main>
+<main id="view-ask" class="page" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Perguntar ao grafo</h1>
+      <p id="ask-meta" class="muted">carregando…</p>
+    </div>
+  </div>
+  <form id="ask-form" class="ask-form">
+    <textarea id="ask-input" rows="2" maxlength="500" placeholder="Ex.: o que saiu sobre agentes clínicos esta semana?" aria-label="Sua pergunta"></textarea>
+    <div class="ask-bar">
+      <div id="ask-days" class="segmented" role="radiogroup" aria-label="Período"></div>
+      <label class="check"><input id="ask-sources-only" type="checkbox"> só as fontes, sem o modelo local</label>
+      <button id="ask-send" class="primary" type="submit">Perguntar</button>
+    </div>
+  </form>
+  <div id="ask-examples" class="chips" aria-label="Exemplos de pergunta"></div>
+  <div id="ask-thread" class="thread" aria-live="polite"></div>
+</main>
+<main id="view-glossary" class="page" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Glossário</h1>
+      <p id="glossary-meta" class="muted">carregando…</p>
+    </div>
+    <input id="glossary-filter" class="filter" type="search" placeholder="Filtrar por termo, sigla ou definição…" autocomplete="off" aria-label="Filtrar o glossário">
+  </div>
+  <div id="glossary-status" class="segmented" role="radiogroup" aria-label="Quais termos"></div>
+  <nav id="glossary-letters" class="letters" aria-label="Ir para a letra"></nav>
+  <div id="glossary-list" class="glossary" aria-live="polite"></div>
 </main>
 <main id="view-trends" class="page" hidden>
   <div class="page-head">

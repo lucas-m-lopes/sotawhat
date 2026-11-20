@@ -1,0 +1,18 @@
+# config/digest.yaml — como o digest é escrito (2026-11-20, SDD §6.14). Toda chave é opcional; faltando,
+# vale o padrão do código (os valores abaixo).
+
+# Resumos escritos para um médico que não é especialista em ML: a primeira frase diz em palavras simples o
+# que o item é, e os termos além do básico ganham uma explicação curta entre parênteses (prompt triage_v4,
+# até 75 palavras). false volta ao texto denso de antes (triage_v3, até 60 palavras). O estilo não muda o
+# que entra no digest: no golden set (60 itens, 2026-11-20) o F1 foi 0,87 com o v3 e 0,85 e 0,84 em duas
+# execuções do v4, e duas execuções do mesmo prompt já divergem em 8 decisões (v3 contra v4: 7 e 9).
+# Custo: ~15 palavras a mais por resumo e ~10% a mais de raciocínio, cerca de US$ 0,35 por mês.
+didactic: true
+
+# "Glossário do dia" no fim do e-mail, do Telegram e do arquivo do dia: os termos de ML/IA dos textos do
+# digest, uma frase cada (sem termos médicos nem nomes de modelos e produtos). Cada termo é definido uma vez
+# pelo LLM e depois é reconhecido sem LLM; a aba Glossário da interface guarda todos.
+glossary: true
+glossary_limit: 8      # termos por digest: os novos primeiro, depois os menos vistos
+glossary_repeats: 3    # um termo sai em até N digests; depois fica só na aba (ou marque "já sei" lá)
+glossary_new: 10       # termos novos que o LLM pode definir por digest

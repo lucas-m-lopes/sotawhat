@@ -285,6 +285,53 @@ def check_hf(settings, get=None) -> Check:
     return Check("Hugging Face", "ok", f"conta {r.json().get('name', '?')}")
 
 
+def check_semantic_scholar(settings, store=None, get=None) -> Check:
+    """Semantic Scholar: without a key the source shares the anonymous pool, which answers 429 most of the time."""
+    name = "Semantic Scholar"
+    failures = 0
+    if store is not None:
+        row = store.conn.execute("SELECT consecutive_failures FROM source_state WHERE source = 'semantic_scholar'").fetchone()
+        failures = row[0] if row else 0
+    streak = f" · {failures} falhas seguidas no run diário" if failures else ""
+    if not settings.semantic_scholar_api_key:
+        return Check(name, "warn", "SEMANTIC_SCHOLAR_API_KEY vazio: pool anônimo, com 429 frequentes (a fonte tenta de "
+                                   "novo, mas pode falhar); a chave é grátis em semanticscholar.org/product/api" + streak)
+    get = get or httpx.get
+    try:
+        r = get("https://api.semanticscholar.org/graph/v1/paper/arXiv:1706.03762?fields=title",
+                headers={"x-api-key": settings.semantic_scholar_api_key, "User-Agent": "sotawhat/3.0"}, timeout=20)
+    except httpx.HTTPError as exc:
+        return Check(name, "warn", f"não respondeu: {type(exc).__name__}{streak}")
+    if r.status_code in (401, 403):
+        return Check(name, "fail", "SEMANTIC_SCHOLAR_API_KEY recusada: confira a chave que veio por e-mail")
+    if r.status_code == 429:
+        return Check(name, "warn", f"chave aceita, mas no limite agora (429){streak}")
+    return Check(name, "ok" if not failures else "warn", f"chave aceita{streak}")
+
+
+def check_rag(settings, store, ping=None) -> list:
+    """Questions to the graph: the retrieval index against the approved items, and the local SLM."""
+    from sotawhat.rag import index
+    from sotawhat.rag.answer import from_settings
+
+    s = index.status(store)
+    passages = sum(k["passages"] for k in s["kinds"].values())
+    vectors = sum(k["embedded"] or 0 for k in s["kinds"].values())
+    detail = f"{s['items_indexed']} de {s['approved_items']} itens aprovados · {passages} passagens · {vectors} vetores"
+    if not passages:
+        first = Check("índice do RAG", "warn", "vazio: rode `sotawhat rag index` (minutos na primeira vez)")
+    elif s["items_indexed"] < s["approved_items"] or vectors < passages or not s["lexical"]:
+        first = Check("índice do RAG", "warn", detail + (" · sem FTS5 neste SQLite" if not s["lexical"] else "")
+                      + " · rode `sotawhat rag index`")
+    else:
+        first = Check("índice do RAG", "ok", detail)
+    ok, why = (ping or from_settings(settings).ping)()
+    second = Check("SLM local", "ok" if ok else "warn",
+                   why if ok else f"{why}: `sotawhat rag up` sobe o Ollama e baixa o modelo (sem ele, `sotawhat ask` "
+                                  "mostra só as fontes)")
+    return [first, second]
+
+
 def check_gmail(settings, imap_factory=None) -> Check:
     """The newsletter query (P2) over 30 days: zero usually means the Gmail filter/label is missing."""
     name = "newsletters do Gmail"
@@ -630,6 +677,8 @@ def main_doctor(ns) -> int:
         checks.append(check_graph(store))
         checks.append(check_neo4j(settings, store))
         checks.append(check_radar(settings, store))
+        checks.append(check_semantic_scholar(settings, store))
+        checks += check_rag(settings, store)
         if ns.llm:
             if settings.openrouter_api_key:
                 overrides = llm_config["tasks"] if llm_config else None

@@ -2,7 +2,9 @@
 """SQLite operational store (SDD §6.4): items, runs, source health, LLM cost ledger; since schema 2 (P1)
 triage, embeddings, clusters, feedback, deliveries, classifiers and the inbox; since schema 3 (P3) the
 entity graph that the interface and the MCP read (extractions, entities, aliases, mentions, relations,
-merges, entity embeddings) and the Neo4j mirror watermark (`items.graph_synced_at`)."""
+merges, entity embeddings) and the Neo4j mirror watermark (`items.graph_synced_at`); since schema 7
+(2026-11-20) the glossary of the digests and the passages the local SLM retrieves (`rag_passages`, with
+the full-text index `rag_fts` when this SQLite has FTS5)."""
 import json
 import sqlite3
 import threading
@@ -13,7 +15,7 @@ import numpy as np
 
 from sotawhat.textmatch import fold
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 APPROVED = ("main", "frontier", "radar")
 ROLE_RANK = {"tag": 0, "mentioned": 1, "used": 2, "main": 3}
 IDEA_STATUS = {"up": "curtida", "down": "rejeitada", "test": "testar", "archive": "engavetada", "built": "construida"}
@@ -346,6 +348,47 @@ CREATE TABLE IF NOT EXISTS radar_picks(
     PRIMARY KEY(run_id, full_name)
 );
 """
+_SCHEMA_V7 = """
+CREATE TABLE IF NOT EXISTS glossary(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    term TEXT NOT NULL,                   -- as the digests write it: "few-shot", "RAG"
+    norm TEXT NOT NULL UNIQUE,            -- glossary.norm(term)
+    expansion TEXT,                       -- what an acronym stands for
+    definition_pt TEXT NOT NULL,          -- one sentence
+    aliases_json TEXT NOT NULL DEFAULT '[]',   -- other spellings seen in the texts
+    entity_id INTEGER,                    -- the technique of the graph with this name, when there is one
+    status TEXT NOT NULL DEFAULT 'ativo', -- ativo | conhecido ("já sei": it leaves the digests)
+    model TEXT,
+    prompt_version TEXT,
+    created_at TEXT NOT NULL,
+    shown_count INTEGER NOT NULL DEFAULT 0,    -- digests that printed it
+    last_shown TEXT                       -- day of the last digest that printed it
+);
+CREATE TABLE IF NOT EXISTS glossary_items(
+    term_id INTEGER NOT NULL,
+    item_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    PRIMARY KEY(term_id, item_id)
+);
+CREATE INDEX IF NOT EXISTS idx_glossary_items_item ON glossary_items(item_id);
+CREATE TABLE IF NOT EXISTS rag_passages(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,                   -- card | text | entity | community | idea | glossary
+    ref TEXT NOT NULL,                    -- item id, entity id, community number, idea id or glossary id
+    seq INTEGER NOT NULL DEFAULT 0,       -- chunk of the item text
+    item_id TEXT,                         -- card and text: the approved item
+    title TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL,
+    day TEXT,                             -- fetched_at of the item, for the time filters
+    hash TEXT NOT NULL,                   -- of title + body: an unchanged passage is not embedded again
+    model TEXT,
+    dim INTEGER,
+    vector BLOB,
+    UNIQUE(kind, ref, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_rag_item ON rag_passages(item_id);
+"""
+_FTS = "CREATE VIRTUAL TABLE IF NOT EXISTS rag_fts USING fts5(title, body, tokenize=\"unicode61 remove_diacritics 2\")"
 LESSON_FIELDS = ("status", "title", "voice", "video_path", "duration_s", "size_bytes", "run_id", "cost_usd",
                  "delivered_at", "requiz_at", "review", "comparison", "error")
 
@@ -384,6 +427,12 @@ class Store:
         self.conn.executescript(_SCHEMA_V4)
         self.conn.executescript(_SCHEMA_V5)
         self.conn.executescript(_SCHEMA_V6)
+        self.conn.executescript(_SCHEMA_V7)
+        try:
+            self.conn.execute(_FTS)
+            self.fts = True
+        except sqlite3.OperationalError:        # a SQLite built without FTS5: the lexical search is off
+            self.fts = False
         columns ={row[1] for row in self.conn.execute("PRAGMA table_info(items)")}
         if "cluster_id" not in columns:
             self.conn.execute("ALTER TABLE items ADD COLUMN cluster_id TEXT")
@@ -1029,3 +1078,61 @@ class Store:
         """Delivered before `before_iso` and not re-quizzed yet."""
         return self.conn.execute("SELECT * FROM lessons WHERE delivered_at IS NOT NULL AND delivered_at <= ? AND"
                                  " requiz_at IS NULL ORDER BY id", (before_iso,)).fetchall()
+
+    # --- glossary (schema 7) ------------------------------------------------
+    def glossary_terms(self, status=None):
+        sql, args = "SELECT * FROM glossary", []
+        if status:
+            sql += " WHERE status = ?"
+            args.append(status)
+        return self.conn.execute(sql + " ORDER BY norm", args).fetchall()
+
+    def get_glossary_term(self, term_id):
+        return self.conn.execute("SELECT * FROM glossary WHERE id = ?", (term_id,)).fetchone()
+
+    def add_glossary_term(self, term, norm, definition_pt, expansion=None, aliases=(), entity_id=None, model=None,
+                          prompt_version=None) -> tuple:
+        """-> (id, created). A norm the glossary already has keeps its definition and gains the aliases."""
+        with self._lock:
+            cur = self.conn.execute(
+                "INSERT OR IGNORE INTO glossary(term, norm, expansion, definition_pt, aliases_json, entity_id, model,"
+                " prompt_version, created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                (term, norm, expansion or None, definition_pt, json.dumps(sorted(set(aliases)), ensure_ascii=False),
+                 entity_id, model, prompt_version, utcnow()))
+            self.conn.commit()
+            term_id = self.conn.execute("SELECT id FROM glossary WHERE norm = ?", (norm,)).fetchone()[0]
+        if cur.rowcount != 1 and aliases:
+            self.add_glossary_aliases(term_id, aliases)
+        return term_id, cur.rowcount == 1
+
+    def add_glossary_aliases(self, term_id, aliases) -> None:
+        with self._lock:
+            row = self.conn.execute("SELECT term, aliases_json FROM glossary WHERE id = ?", (term_id,)).fetchone()
+            if row is None:
+                return
+            merged = sorted((set(json.loads(row["aliases_json"] or "[]")) | {a for a in aliases if a}) - {row["term"]})
+            self.conn.execute("UPDATE glossary SET aliases_json = ? WHERE id = ?",
+                              (json.dumps(merged, ensure_ascii=False), term_id))
+            self.conn.commit()
+
+    def link_glossary_items(self, term_id, item_ids, day) -> None:
+        with self._lock:
+            self.conn.executemany("INSERT OR IGNORE INTO glossary_items(term_id, item_id, day) VALUES(?,?,?)",
+                                  [(term_id, item_id, day) for item_id in item_ids])
+            self.conn.commit()
+
+    def mark_glossary_shown(self, term_ids, day) -> None:
+        """One more digest printed these terms; the same day counts once, however many times the run repeats."""
+        ids = list(term_ids)
+        if not ids:
+            return
+        with self._lock:
+            self.conn.execute(f"UPDATE glossary SET shown_count = shown_count + 1, last_shown = ? WHERE id IN ({_in(ids)})"
+                              " AND (last_shown IS NULL OR last_shown != ?)", [day] + ids + [day])
+            self.conn.commit()
+
+    def set_glossary_status(self, term_id, status) -> bool:
+        with self._lock:
+            cur = self.conn.execute("UPDATE glossary SET status = ? WHERE id = ?", (status, term_id))
+            self.conn.commit()
+            return cur.rowcount == 1

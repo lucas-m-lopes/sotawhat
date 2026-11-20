@@ -179,6 +179,54 @@ button { font: inherit; color: inherit; }
   .panel { border-left: 0; }
 }
 
+/* questions to the graph */
+.ask-form { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; display: grid; gap: 10px; }
+.ask-form textarea { width: 100%; resize: vertical; min-height: 54px; padding: 10px 12px; border-radius: 8px;
+                     border: 1px solid var(--line); background: var(--soft); color: var(--fg); font: inherit; font-size: 15px; }
+.ask-form textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; background: var(--panel); }
+.ask-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.ask-bar .primary { margin-left: auto; }
+.primary { border: 1px solid var(--accent); background: var(--accent); color: var(--panel); border-radius: 8px; padding: 7px 18px;
+           font-weight: 600; cursor: pointer; }
+.primary:disabled { opacity: .5; cursor: progress; }
+#ask-examples { margin-top: 10px; align-items: center; }
+.thread { display: grid; gap: 14px; margin-top: 16px; }
+.answer h2 { margin-top: 0; }
+.answer-text { white-space: pre-wrap; font-size: 15px; line-height: 1.55; margin: 4px 0 10px; }
+.answer .meta { margin: 6px 0; }
+.answer .chips { margin: 8px 0; align-items: center; }
+.cite { border: 1px solid var(--accent); background: var(--accent-soft); color: var(--main); border-radius: 6px; padding: 0 5px;
+        font-size: 11.5px; font-weight: 650; cursor: pointer; margin: 0 1px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.cite.static { cursor: default; display: inline-block; }
+.warn { color: var(--radar); font-size: 13px; margin: 4px 0; }
+.facts { white-space: pre-wrap; font-size: 13px; color: var(--muted); margin-top: 6px; }
+.sources { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+.source { transition: box-shadow .2s, border-color .2s; }
+.source.cited { border-color: var(--accent); }
+.source.flash { box-shadow: 0 0 0 3px var(--accent-soft); }
+.source details { margin-top: 6px; border-top: 0; padding-top: 0; }
+.source .meta { margin-top: 6px; }
+@media (max-width: 1000px) { .sources { grid-template-columns: minmax(0, 1fr); } }
+
+/* glossary of the digests */
+.filter { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg);
+          font: inherit; width: min(380px, 100%); }
+.filter:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.letters { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+.letters .chip { min-width: 30px; justify-content: center; font-variant-numeric: tabular-nums; }
+.glossary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; margin-top: 6px; }
+.glossary .letter { grid-column: 1 / -1; margin: 14px 0 0; font-size: 15px; color: var(--accent); scroll-margin-top: 8px; }
+.term { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px;
+        display: grid; gap: 6px; align-content: start; }
+.term.known { opacity: .62; }
+.term-head { display: flex; gap: 10px; align-items: baseline; justify-content: space-between; }
+.term h2 { font-size: 15.5px; text-transform: none; letter-spacing: 0; color: var(--fg); margin: 0; font-weight: 650; }
+.term .expansion { font-weight: 400; color: var(--muted); font-size: 13px; }
+.term .definition { margin: 0; font-size: 14px; }
+.term .chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--main); }
+.term-head .chip { flex: none; }
+@media (max-width: 1000px) { .glossary { grid-template-columns: minmax(0, 1fr); } }
+
 /* lessons (aulas 3D) */
 .lesson video.lesson-video { width: 100%; max-width: 960px; border-radius: 8px; background: #000; margin: 8px 0; display: block; }
 .lesson details { margin-top: 8px; font-size: 13.5px; }

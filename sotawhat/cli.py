@@ -3,7 +3,7 @@ import argparse
 import sys
 
 _SUBCOMMANDS = {"search", "run", "ideate", "doctor", "feedback", "eval", "serve", "serve-mcp", "graph", "instagram",
-                "newsletters", "backup", "calibrate", "repair", "lessons", "radar"}
+                "newsletters", "backup", "calibrate", "repair", "lessons", "radar", "glossary", "ask", "rag"}
 _LESSON_ID_ACTIONS = ("resume", "rerender", "send", "pack", "hf")
 
 def _hhmm(text):
@@ -114,6 +114,8 @@ def parse_args(argv):
     p_models.add_argument("--limit", type=int, default=0)
     p_models.add_argument("--concurrency", type=int, default=4)
     p_models.add_argument("--apply", action="store_true", help="put the winner first in config/llm.yaml")
+    p_models.add_argument("--prompt", default=None, help="triage prompt to evaluate, e.g. triage_v3 (default: the one "
+                                                         "config/digest.yaml picks)")
     eval_sub.add_parser("triage", help="precision of the triage by your votes (G2)")
     eval_sub.add_parser("ideas", help="the idea ledger: finalists and the share you want to explore (G4)")
     p_report = eval_sub.add_parser("report", help="the SDD goals G1-G4 in data/reports (P6)")
@@ -138,6 +140,31 @@ def parse_args(argv):
                               "the star history of the last --dias days (GITHUB_TOKEN)")
     p_radar.add_argument("--no-notify", action="store_true", help="report: do not send it to Telegram")
     p_radar.add_argument("--dias", type=int, default=14, help="backfill: days of star history (default 14)")
+
+    p_gloss = sub.add_parser("glossary", help="the glossary of the digests: ML/AI terms, one sentence each")
+    p_gloss.add_argument("glossary_action", choices=["list", "backfill"],
+                         help="list: every term; backfill: define the terms of the digests already sent (one LLM "
+                              "call per digest)")
+    p_gloss.add_argument("--dias", type=int, default=14, help="backfill: digests of the last N days (default 14)")
+
+    p_ask = sub.add_parser("ask", help="a question to the knowledge graph, answered by the local SLM with sources")
+    p_ask.add_argument("question", nargs="+", help='e.g. "o que saiu sobre agentes clínicos esta semana?"')
+    p_ask.add_argument("--dias", type=int, default=None, help="only items of the last N days (default: what the "
+                                                              "question says, e.g. 'esta semana')")
+    p_ask.add_argument("--k", type=int, default=None, help="sources in the context (default RAG_SOURCES, 8)")
+    p_ask.add_argument("--so-fontes", dest="so_fontes", action="store_true", help="retrieval only: no SLM call")
+    p_ask.add_argument("--sem-rerank", dest="sem_rerank", action="store_true", help="skip the cross-encoder (faster)")
+    p_ask.add_argument("--detalhes", action="store_true", help="show the graph facts, the scores and the rankings")
+    p_ask.add_argument("--json", action="store_true", help="the whole answer as JSON")
+
+    p_rag = sub.add_parser("rag", help="the retrieval index and the local SLM behind `sotawhat ask`")
+    p_rag.add_argument("rag_action", choices=["index", "status", "up", "eval"],
+                       help="index: refresh the passages and their vectors (the daily run does it); status: what is "
+                            "indexed and whether the SLM answers; up: start Ollama in Docker and pull SLM_MODEL; "
+                            "eval: how often the retrieval finds the item a question is about")
+    p_rag.add_argument("--rebuild", action="store_true", help="index: drop every passage and embed all again")
+    p_rag.add_argument("--gerar", action="store_true", help="eval: have the local SLM write a new set of questions")
+    p_rag.add_argument("--n", type=int, default=40, help="eval: number of questions (default 40)")
 
     p_calibrate = sub.add_parser("calibrate", help="proposals for the triage cut-offs and the idea weights (P6)")
     p_calibrate.add_argument("--apply", action="store_true", help="write the proposal to config/")
@@ -226,6 +253,15 @@ def main(argv=None):
     elif ns.command == "radar":
         from sotawhat.radar.commands import main_radar
         raise SystemExit(main_radar(ns))
+    elif ns.command == "ask":
+        from sotawhat.rag.commands import main_ask
+        raise SystemExit(main_ask(ns))
+    elif ns.command == "rag":
+        from sotawhat.rag.commands import main_rag
+        raise SystemExit(main_rag(ns))
+    elif ns.command == "glossary":
+        from sotawhat.glossary import main_glossary
+        raise SystemExit(main_glossary(ns))
     elif ns.command == "calibrate":
         from sotawhat.evals.calibrate import main_calibrate
         raise SystemExit(main_calibrate(ns))

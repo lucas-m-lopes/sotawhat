@@ -269,7 +269,7 @@ def run_motion_lesson(settings, store, lesson_id, deliver=True, redo=(), mode="e
             report["llm_usd"] = round(sum(store.llm_cost_for_run(r) for r in report["runs"]), 4)
             store.update_lesson(lesson_id, report=report)
             store.finish_run(run_id, True, {"lesson": lesson_id, "step": "roteiro", "cost_usd": report["llm_usd"]})
-            log(f"[aula {lesson_id}] roteiro pronto (LLM US$ {report['llm_usd']:.3f}): revise na aba Aulas, ou produza "
+            log(f"[aula {lesson_id}] roteiro pronto (LLM da aula até aqui: US$ {report['llm_usd']:.3f}): revise na aba Aulas, ou produza "
                 f"com sotawhat lessons resume {lesson_id}")
             return 0
         progress.stage("storyboard")

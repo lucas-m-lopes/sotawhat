@@ -1337,7 +1337,8 @@
     const busy = liveJob();
     const card = el("article", { class: "idea lesson review", "data-lesson": lesson.id },
       lessonHead(lesson, "roteiro pronto", "", `modelos ${modeLabel(lesson.mode)}`,
-                 lesson.llm_usd != null ? `roteiro US$ ${num(lesson.llm_usd, 3)}` : null),
+                 lesson.llm_usd != null ? el("span", { title: "todos os roteiros desta aula, inclusive os refeitos e os cancelados" },
+                                             `LLM até aqui US$ ${num(lesson.llm_usd, 3)}`) : null),
       el("h2", {}, lesson.title),
       lesson.objective ? el("p", {}, lesson.objective) : null,
       el("dl", { class: "readouts" },

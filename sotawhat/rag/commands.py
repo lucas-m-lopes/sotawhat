@@ -9,12 +9,15 @@ from pathlib import Path
 
 
 def build(settings, store, rerank=True):
-    """-> (retriever, slm) from the settings: the same pieces for the command, the interface and the MCP."""
+    """-> (retriever, slm, jev) from the settings: the same pieces for the command and the interface. `jev` is
+    None without an OpenRouter key."""
+    from sotawhat.rag import jev
     from sotawhat.rag.answer import from_settings
     from sotawhat.rag.retrieve import Retriever, get_reranker
     from sotawhat.store.vectors import get_embedder
 
-    return Retriever(store, get_embedder(settings), get_reranker(settings) if rerank else None), from_settings(settings)
+    return (Retriever(store, get_embedder(settings), get_reranker(settings) if rerank else None), from_settings(settings),
+            jev.from_settings(settings, store))
 
 
 def render(answer, verbose=False) -> str:
@@ -43,8 +46,12 @@ def render(answer, verbose=False) -> str:
     for note in pack.notes:
         out.append(f"({note})")
     t = pack.timings
-    out.append(f"({answer.model or 'sem SLM'} · busca {t.get('total', 0):.1f} s"
-               + (f" · resposta {answer.seconds:.1f} s" if answer.text and answer.model else "") + ")")
+    if answer.engine == "jev":
+        out.append(f"({answer.model or 'sem a Jev'} · frases extraídas, nada foi redigido · total {t.get('total', 0):.1f} s"
+                   + (f", dos quais {answer.seconds:.1f} s na Jev" if answer.model else "") + ")")
+    else:
+        out.append(f"({answer.model or 'sem SLM'} · busca {t.get('total', 0):.1f} s"
+                   + (f" · resposta {answer.seconds:.1f} s" if answer.text and answer.model else "") + ")")
     return "\n".join(out)
 
 
@@ -59,9 +66,10 @@ def main_ask(ns) -> int:
         print('use: sotawhat ask "o que saiu sobre agentes clínicos esta semana?"', file=sys.stderr)
         return 2
     with Store(settings.db_path) as store:
-        retriever, slm = build(settings, store, rerank=not ns.sem_rerank)
+        retriever, slm, jev = build(settings, store, rerank=not ns.sem_rerank)
         answer = ask(retriever, None if ns.so_fontes else slm, question, days=ns.dias, k=ns.k or settings.rag_sources,
-                     budget=settings.rag_context_chars)
+                     budget=settings.rag_context_chars, engine="slm" if ns.so_fontes else (ns.motor or settings.rag_engine),
+                     jev=jev)
     if ns.json:
         print(json.dumps(answer.as_dict(), ensure_ascii=False, indent=1))
     else:
@@ -148,7 +156,7 @@ def main_eval(ns, settings) -> int:
 
     path = settings.sotawhat_data_dir / evaluate.FOLDER / "questions.jsonl"
     with Store(settings.db_path) as store:
-        retriever, slm = build(settings, store)
+        retriever, slm, jev = build(settings, store)
         questions = evaluate.load(path)
         if ns.gerar or not questions:
             ok, detail = slm.ping()
@@ -158,7 +166,7 @@ def main_eval(ns, settings) -> int:
             questions = evaluate.draft(store, slm, n=ns.n)
             evaluate.save(questions, path)
             print(f"{len(questions)} perguntas em {path}")
-        results = evaluate.run(retriever, questions[:ns.n], k=settings.rag_sources)
+        results = evaluate.run(retriever, questions[:ns.n], k=settings.rag_sources, jev=jev if ns.jev else None)
     report = evaluate.render(results, k=settings.rag_sources)
     out = settings.sotawhat_data_dir / evaluate.FOLDER / f"{date.today().isoformat()}-recuperacao.md"
     out.write_text(report + "\n", encoding="utf-8")

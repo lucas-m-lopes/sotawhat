@@ -3,6 +3,8 @@
 // as a thin additive line; the layout is a force simulation in three dimensions that settles on screen.
 // A stated relation ("developed by", "addresses") has a direction, and small particles run along it from the
 // subject to the object. The pointer is a light: what is near it brightens, as in a scene lit by the cursor.
+// The same scene has a flat mode (2D): the simulation presses every node onto one plane and the camera looks at
+// it from the front, panning instead of orbiting. Switching between the two is animated, not a reload.
 // Names go into the page through textContent, never as HTML.
 import * as THREE from "three";
 import { OrbitControls } from "./vendor/three/OrbitControls.js";
@@ -128,8 +130,10 @@ function hash(text) {
 // A force layout in three dimensions: springs on the edges, repulsion between every pair, a pull to the center.
 // Plain loops over typed arrays; a thousand nodes cost a few milliseconds a tick.
 class Layout {
-  constructor(count, links, sizes, ids) {
+  constructor(count, links, sizes, ids, flat = false) {
     this.n = count;
+    this.ids = ids;
+    this.flat = flat;
     this.pos = new Float32Array(count * 3);
     this.vel = new Float32Array(count * 3);
     this.links = links;
@@ -138,18 +142,31 @@ class Layout {
     for (const [s, t] of links) { this.degree[s] += 1; this.degree[t] += 1; }
     this.charge = new Float32Array(count);
     const spread = 14 * Math.cbrt(Math.max(count, 1));
+    this.spread = spread;
     for (let i = 0; i < count; i += 1) {
       const random = seeded(hash(ids[i]));
       const u = random() * 2 - 1, phi = random() * Math.PI * 2, rad = spread * Math.cbrt(random());
       const s = Math.sqrt(1 - u * u);
       this.pos[3 * i] = rad * s * Math.cos(phi);
       this.pos[3 * i + 1] = rad * s * Math.sin(phi);
-      this.pos[3 * i + 2] = rad * u;
+      this.pos[3 * i + 2] = flat ? 0 : rad * u;
       this.charge[i] = 26 + 5 * sizes[i];
     }
   }
 
   get done() { return this.alpha < 0.004; }
+
+  // Flat: the next ticks press the cloud onto the plane z = 0. Back to three dimensions: every node gets its own
+  // push out of the plane, always the same one, and the forces shape the volume again.
+  setFlat(flat) {
+    this.flat = flat;
+    if (!flat) {
+      for (let i = 0; i < this.n; i += 1) {
+        this.pos[3 * i + 2] = (seeded(hash(`z${this.ids[i]}`))() - 0.5) * this.spread * 1.4;
+      }
+    }
+    this.alpha = Math.max(this.alpha, 0.6);
+  }
 
   tick() {
     const { n, pos, vel, links, degree, charge } = this;
@@ -186,6 +203,9 @@ class Layout {
       vel[i] = (vel[i] - pos[i] * pull) * 0.6;
       pos[i] += vel[i];
     }
+    if (this.flat) {
+      for (let i = 2; i < 3 * n; i += 3) { vel[i] = 0; pos[i] *= 0.8; }
+    }
   }
 
   radius() {                                           // the distance from the center that holds 95% of the nodes
@@ -197,10 +217,11 @@ class Layout {
 }
 
 export class Graph3D {
-  // handlers: onHover(id | null), onSelect(id), onFocus(id), onClear()
-  constructor(container, handlers = {}) {
+  // handlers: onHover(id | null), onSelect(id), onFocus(id), onClear(); options: { flat } starts in the 2D mode
+  constructor(container, handlers = {}, options = {}) {
     this.container = container;
     this.handlers = handlers;
+    this.flat = false;
     this.reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -232,6 +253,7 @@ export class Graph3D {
     this.started = performance.now();
     this._listen();
     this.resize();
+    if (options.flat) this.setFlat(true);
     this.frame = requestAnimationFrame(() => this._loop());
   }
 
@@ -306,7 +328,8 @@ export class Graph3D {
     this.hovered = null;
     this.fly = null;
     const n = nodes.length;
-    this.layout = new Layout(n, this.links.map((l) => [l.s, l.t, l.weight]), nodes.map((node) => node.size), nodes.map((node) => node.id));
+    this.layout = new Layout(n, this.links.map((l) => [l.s, l.t, l.weight]), nodes.map((node) => node.size),
+                             nodes.map((node) => node.id), this.flat);
     if (this.reduced) { while (!this.layout.done) this.layout.tick(); }
     this.screen = new Float32Array(n * 4);             // x, y, radius in CSS pixels, depth (≤ 0 = behind the camera)
     this.byWeight = nodes.map((_, i) => i).sort((a, b) => nodes[b].size - nodes[a].size);
@@ -426,7 +449,8 @@ export class Graph3D {
     this.uniforms.uFar.value = radius * 4.2;
     const distance = radius * 2.7;
     if (jump) {
-      const direction = this.camera.position.clone().sub(this.controls.target).normalize();
+      const direction = this.flat ? new THREE.Vector3(0, 0, 1)
+        : this.camera.position.clone().sub(this.controls.target).normalize();
       this.controls.target.set(0, 0, 0);
       this.camera.position.copy(direction.multiplyScalar(distance));
     } else if (!this.fly && this.active === null) {
@@ -434,6 +458,25 @@ export class Graph3D {
         .multiplyScalar(distance).add(this.controls.target), target: this.controls.target.clone(),
         targetTo: this.controls.target.clone(), start: performance.now(), duration: 700 };
     }
+  }
+
+  // 2D: the nodes go to one plane, the camera faces it and the drag pans. 3D: the volume and the orbit come back.
+  setFlat(flat) {
+    flat = Boolean(flat);
+    if (flat === this.flat) return;
+    this.flat = flat;
+    this.controls.enableRotate = !flat;
+    this.controls.screenSpacePanning = true;
+    this.controls.mouseButtons.LEFT = flat ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+    this.controls.touches.ONE = flat ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE;
+    if (!this.layout) return;
+    this.layout.setFlat(flat);
+    this.fitted = 0;
+    const distance = (this.radius || 200) * 2.7;
+    const to = flat ? new THREE.Vector3(0, 0, distance)
+      : new THREE.Vector3(0.42, 0.26, 0.87).normalize().multiplyScalar(distance);
+    this.fly = { from: this.camera.position.clone(), to, target: this.controls.target.clone(),
+                 targetTo: new THREE.Vector3(0, 0, 0), start: performance.now(), duration: this.reduced ? 1 : 900 };
   }
 
   flyTo(id) {                                          // bring a node to the center, closer when the camera is far
@@ -546,7 +589,8 @@ export class Graph3D {
       this.controls.target.lerpVectors(this.fly.target, this.fly.targetTo, e);
       if (t >= 1) this.fly = null;
     }
-    this.controls.autoRotate = !this.reduced && this.hovered === null && !this.press && now - this.lastTouch > 4000;
+    this.controls.autoRotate = !this.reduced && !this.flat && this.hovered === null && !this.press
+      && now - this.lastTouch > 4000;
     this.controls.update();
     this.uniforms.uTime.value = (now - this.started) / 1000;
     this.dust.rotation.y += 0.00012;

@@ -63,6 +63,9 @@ class Settings(BaseSettings):
                                       # and with 6144 the 9B model sits whole in a GPU of 8 GB (8192 spills to the CPU)
     slm_keep_alive: str = "15m"       # how long the model stays in memory after a question
     rag_reranker: str = "BAAI/bge-reranker-v2-m3-int8"   # multilingual cross-encoder on the CPU; empty = off
+    rag_engine: str = "slm"           # who answers by default: "slm" (the local model writes) or "jev" (TypeSafe's
+                                      # typed-decision model through OpenRouter: extracts sentences, about a second)
+    rag_jev_model: str = "typesafe/jev-1.13"
     rag_sources: int = 8              # sources in the context of an answer
     rag_context_chars: int = 9000     # ~2,500 tokens of context; lower it for a small model on a CPU
 

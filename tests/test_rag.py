@@ -351,3 +351,129 @@ def test_an_entity_shared_by_the_best_sources_is_linked(store):
     assert not any("nenhuma entidade" in n for n in pack.notes)
     alone = _retriever(store).retrieve("o que o Google abriu?", k=1)                 # one source: nothing is "shared"
     assert [e.how for e in alone.entities] == ["nome"]
+
+
+# --- the Jev engine (rag/jev.py): a typed-decision model judges the sources and picks the sentence that answers ---
+class FakeSystemOne:
+    """Answers each request by its passage: `yes` words make it relevant; the choice is the sentence with the word."""
+    def __init__(self, yes=("SepsisNet",), fail=(), status=200, cost=0.00002, none=(), second=False):
+        self.yes, self.fail, self.status, self.cost, self.calls = yes, fail, status, cost, []
+        self.none, self.second = none, second        # none: sentences the choice refuses; second: it leans to s2
+
+    def post(self, url, headers=None, json=None, timeout=None):
+        self.calls.append((url, headers, json))
+        passage = json["state"]["passage"]
+        if self.status != 200 or any(word in passage for word in self.fail):
+            return httpx.Response(self.status if self.status != 200 else 503, json={"error": {"message": "sem crédito"}},
+                                  request=httpx.Request("POST", url))
+        hit = next((word for word in self.yes if word in passage), None)
+        answers = {"answers": {"type": "noul", "noul": 0.93 if hit else 0.04}}
+        if "best" in json["questions"]:
+            options = json["questions"]["best"]["criteria"]
+            best = next((key for key, text in options.items() if hit and hit in text and key not in self.none), "none")
+            spread = {k: float(k == best) for k in options}
+            if best == "none" and hit and self.second:
+                spread = {**spread, "none": 0.7, "s2": 0.3}
+            answers["best"] = {"type": "choice", "choice": best, "probabilities": spread}
+        return httpx.Response(200, json={"model": "typesafe/jev-1.13-20260917", "answers": answers, "provider": "TypeSafe",
+                                         "usage": {"input_tokens": 400, "output_tokens": 20, "cost": self.cost}},
+                              request=httpx.Request("POST", url))
+
+
+def test_jev_asks_typed_questions_with_the_project_privacy(store):
+    from sotawhat.rag import jev as J
+
+    assert J.sentences("Primeira frase bem comprida aqui. Curta. Segunda frase também comprida, com 9,4 minutos.") == [
+        "Primeira frase bem comprida aqui.", "Segunda frase também comprida, com 9,4 minutos."]
+    api = FakeSystemOne()
+    jev = J.Jev("key", store=store, post=api.post)
+    judgments = jev.judge("O que prevê sepse?", [("SepsisNet prediz sepse", "O SepsisNet usa gradient boosting na UTI. "
+                                                  "Ele antecipa a sepse em seis horas, com AUROC 0,91."),
+                                                 ("Escriba ambiente", "Reduz a digitação no pronto-socorro.")])
+    assert [round(j.probability, 2) for j in judgments] == [0.93, 0.04]
+    assert judgments[0].quote == "O SepsisNet usa gradient boosting na UTI." and judgments[1].quote == ""
+    first = next(call for call in api.calls if "SepsisNet" in call[2]["state"]["passage"])
+    url, headers, body = first
+    assert url == "https://openrouter.ai/api/v1/systemone" and headers == {"Authorization": "Bearer key"}
+    assert body["model"] == "typesafe/jev-1.13" and body["provider"] == {"data_collection": "deny", "zdr": True}
+    assert body["state"]["question"] == "O que prevê sepse?" and body["questions"]["answers"]["type"] == "noul"
+    assert set(body["questions"]["best"]["criteria"]) == {"s1", "s2", "none"}
+    single = next(call[2] for call in api.calls if "Escriba" in call[2]["state"]["passage"])
+    assert "best" not in single["questions"]                        # one sentence: there is nothing to choose
+    row = store.conn.execute("SELECT * FROM llm_calls WHERE task = 'rag_jev'").fetchone()
+    assert (row["input_tokens"], row["status"], row["provider"]) == (800, "ok", "TypeSafe")
+    assert abs(row["cost_usd"] - 0.00004) < 1e-9
+    J.Jev("key", zdr=False, post=api.post).decide({"question": "q", "passage": "p"}, {"answers": J.ANSWERS})
+    assert api.calls[-1][2]["provider"] == {"data_collection": "deny"}
+
+
+def test_jev_failures_never_break_the_search(store):
+    from sotawhat.rag import jev as J
+
+    partial = J.Jev("key", store=store, post=FakeSystemOne(fail=("Escriba",)).post).judge(
+        "q", [("SepsisNet", "O SepsisNet prevê sepse com antecedência de seis horas."), ("Escriba", "Reduz a digitação no PS.")])
+    assert [round(j.probability, 2) for j in partial] == [0.93, 0.0]       # the passage whose request failed sinks
+    with pytest.raises(J.JevError, match="402: sem crédito"):
+        J.Jev("key", store=store, post=FakeSystemOne(status=402).post).judge("q", [("a", "texto qualquer aqui dentro")])
+    assert store.conn.execute("SELECT status FROM llm_calls ORDER BY id DESC LIMIT 1").fetchone()[0] == "error"
+    with pytest.raises(J.JevError, match="OPENROUTER_API_KEY"):
+        J.Jev("", post=FakeSystemOne().post).judge("q", [("a", "b")])
+    store.record_llm_call(task="triage", requested_model="m", cost_usd=30.0, status="ok")
+    with pytest.raises(J.JevError, match="orçamento mensal"):
+        J.Jev("key", store=store, budget_month=25.0, post=FakeSystemOne().post).judge("q", [("a", "b")])
+    assert J.Jev("key", post=FakeSystemOne().post).judge("q", []) == []
+    # the passage helps but no sentence answers the whole question: the most probable sentence, else the first one
+    piece = [("SepsisNet", "O SepsisNet prevê sepse com antecedência. Foi validado em três hospitais universitários.")]
+    leaning = J.Jev("key", post=FakeSystemOne(none=("s1", "s2"), second=True).post).judge("q", piece)[0]
+    assert leaning.quote == "Foi validado em três hospitais universitários."
+    plain = J.Jev("key", post=FakeSystemOne(none=("s1", "s2")).post).judge("q", piece)[0]
+    assert plain.quote == "O SepsisNet prevê sepse com antecedência." and plain.probability == 0.93
+
+    def down(url, **kwargs):
+        raise httpx.ConnectError("refused")
+    with pytest.raises(J.JevError, match="não respondeu"):
+        J.Jev("key", post=down).decide("s", {"answers": J.ANSWERS})
+    assert J.from_settings(Settings(_env_file=None)) is None
+    made = J.from_settings(Settings(_env_file=None, openrouter_api_key="k", openrouter_zdr=False, rag_jev_model="typesafe/jev-9"))
+    assert (made.model, made.zdr, made.data_collection, made.configured) == ("typesafe/jev-9", False, "deny", True)
+
+
+def test_the_jev_engine_extracts_the_answer_instead_of_writing_it(store):
+    from sotawhat.rag import jev as J
+    from sotawhat.rag.answer import extract
+
+    index.refresh(store, HashEmbedder())
+    retriever = _retriever(store, FakeReranker(favourite="deterioração"))       # the cross-encoder is not asked
+    api = FakeSystemOne(yes=("SepsisNet",))
+    answer = ask(retriever, None, "Quais modelos abordam sepse?", engine="jev", jev=J.Jev("key", store=store, post=api.post))
+    assert answer.engine == "jev" and answer.model == "typesafe/jev-1.13" and answer.error is None
+    assert answer.text == ("• SepsisNet prediz sepse na UTI: SepsisNet usa gradient boosting para prever sepse 6 horas antes, "
+                           "com AUROC 0,91. [1]")
+    assert answer.cited == [1] and answer.pack.sources[0].item_id == "pmid:1" and answer.pack.sources[0].relevance == 0.93
+    assert answer.pack.sources[1].quote == "" and retriever.reranker.calls == []
+    assert len(api.calls) == len(answer.pack.sources) and answer.as_dict()["engine"] == "jev"
+    assert "frases extraídas, nada foi redigido" in render(answer)
+
+    nothing = ask(retriever, None, "Quais modelos abordam sepse?", engine="jev",
+                  jev=J.Jev("key", post=FakeSystemOne(yes=()).post))
+    assert nothing.text == "Não encontrei isso no grafo." and nothing.cited == []
+    counted = ask(retriever, None, "Quantos itens falam de sepse?", engine="jev", jev=J.Jev("key", post=FakeSystemOne().post))
+    assert counted.text.startswith("Contagem: 5 itens aprovados em todo o grafo.") and "[1]" in counted.text
+    assert extract(Pack(question="q")) == (None, [])
+
+    broken = ask(retriever, None, "Quais modelos abordam sepse?", engine="jev",
+                 jev=J.Jev("key", post=FakeSystemOne(status=402).post))
+    assert broken.text is None and broken.model is None and "a Jev não julgou as fontes" in broken.error and broken.pack.sources
+    post, get, _ = _server((200, "O SepsisNet prevê sepse [1]."))             # no Jev configured: the local model answers
+    local = ask(retriever, SLM("http://x/v1", "m", post=post, get=get), "Quais modelos abordam sepse?", engine="jev", jev=None)
+    assert local.engine == "slm" and local.text.startswith("O SepsisNet")
+    assert any("Jev indisponível" in n for n in local.pack.notes)
+    assert parse_args(["ask", "pergunta", "--motor", "jev"]).motor == "jev" and parse_args(["ask", "pergunta"]).motor is None
+    assert parse_args(["rag", "eval", "--jev"]).jev and Settings(_env_file=None).rag_engine == "slm"
+
+
+def test_how_much_is_not_a_count(store):
+    index.refresh(store, HashEmbedder())
+    assert not any("Contagem" in f for f in _retriever(store).retrieve("Quanto tempo o SepsisNet antecipa a sepse?").facts)
+    facts = "\n".join(_retriever(store).retrieve("Quantos modelos há no grafo?").facts)
+    assert "• Contagem: 2 entidades do tipo modelo citadas em todo o grafo." in facts and "Mais citados" not in facts

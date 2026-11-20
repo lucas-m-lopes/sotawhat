@@ -4,13 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>sotawhat</title>
+<title>SOTA What</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="stylesheet" href="/static/style.css">
 <script type="importmap">{"imports": {"three": "/static/vendor/three/three.module.js"}}</script>
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="mark" aria-hidden="true"></span>sotawhat</div>
+  <div class="brand"><span class="mark" aria-hidden="true"></span>SOTA What</div>
   <nav class="views" aria-label="Seções">
     <a href="#grafo" data-view="graph">Grafo</a>
     <a href="#hoje" data-view="today">Hoje</a>
@@ -29,6 +30,10 @@
 </header>
 <main id="view-graph" class="layout">
   <aside id="filters" class="filters" aria-label="Filtros">
+    <section>
+      <h2>Visão</h2>
+      <div id="dims" class="segmented" role="radiogroup" aria-label="Visão do grafo"></div>
+    </section>
     <section>
       <h2>Período</h2>
       <div id="days" class="segmented" role="radiogroup" aria-label="Período"></div>
@@ -49,7 +54,7 @@
       <h2>Cores</h2>
       <div id="color-by" class="segmented" role="radiogroup" aria-label="Colorir por"></div>
     </section>
-    <p class="hint muted">Arraste para girar e role para aproximar. O cursor ilumina o que está perto dele: passe por um ponto para ver as conexões, clique para abrir a entidade e dê duplo clique para focar na vizinhança.</p>
+    <p class="hint muted">Em 3D, arraste para girar; em 2D, para mover. Role para aproximar. O cursor ilumina o que está perto dele: passe por um ponto para ver as conexões, clique para abrir a entidade e dê duplo clique para focar na vizinhança.</p>
   </aside>
   <section class="stage" aria-label="Grafo">
     <div id="graph" class="graph"></div>
@@ -118,6 +123,7 @@
   <form id="ask-form" class="ask-form">
     <textarea id="ask-input" rows="2" maxlength="500" placeholder="Ex.: o que saiu sobre agentes clínicos esta semana?" aria-label="Sua pergunta"></textarea>
     <div class="ask-bar">
+      <div id="ask-engine" class="segmented" role="radiogroup" aria-label="Quem responde"></div>
       <div id="ask-days" class="segmented" role="radiogroup" aria-label="Período"></div>
       <label class="check"><input id="ask-sources-only" type="checkbox"> só as fontes, sem o modelo local</label>
       <button id="ask-send" class="primary" type="submit">Perguntar</button>

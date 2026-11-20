@@ -8,12 +8,18 @@ A small model drifts, so what it writes is checked without another model:
 - an answer with no citation at all is flagged;
 - every number of the answer has to be written in the context (the question's own numbers aside).
 The flags go to the reader with the answer; the sources are always shown, so the answer can be checked.
-When no model answers, the sources and the facts of the graph are the answer."""
+When no model answers, the sources and the facts of the graph are the answer.
+
+A second engine, "jev" (rag/jev.py), writes nothing: a typed-decision model judges which sources answer the
+question and picks the sentence of each one that does, and the answer is those sentences, quoted. It trades the
+written synthesis for a reply in about a second."""
 import re
 import time
 from dataclasses import dataclass, field
 
 import httpx
+
+from sotawhat.rag.jev import RELEVANT
 
 PROMPT_VERSION = "rag_answer_v1"
 SYSTEM = """Você responde perguntas sobre o grafo de conhecimento pessoal do leitor: itens sobre IA na medicina e IA de fronteira que ele coletou, com as entidades e relações extraídas deles. O leitor é médico e empreendedor.
@@ -148,15 +154,59 @@ class Answer:
     cited: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
     error: str | None = None
+    engine: str = "slm"             # slm: the local model writes · jev: sentences extracted from the sources
 
     def as_dict(self) -> dict:
         return {"question": self.question, "answer": self.text, "model": self.model, "seconds": self.seconds,
-                "cited": self.cited, "warnings": self.warnings, "error": self.error, **self.pack.as_dict()}
+                "cited": self.cited, "warnings": self.warnings, "error": self.error, "engine": self.engine,
+                **self.pack.as_dict()}
 
 
-def ask(retriever, slm, question, days=None, k=8, budget=9000, max_tokens=600) -> Answer:
+ENGINES = ("slm", "jev")
+COMPUTED = ("• Contagem:", "• Mais citados", "• Em alta")     # graph facts that are an answer by themselves
+
+
+def extract(pack, limit=4) -> tuple:
+    """The answer of the Jev engine: the facts the graph computed for the question (counts, rankings, trends) and
+    the sentence each relevant source has for it. -> (text or None, cited source numbers)."""
+    lines = [fact.replace("• ", "", 1) for fact in pack.facts if fact.startswith(COMPUTED)]
+    cited = []
+    for source in pack.sources:
+        if len(cited) >= limit:
+            break
+        if source.relevance is not None and source.relevance >= RELEVANT and source.quote:      # RELEVANT: rag/jev.py
+            title = source.title if len(source.title) <= 90 else source.title[:89] + "…"
+            lines.append(f"• {title}: {source.quote} [{source.n}]")      # the title names what the sentence is about
+            cited.append(source.n)
+    return ("\n".join(lines) if lines else None), cited
+
+
+def ask_jev(retriever, jev, question, days=None, k=8) -> Answer:
+    started = time.perf_counter()
+    pack = retriever.retrieve(question, days=days, k=k, judge=jev)
+    answer = Answer(question=pack.question, text=None, pack=pack, engine="jev", model=getattr(jev, "model", None))
+    failed = next((note for note in pack.notes if note.startswith("reranker indisponível")), None)
+    if failed:
+        pack.notes.remove(failed)
+        answer.error = "a Jev não julgou as fontes (" + failed.split("(", 1)[1].rsplit(")", 1)[0] + "): seguem as da busca"
+        answer.model = None
+        return answer
+    answer.text, answer.cited = extract(pack)
+    if answer.text is None:
+        answer.text = "Não encontrei isso no grafo."
+    answer.seconds = round(pack.timings.get("reordenar", 0.0), 2)
+    pack.timings["total"] = round(time.perf_counter() - started, 3)
+    return answer
+
+
+def ask(retriever, slm, question, days=None, k=8, budget=9000, max_tokens=600, engine="slm", jev=None) -> Answer:
+    """engine "jev": no text is written, the answer is extracted (see `ask_jev`); without a Jev it falls back to the SLM."""
+    if engine == "jev" and jev is not None and jev.configured:
+        return ask_jev(retriever, jev, question, days=days, k=k)
     pack = retriever.retrieve(question, days=days, k=k)
     answer = Answer(question=pack.question, text=None, pack=pack)
+    if engine == "jev":
+        pack.notes.append("Jev indisponível (sem OPENROUTER_API_KEY): resposta pelo modelo local")
     if not pack.sources and not pack.facts:
         answer.text = "Não encontrei isso no grafo."
         return answer

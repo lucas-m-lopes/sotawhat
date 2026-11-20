@@ -63,8 +63,8 @@ Phase P3 adds the knowledge graph and its own interface (no Obsidian):
   `config/aliases.yaml`, a cheap LLM judge for look-alike names (never across version numbers) and an
   audit trail of merges. The triage categories become graph nodes too. `sotawhat graph extract
   [--limit N]` does the same on demand, e.g. for the items approved before P3.
-- `sotawhat serve` opens the interface at http://127.0.0.1:8765: the graph (in 3D since 2026-11-20: three.js + graphology,
-  shipped in the package), filters by period, type and mentions, search (accents optional; an exact
+- `sotawhat serve` opens the interface at http://127.0.0.1:8765: the graph (in 3D since 2026-11-20, with a 3D | 2D
+  switch that flattens the same scene onto a plane: three.js + graphology, shipped in the package), filters by period, type and mentions, search (accents optional; an exact
   name or alias such as "EHR" comes first, the triage categories after the entities), entity and item
   panels, and 👍 👎 🧪 votes that count like the Telegram ones. It reads SQLite, so it works with Docker
   closed. `scripts\schedule_daily.ps1 -Web` starts it at every logon; the task keeps the Python code it
@@ -337,10 +337,16 @@ Questions to the graph, answered by a small model on your own machine (SDD §6.1
   `qwen3.5:9b-q4_K_M`, fits a GPU of 8 GB. What the model writes is checked without another model: a citation of a
   source that is not there, an answer with no citation and a number that is not in the sources become warnings next
   to the answer. With no model running, the sources and the graph facts are the answer.
+- A second engine answers without writing: `sotawhat ask "..." --motor jev` (the "Jev · extrai" switch of the Perguntar
+  tab, or `RAG_ENGINE=jev`). Jev, TypeSafe's typed-decision model, reached through OpenRouter with the same ZDR setting,
+  judges each of the ten best candidates in parallel (does this passage help to answer the question?) and picks the
+  sentence of each one that does. The answer is those sentences, quoted with their source numbers. It takes about 2
+  seconds instead of about 12, costs about US$ 0.0004 a question, and on the 40 evaluation questions it put the right
+  item first in 97 to 100% (the local cross-encoder: 95%). What it gives up is the written synthesis.
 - `sotawhat rag index` refreshes the passages and their vectors (the daily run does it after the graph stage; the first
   build embeds everything and takes minutes), `sotawhat rag status` shows what is indexed and whether the model answers,
-  and `sotawhat rag eval [--gerar] [--n 40]` measures how often the retrieval finds the item a question is about, as a
-  whole and per ranking.
+  and `sotawhat rag eval [--gerar] [--n 40] [--jev]` measures how often the retrieval finds the item a question is
+  about, as a whole and per ranking (`--jev` adds the Jev judge; it costs cents).
 - On a VPS: clone the repository there, run `docker compose -f compose.vps.yaml up -d --build` and
   `docker compose -f compose.vps.yaml exec ollama ollama pull qwen3.5:4b-q4_K_M`, then send the store from your PC with
   `scripts\vps_sync.ps1 -Vps user@host`. The interface opens on the VPS's 127.0.0.1 only (use

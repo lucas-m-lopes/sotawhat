@@ -84,6 +84,10 @@ def test_packaged_page_loads_only_local_files():
     scripts = re.findall(r'<script src="([^"]+)"', page)
     assert scripts == ["/static/vendor/graphology.umd.min.js", "/static/vendor/graphology-library.min.js", "/static/app.js"]
     assert '<script type="importmap">{"imports": {"three": "/static/vendor/three/three.module.js"}}</script>' in page
+    assert "<title>SOTA What</title>" in page and '<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">' in page
+    icon = (STATIC / "favicon.svg").read_text(encoding="utf-8")            # the tab icon: drawn here, nothing fetched
+    assert icon.startswith("<svg ") and "<script" not in icon and "href" not in icon
+    assert 'id="dims"' in page and 'id="ask-engine"' in page                # the 3D | 2D switch and who answers
     assert '<link rel="stylesheet" href="/static/style.css">' in page
     assert not re.search(r'(src|href)="(https?:)?//', page)                 # no CDN, nothing external
     licenses = (STATIC / "vendor" / "LICENSES.md").read_text(encoding="utf-8")
@@ -95,6 +99,7 @@ def test_packaged_page_loads_only_local_files():
     app_js = (STATIC / "app.js").read_text(encoding="utf-8")
     assert "fetch(" in app_js and "innerHTML" not in app_js                 # data goes in with textContent
     assert 'import("/static/graph3d.js")' in app_js                         # three.js only loads with the graph
+    assert 'const TITLE = "SOTA What";' in app_js and "scene3d.setFlat(value === 2)" in app_js
     graph3d = (STATIC / "graph3d.js").read_text(encoding="utf-8")           # the 3D graph: local modules only
     assert re.findall(r'^import .* from "([^"]+)";$', graph3d, re.M) == ["three", "./vendor/three/OrbitControls.js"]
     assert "innerHTML" not in graph3d and not re.search(r"https?://", graph3d)

@@ -2,7 +2,11 @@
 
 **Tipo:** Software Design Document (SDD) — serve também como *spec* para desenvolvimento orientado a especificação (spec-driven).
 **Data:** 2026-11-07
-**Status:** v2.7 (2026-11-20), com todas as fases (P0–P6) executadas, as newsletters por RSS com texto completo, as aulas no motor HyperFrames, o radar de ferramentas, o glossário dos digests, as perguntas ao grafo com um SLM local e a interface no tema escuro com o grafo em 3D:
+**Status:** v2.8 (2026-11-20), com todas as fases (P0–P6) executadas, as newsletters por RSS com texto completo, as aulas no motor HyperFrames, o radar de ferramentas, o glossário dos digests, as perguntas ao grafo com um SLM local e a interface no tema escuro com o grafo em 3D:
+- v2.8: três pedidos de 2026-11-20, depois de você ver a interface nova.
+  - **Visão 3D | 2D** no grafo (seção "Visão" dos filtros, lembrada pelo navegador). O 2D é a mesma cena: a simulação aperta todos os nós contra um plano, a câmera passa a olhar de frente e o arrasto move em vez de girar. A troca é animada, sem recarregar; voltando ao 3D, cada nó ganha sempre o mesmo empurrão para fora do plano e as forças refazem o volume.
+  - **Aba do navegador:** o nome é "SOTA What" em qualquer tela, com um ícone próprio (`favicon.svg`: a marca do cabeçalho, uma entidade acesa ligada a duas). Não havia arquivo de logo no projeto; se houver um, é só trocar esse arquivo.
+  - **Motor Jev nas perguntas** (§6.15): opção no lugar do Qwen local, para cortar a latência. A Jev (TypeSafe, pelo OpenRouter) não redige; ela julga as fontes e extrai as frases que respondem;
 - v2.7: interface "ultratecnológica" e grafo em 3D, pedidos em 2026-11-20 a partir de um vídeo de referência (reel da textura.eu: sites escuros com um objeto 3D feito de pontos de luz e o cursor como fonte de luz).
   - **Tema** (`style.css`): só escuro. Fundo quase preto com gradientes azul, violeta e verde-água, uma grade tênue e um brilho que segue o cursor; painéis de vidro com fios finos; títulos grandes e leves; rótulos pequenos em fonte mono, maiúsculas e espaçadas; a luz vem dos dados (ciano → azul → violeta). Fontes do sistema, nada remoto. O desfoque de fundo fica só no cabeçalho e nos dois painéis do grafo: num cartão que se repete cem vezes ele custaria a cada quadro de rolagem.
   - **Grafo 3D** (`graph3d.js`, three.js r186, que já estava no pacote por causa das aulas): cada entidade é um ponto de luz com halo, do tamanho do número de itens que a citam, e cada conexão é uma linha fina aditiva. O layout é uma simulação de forças em três dimensões (molas nas arestas, repulsão entre todos os pares, atração ao centro) que se acomoda na tela em cerca de dois segundos. Nas relações explícitas correm partículas do sujeito para o objeto ("MedGemma → desenvolvido por → Google"). O cursor ilumina os pontos e as linhas próximos; passar por um ponto apaga o resto e acende a vizinhança; clicar abre a entidade e traz o ponto para o centro; duplo clique foca na vizinhança. Arrastar gira, a roda aproxima, e a cena gira devagar quando parada. Os nomes são elementos da página posicionados a cada quadro, sem sobreposição. Com "reduzir movimento" ligado no sistema, nada gira nem corre.
@@ -700,6 +704,29 @@ Medido no golden set (60 itens, DeepSeek V4.1 Flash, `sotawhat eval models --pro
 | `gemma4:e4b-it-qat` | 6,1 GB | 8,4 | 5/5 | numa resposta transformou contagens em citações que não existem (o aviso pegou) |
 
   Os três recusaram a pergunta fora do assunto. As médias são de uma execução com temperatura 0,2 e mudam alguns décimos de uma para outra. Com `SLM_CONTEXT=6144` o 9B cabe inteiro na GPU (5,7 GB); com 8192 ele transborda para a CPU e levou 9,4 s por resposta.
+
+**Motor Jev (2026-11-20, `rag/jev.py`).** Pedido para testar a Jev da TypeSafe pelo OpenRouter no lugar do Qwen local, por causa da latência. A Jev é um modelo de decisão tipada ("System One"): recebe um estado e perguntas tipadas e devolve probabilidades; não gera texto. Então neste motor nada é redigido:
+
+1. a recuperação é a mesma, sem o cross-encoder;
+2. para cada um dos 10 melhores candidatos, um pedido (`POST /api/v1/systemone`, modelo fixado `typesafe/jev-1.13`) faz duas perguntas sobre o cartão do item: um sim/não, "o trecho ajuda a responder: traz a resposta ou parte dela?", e uma escolha entre as frases do trecho. Os 10 pedidos vão em paralelo;
+3. a probabilidade do sim/não reordena as fontes (70% dela, 30% da fusão), e a resposta são as frases escolhidas das fontes com probabilidade ≥ 0,6, cada uma com o título e o número da fonte. Contagens, rankings e tendências calculados do grafo entram antes, quando a pergunta os pede. Sem nenhuma fonte acima do limiar: "Não encontrei isso no grafo.".
+
+- **Onde se escolhe:** `RAG_ENGINE=slm|jev` (padrão `slm`), `sotawhat ask --motor jev`, e o seletor "modelo local · redige | Jev · extrai" da aba Perguntar, lembrado pelo navegador.
+- **Privacidade e custo:** as chamadas levam o ZDR e o `data_collection=deny` do projeto (a Jev tem endpoint ZDR no OpenRouter; conferido com uma chamada real). Só saem a pergunta e os cartões de itens aprovados; fatos do grafo e ideias não. Cada pergunta vira uma linha em `llm_calls` (tarefa `rag_jev`): em 94 perguntas, US$ 0,00036 em média (cerca de 8.500 tokens de entrada, saída grátis). Respeita o teto mensal de LLM.
+- **Medido em 2026-11-20:**
+
+| | Qwen 3.5 9B local | Jev |
+|---|---|---|
+| Item certo em 1º (40 perguntas) | 95% (cross-encoder) | 97% e 100% (duas redações do sim/não) |
+| Reordenar as fontes | 2,6 a 3,0 s na CPU | 0,6 a 2,0 s (10 pedidos em paralelo) |
+| Resposta | 6 a 10 s; ~30 s quando o modelo saiu da GPU e recarrega | nenhuma etapa a mais |
+| Total pela interface já aquecida (4 perguntas) | 11,8 s em média (9,2 a 13,3) | 2,0 s em média (1,3 a 2,7) |
+| O que entrega | texto redigido com citações | frases das fontes, citadas |
+| Custo | nenhum | ~US$ 0,0004 por pergunta |
+
+- **Por que "ou parte dela":** perguntada se o trecho traz a resposta inteira, a Jev deu 0,32 e 0,38 às fontes de "quais modelos abordam sepse e quem os desenvolveu" e a pergunta ficava sem resposta; com "ou parte dela", 0,73, e a pergunta fora do assunto continuou em 0,01. O limiar subiu de 0,5 para 0,6 para não deixar entrar fonte que só divide o tema. Quando a escolha de frase devolve "nenhuma" numa fonte que ajuda, vale a frase mais provável.
+- **Limites:** não há síntese entre fontes nem resposta a "por quê"; as frases vêm do resumo em português do item, não do texto original; a Jev declara fraqueza em números, datas e negação, então a frase citada deve ser lida, não só a ordem. Falhou a Jev (crédito, rede): a busca devolve as fontes na ordem da fusão, com o erro escrito.
+- **A latência do motor local:** o modelo sai da GPU depois de `SLM_KEEP_ALIVE` (15 min) sem perguntas, e a primeira pergunta depois disso espera a recarga (~20 s). Aumentar esse tempo mantém 5,7 GB da GPU ocupados.
 
 **VPS.** `compose.vps.yaml` sobe o Ollama e a interface (imagem do `Dockerfile`, sem `.env` e sem chaves) sobre uma cópia do banco; `scripts/vps_sync.ps1` gera a cópia com o `sotawhat backup`, envia por `scp` e troca o arquivo. A interface abre só no 127.0.0.1 da VPS (túnel SSH), e o Ollama só na rede interna. A VPS só lê: votos dados lá somem na sincronização seguinte. O que foi testado em 2026-11-20, neste computador: a imagem (896 MB) e o serviço `sotawhat` do compose sobre uma cópia do banco, respondendo pelo `exec sotawhat ask` e pela API, com o Ollama local e o `qwen3.5:4b`. O que não foi testado: o serviço `ollama` em CPU numa VPS de verdade e o `scripts/vps_sync.ps1` (precisa de uma VPS).
 

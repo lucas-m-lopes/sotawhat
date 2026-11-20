@@ -50,12 +50,12 @@ def _slm(text="O SepsisNet prevê sepse com AUROC 0,91 [1].", status=200):
     return SLM("http://x/v1", "m", post=post, get=get)
 
 
-def _client(db, tmp_path, slm=None, with_rag=True):
+def _client(db, tmp_path, slm=None, with_rag=True, jev=None):
     static = tmp_path / "static"
     static.mkdir(exist_ok=True)
     (static / "index.html").write_text("<!doctype html><title>sotawhat</title>", encoding="utf-8")
     knobs = Settings(_env_file=None)
-    rag = (lambda store: (Retriever(store, HashEmbedder()), slm or _slm(), knobs)) if with_rag else None
+    rag = (lambda store: (Retriever(store, HashEmbedder()), slm or _slm(), jev, knobs)) if with_rag else None
     return TestClient(create_app(db, static_dir=static, rag=rag), base_url=BASE)
 
 
@@ -68,7 +68,9 @@ def test_ask_from_the_interface(db, tmp_path):
         body = answer.json()
         assert body["answer"].startswith("O SepsisNet") and body["cited"] == [1] and body["warnings"] == []
         assert body["sources"][0]["item_id"] == "pmid:1" and body["entities"][0]["name"] == "SepsisNet"
-        assert c.get("/api/rag/status").json()["slm"] == {"ok": True, "detail": "m em http://x/v1"}
+        status = c.get("/api/rag/status").json()
+        assert status["slm"] == {"ok": True, "detail": "m em http://x/v1"} and status["engine"] == "slm"
+        assert status["jev"] == {"ok": False, "model": None}
         only = c.post("/api/ask", json={"question": "O que o SepsisNet faz?", "sources_only": True, "k": 1}).json()
         assert only["answer"] is None and only["error"] is None and len(only["sources"]) == 1
         assert c.post("/api/ask", json={"question": "oi"}).status_code == 422

@@ -20,8 +20,10 @@ SYSTEM = """Você responde perguntas sobre o grafo de conhecimento pessoal do le
 
 Regras:
 - Use somente o CONTEXTO abaixo. Não use conhecimento próprio para fatos, números, nomes ou datas.
-- Depois de cada afirmação tirada de uma fonte, cite o número dela entre colchetes, como [1] ou [2][5]. Os "Fatos do grafo" não têm número: use-os dizendo "segundo o grafo".
+- Depois de cada afirmação tirada de uma fonte, cite o número dela entre colchetes, como [1] ou [2][5]. Só existem os números que aparecem em "Fontes".
+- Os "Fatos do grafo" não têm número de fonte: use-os dizendo "segundo o grafo". Os números entre parênteses neles são contagens de itens, nunca citações.
 - Se o CONTEXTO não responde à pergunta, diga "Não encontrei isso no grafo." e, em uma frase, o que ele traz de mais próximo.
+- Responda só o que foi perguntado: não liste fontes que não respondem à pergunta nem repita a resposta num resumo final.
 - Português do Brasil, com os termos técnicos em inglês. Direto ao ponto: no máximo 180 palavras; use lista quando forem vários itens.
 - Nunca invente números, nomes, links ou fontes. Se as fontes divergem, diga."""
 _CITE = re.compile(r"\[(\d{1,2})\]")
@@ -105,8 +107,10 @@ def from_settings(settings) -> SLM:
 
 
 def messages_for(pack, budget=9000) -> list:
+    caution = ("\n\n(Aviso do sistema de busca: as fontes acima parecem pouco ligadas à pergunta. Se elas não a "
+               "respondem, diga que não encontrou.)" if pack.weak else "")
     return [{"role": "system", "content": SYSTEM},
-            {"role": "user", "content": f"CONTEXTO\n{pack.context(budget)}\n\nPERGUNTA: {pack.question}"}]
+            {"role": "user", "content": f"CONTEXTO\n{pack.context(budget)}{caution}\n\nPERGUNTA: {pack.question}"}]
 
 
 def _numbers(text) -> set:
@@ -126,7 +130,8 @@ def check(text, pack, context) -> dict:
     if [n for n in cited if n not in known]:
         warnings.append("cita fonte que não existe: " + ", ".join(f"[{n}]" for n in cited if n not in known))
     refused = "não encontrei" in text.lower()
-    if not cited and not refused and pack.sources:
+    from_graph = bool(pack.facts) and "grafo" in text.lower()        # an answer made of the graph's own numbers
+    if not cited and not refused and not from_graph and pack.sources:
         warnings.append("resposta sem citação: confira nas fontes")
     if loose:
         warnings.append("números que não estão nas fontes: " + ", ".join(loose[:6]))

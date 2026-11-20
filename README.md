@@ -310,6 +310,46 @@ outside the triage, the digest and the graph.
 - The official MCP registry is not crawled (more than 6,000 servers change every two weeks). OSS Insight's trend
   ranking has been unavailable since 2026-03-01.
 
+The digests explain themselves, since 2026-11-20 (SDD §6.14, `config/digest.yaml`):
+
+- `didactic: true` writes the summaries for a physician who is not an ML specialist (prompt `triage_v4`: up to 75 words,
+  a plain first sentence, a short gloss in parentheses after a term beyond the basics). On the golden set its decisions
+  differ from the old prompt's as much as two runs of the same prompt differ (`sotawhat eval models --prompt triage_v3`).
+- `glossary: true` ends each digest (e-mail, Telegram, the day's file) with "Glossário do dia": the ML/AI terms of its
+  texts, one sentence each, without medical terms or product names. A term is defined once by the LLM (task `glossary`,
+  one call a digest) and found again with no LLM. A digest prints up to 8 terms, the new ones first; a term leaves the
+  digests after 3 of them or when you mark it "já sei" in the Glossário tab of the interface, which lists them all.
+- `sotawhat glossary list` prints the glossary; `sotawhat glossary backfill [--dias 14]` defines the terms of the digests
+  already sent. The MCP server has a `glossary` tool.
+
+Questions to the graph, answered by a small model on your own machine (SDD §6.15):
+
+- `sotawhat ask "o que saiu esta semana sobre agentes clínicos?"` (also the Perguntar tab of the interface and the
+  `retrieve` tool of the MCP server). Options: `--dias N`, `--k N`, `--so-fontes` (no model), `--sem-rerank`,
+  `--detalhes`, `--json`.
+- The retrieval needs no LLM and reads only the SQLite store: a time window and words such as "quantos" or "mais
+  citados" read from the question, the entities it names or means, six rankings of the approved items (dense, BM25,
+  personalized PageRank over the entity graph, mentions, typed relations, triage categories) fused by reciprocal rank,
+  and a multilingual cross-encoder on the best ten. The model gets the facts computed from the graph plus up to 8
+  numbered sources.
+- The answer comes from an OpenAI-compatible endpoint (`SLM_BASE_URL`, `SLM_MODEL`). `sotawhat rag up` starts Ollama in
+  Docker (service `ollama` of `compose.yaml`, GPU, port on 127.0.0.1 only) and pulls the model; the default,
+  `qwen3.5:9b-q4_K_M`, fits a GPU of 8 GB. What the model writes is checked without another model: a citation of a
+  source that is not there, an answer with no citation and a number that is not in the sources become warnings next
+  to the answer. With no model running, the sources and the graph facts are the answer.
+- `sotawhat rag index` refreshes the passages and their vectors (the daily run does it after the graph stage; the first
+  build embeds everything and takes minutes), `sotawhat rag status` shows what is indexed and whether the model answers,
+  and `sotawhat rag eval [--gerar] [--n 40]` measures how often the retrieval finds the item a question is about, as a
+  whole and per ranking.
+- On a VPS: clone the repository there, run `docker compose -f compose.vps.yaml up -d --build` and
+  `docker compose -f compose.vps.yaml exec ollama ollama pull qwen3.5:4b-q4_K_M`, then send the store from your PC with
+  `scripts\vps_sync.ps1 -Vps user@host`. The interface opens on the VPS's 127.0.0.1 only (use
+  `ssh -L 8765:127.0.0.1:8765 user@host`), no API key goes there, and the VPS only reads: a vote given on its copy is
+  lost at the next sync.
+
+Semantic Scholar now reads `SEMANTIC_SCHOLAR_API_KEY` (free, optional) and asks for the most cited papers of the last
+60 days in bulk, retrying a 429; before 2026-11-20 it asked the relevance search without a key and failed every day.
+
 The Instagram import (`sotawhat instagram import following.json --yes`) fetches the profiles in batches of 40 (about
 10 s each on Apify) and keeps them in `data/state/instagram_profiles.json`. An import that stops resumes without paying
 twice, and `--recuperar RUN_ID` adds what an aborted Apify run had fetched. `config/instagram_accounts.yaml` lists the

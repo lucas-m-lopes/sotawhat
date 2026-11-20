@@ -2,7 +2,12 @@
 
 **Tipo:** Software Design Document (SDD) — serve também como *spec* para desenvolvimento orientado a especificação (spec-driven).
 **Data:** 2026-11-07
-**Status:** v2.5 (2026-11-10), com todas as fases (P0–P6) executadas, as newsletters por RSS com texto completo, as aulas no motor HyperFrames e o radar de ferramentas:
+**Status:** v2.6 (2026-11-20), com todas as fases (P0–P6) executadas, as newsletters por RSS com texto completo, as aulas no motor HyperFrames, o radar de ferramentas, o glossário dos digests e as perguntas ao grafo com um SLM local:
+- v2.6: pedidos de 2026-11-20.
+  - **Semantic Scholar** voltou a responder (§7.8): a busca por relevância sem chave dava 429 havia 14 runs, e a chave do `.env` nunca era lida. Agora a fonte usa a busca em lote dos artigos mais citados dos últimos 60 dias, manda a chave quando ela existe e tenta de novo depois de um 429.
+  - **Texto didático e glossário** (§6.14): os resumos passam a ser escritos para um médico que não é especialista em ML (`triage_v4`), e cada digest termina com o "Glossário do dia", os termos de ML/IA dos seus textos em uma frase. A interface ganha a aba Glossário. Tudo liga e desliga em `config/digest.yaml`.
+  - **Perguntas ao grafo** (§6.15): `sotawhat ask`, a aba Perguntar e a ferramenta `retrieve` do MCP. A recuperação é híbrida (densa, BM25, PageRank personalizado no grafo, menções, relações e categorias, com fusão e reranker) e roda inteira no SQLite; a resposta vem de um SLM local (Qwen 3.5 9B no Ollama em Docker) e é conferida sem outro modelo. O mesmo roda numa VPS sobre uma cópia do banco (`compose.vps.yaml`).
+  - O banco vai para o schema 7 (`glossary`, `glossary_items`, `rag_passages`, `rag_fts`);
 - v2.5: radar de ferramentas, pedido em 2026-11-10: skills, plugins, MCPs e afins em alta no GitHub, fora da medicina.
   - Frentes: skills/plugins/MCPs, arquitetura de agentes e evals, economia de tokens e contexto, aulas (vídeo, animação e voz).
   - Todo dia, no fim do `run daily`, o `sotawhat radar scan` faz a descoberta (buscas do GitHub por frente e repositórios no Hacker News) e guarda o retrato das estrelas. Todo domingo, o `run weekly` mede a semana, pede o veredito a um juiz barato (tarefa `radar`) e entrega a seção "Ferramentas em alta": no relatório, no Telegram (🧪 testar · 👍 · 👎 · 🗄️ depois) e na aba Ferramentas da interface.
@@ -602,6 +607,103 @@ Ver §8.
 - Neo4j: portas publicadas só em `127.0.0.1`; senha em `.env` (`NEO4J_PASSWORD`), nunca no `compose.yaml`.
 - LGPD: dados pessoais no grafo limitam-se a nomes públicos de autores/criadores; há comando `sotawhat forget --entity <nome>`.
 
+### 6.14 Texto didático e glossário dos digests (2026-11-20)
+
+O leitor é médico, não engenheiro de ML. Duas mudanças na escrita do digest, cada uma com a sua chave em `config/digest.yaml`:
+
+**Texto didático (`didactic: true`).** O prompt `triage_v4` é o `triage_v3` com outra regra de escrita: até 75 palavras em vez de 60, a primeira frase diz em palavras simples o que o item é, e um termo além do básico ganha uma explicação de 2 a 6 palavras entre parênteses ("VLA (visão-linguagem-ação que comandam robôs)", "Grad-CAM (mapa que mostra onde a rede olhou)"), no máximo três por resumo. As notas e as regras de decisão são as mesmas.
+
+Medido no golden set (60 itens, DeepSeek V4.1 Flash, `sotawhat eval models --prompt`):
+
+| | F1 de "incluir" | Acurácia | JSON válido de 1ª | Palavras do resumo |
+|---|---|---|---|---|
+| `triage_v3` | 0,87 | 75% | 93% | 62 |
+| `triage_v4`, 1ª execução | 0,85 | 73% | 88% | 77 |
+| `triage_v4`, 2ª execução | 0,84 | 72% | 87% | 77 |
+
+- Duas execuções do mesmo prompt divergem em 8 das 60 decisões; o v3 e o v4 divergem em 7 e em 9. O estilo não muda o que entra no digest além do ruído que a triagem já tem.
+- Custo: ~15 palavras a mais por resumo e ~10% a mais de raciocínio, cerca de US$ 0,35 por mês sobre os ≈ US$ 2,60 da triagem.
+- As respostas vazias de 1ª (o modelo gasta o teto de tokens raciocinando) passaram de 6% para 10–13% no golden set; viram uma segunda chamada. Subir o teto de 1.500 para 2.000 tokens não reduziu isso, então ele ficou em 1.500.
+
+**Glossário (`glossary: true`).** Módulo `sotawhat/glossary.py`, tabelas `glossary` e `glossary_items`.
+
+1. Depois de montar o digest, os termos que o glossário já tem são procurados nos textos do dia (título, resumo e "por que importa" das duas seções principais) sem LLM: sem diferenciar maiúsculas, acentos, hífen e plural; uma sigla precisa estar em maiúsculas ("MAS" não é "mas").
+2. Uma chamada (tarefa `glossary`, DeepSeek V4.1 Flash, raciocínio baixo) recebe os textos e a lista do que já existe e devolve até `glossary_new` termos novos de ML/IA, cada um com a definição em uma frase de até 28 palavras. Ficam de fora termos médicos, nomes de modelos, produtos, empresas e datasets, e todo termo que o LLM devolver sem ele estar escrito nos textos.
+3. O digest imprime até `glossary_limit` termos (8): os novos primeiro, depois os menos vistos. Um termo sai dos digests depois de `glossary_repeats` envios (3) ou quando você marca "já sei" na aba; ele continua na aba.
+4. Um termo cujo nome é uma técnica do grafo aponta para ela (41 dos 120 primeiros).
+
+- Onde aparece: fim do e-mail, última mensagem do Telegram, arquivo do dia e aba **Glossário** da interface (filtro, letras, "já sei", os itens em que o termo apareceu e o atalho para a técnica no grafo). Também `sotawhat glossary list` e a ferramenta `glossary` do MCP.
+- `sotawhat glossary backfill --dias 14` definiu os termos dos 12 digests já enviados: 120 termos por US$ 0,033. Daqui em diante é uma chamada por digest, ≈ US$ 0,003 no começo e menos a cada dia, porque o termo é definido uma vez: abaixo de US$ 0,10 por mês.
+- O LLM não responde ou o orçamento acabou: o digest sai com os termos já conhecidos, ou sem a seção.
+
+### 6.15 Perguntas ao grafo: recuperação híbrida e SLM local (2026-11-20)
+
+`sotawhat ask "pergunta"`, a aba **Perguntar** da interface (`POST /api/ask`) e a ferramenta `retrieve` do MCP. Pacote `sotawhat/rag/`.
+
+**Por que este desenho.** Um modelo pequeno só responde bem a partir de um contexto curto e preciso, e erra em contas e em saltos entre documentos. Por isso todo o trabalho que dá para fazer sem LLM fica na recuperação: achar as entidades, percorrer o grafo, contar, ordenar e montar um contexto de ~2.500 tokens com fontes numeradas. O SLM só redige, e o que ele redige é conferido.
+
+**Índice** (`rag/index.py`, tabela `rag_passages` + FTS5 `rag_fts`, tudo dentro do `insight.db`, de modo que copiar o banco é copiar o índice):
+
+| Passagem | Conteúdo | Hoje |
+|---|---|---|
+| `card` | uma por item aprovado: título, resumo e "por que importa" em pt-BR, números, entidades e categorias | 695 |
+| `text` | o texto do item (quase sempre em inglês) em trechos de ~1.100 caracteres, cortados em fim de frase | 1.499 |
+| `entity` | nome, aliases e tipo de cada entidade | 3.569 |
+| `community` | rótulo e resumo das comunidades do último run semanal | 103 |
+| `idea` | finalistas e ideias votadas do ledger | 17 |
+| `glossary` | os termos do glossário | 120 |
+
+- Vetores: EmbeddingGemma-300m com os prompts de busca do modelo ("task: search result | query:" na pergunta, "title: … | text: …" na passagem), diferentes do prefixo de agrupamento que a triagem usa.
+- `refresh` compara o que o banco tem com o que está indexado: passagem igual mantém o vetor, alterada é refeita, sem origem é apagada. Roda no fim do `run daily` (segundos para os itens de um dia) e em `sotawhat rag index`. A primeira carga levou 17 min com a CPU dividida.
+
+**Recuperação** (`rag/retrieve.py`), nenhum passo usa LLM:
+
+1. **A pergunta.** Janela de tempo escrita em português ("esta semana", "últimos 30 dias") vira filtro. "Quantos", "mais citados", "em alta", "panorama" e "ideias" pedem fatos calculados (passo 5).
+2. **Entidades.** Nomes e aliases escritos na pergunta, o mais longo primeiro (também as categorias da triagem: "radiologia" acha "radiologia/imagem"). E a entidade de nome mais próximo em sentido, para a pergunta em português que não usa o nome em inglês ("sepse" acha "sepsis early detection"). Limiar medido: a entidade certa veio em 1º com cosseno de 0,36 a 0,56; uma pergunta fora do assunto não passou de 0,24.
+3. **Seis ordenações** dos itens aprovados:
+   - *densa*: cosseno entre a pergunta e as passagens `card` e `text`;
+   - *BM25* (FTS5): as palavras da pergunta mais os nomes das entidades reconhecidas, a ponte lexical do português para o texto em inglês;
+   - *grafo*: PageRank personalizado a partir das entidades reconhecidas, sobre o grafo de coocorrência e relações; cada item recebe a massa das entidades que cita, pesada pelo papel. É o canal de vários saltos;
+   - *menção*: itens que citam uma entidade nomeada, os que são sobre ela primeiro;
+   - *relação*: itens que afirmam uma relação tipada da entidade ("X aborda sepse", "X desenvolvido por Google");
+   - *categoria*: itens que a triagem marcou com a categoria reconhecida.
+4. **Fusão e reranker.** Reciprocal rank fusion com pesos (densa 2,0 · BM25 1,0 · relação 0,7 · menção 0,6 · grafo 0,4 · categoria 0,2); os 10 melhores passam por um cross-encoder multilíngue (bge-reranker-v2-m3 em int8, ONNX na CPU), e a ordem final é 70% dele e 30% da fusão.
+5. **Fatos do grafo**, calculados em SQL e escritos em frases: o cartão de cada entidade (em quantos itens, desde quando, relações nos dois sentidos, vizinhos, números citados), a definição do glossário, contagens, os mais citados de um tipo no período, as tendências e as comunidades mais próximas da pergunta.
+6. **Contexto.** Fatos + até 8 fontes numeradas (resumo, "por que importa" e o trecho do original mais próximo da pergunta) em 9.000 caracteres. Quando nem uma entidade nomeada nem um texto próximo aparecem, o contexto vai marcado como fraco.
+
+**Resposta** (`rag/answer.py`). O SLM fica atrás de um endpoint compatível com a OpenAI (`SLM_BASE_URL`): o padrão é o serviço `ollama` do `compose.yaml` (`sotawhat rag up` sobe e baixa o modelo; porta só em 127.0.0.1), mas serve llama.cpp, LM Studio ou vLLM. `reasoning_effort: none` desliga o raciocínio (com ele ligado o Qwen 3.5 gastou 400 tokens pensando e não respondeu). A instrução é uma: responder só com o contexto, citando [n]. Sem outro modelo, o texto é conferido: citação de fonte que não existe, resposta sem citação e número que não está nas fontes viram avisos ao lado da resposta. Sem SLM no ar, as fontes e os fatos são a resposta.
+
+**Medições de 2026-11-20** (RTX 4060 de 8 GB, Ryzen 5 5500):
+
+- Recuperação, 40 perguntas escritas pelo SLM a partir de itens sorteados (`sotawhat rag eval`; são mais fáceis que as reais, porque foram escritas com o item à vista):
+
+| Configuração | Item certo em 1º | No top 3 | Nas 8 fontes | s/pergunta |
+|---|---|---|---|---|
+| tudo | 95% | 100% | 100% | 3,4 |
+| sem reranker | 78% | 92% | 95% | 0,2 |
+| só densa | 95% | 100% | 100% | 0,2 |
+| só BM25 | 82% | 95% | 98% | 0,2 |
+| só grafo (PageRank) | 55% | 68% | 70% | 0,2 |
+
+  Nesse tipo de pergunta, sobre um item específico, a busca densa sozinha já acerta o mesmo que o conjunto, e as ordenações do grafo sozinhas acertam pouco. Elas existem para as perguntas de relação e de contagem ("quais modelos abordam X e quem os fez", "organizações mais citadas"), que esse conjunto não mede; ali quem responde são os fatos do passo 5.
+- SLM, 12 perguntas com o mesmo contexto (5 com gabarito, 7 abertas: relação, definição, ranking, semana, tendências, fora do assunto, comparação):
+
+| Modelo (Ollama) | Tamanho | s/resposta | Citou o item certo | Observado |
+|---|---|---|---|---|
+| `qwen3.5:9b-q4_K_M` | 6,6 GB | 7,0 | 5/5 | o mais fiel e organizado; **padrão na GPU** |
+| `qwen3.5:4b-q4_K_M` | 3,3 GB | 5,8 | 5/5 | bom e rápido; num ranking atribuiu contagens a fontes erradas; **padrão na VPS sem GPU** |
+| `gemma4:e4b-it-qat` | 6,1 GB | 8,4 | 5/5 | numa resposta transformou contagens em citações que não existem (o aviso pegou) |
+
+  Os três recusaram a pergunta fora do assunto. As médias são de uma execução com temperatura 0,2 e mudam alguns décimos de uma para outra. Com `SLM_CONTEXT=6144` o 9B cabe inteiro na GPU (5,7 GB); com 8192 ele transborda para a CPU e levou 9,4 s por resposta.
+
+**VPS.** `compose.vps.yaml` sobe o Ollama e a interface (imagem do `Dockerfile`, sem `.env` e sem chaves) sobre uma cópia do banco; `scripts/vps_sync.ps1` gera a cópia com o `sotawhat backup`, envia por `scp` e troca o arquivo. A interface abre só no 127.0.0.1 da VPS (túnel SSH), e o Ollama só na rede interna. A VPS só lê: votos dados lá somem na sincronização seguinte. O que foi testado em 2026-11-20, neste computador: a imagem (896 MB) e o serviço `sotawhat` do compose sobre uma cópia do banco, respondendo pelo `exec sotawhat ask` e pela API, com o Ollama local e o `qwen3.5:4b`. O que não foi testado: o serviço `ollama` em CPU numa VPS de verdade e o `scripts/vps_sync.ps1` (precisa de uma VPS).
+
+**Limites conhecidos.**
+- A resposta é de um modelo de 9B: ela erra mais que um modelo grande, e por isso as fontes e os avisos vêm sempre junto.
+- Pergunta sobre algo que não está nos itens aprovados não tem resposta; o grafo começa em 2026-11-08.
+- Entidades quase iguais ("ambient AI scribe" e "ambient artificial intelligence scribe") dividem menções e relações. `config/entity_fixes.yaml` + `sotawhat repair entities` juntam.
+- Sem FTS5 no SQLite (raro), a busca por palavras fica desligada e o `doctor` avisa.
+
 ---
 
 ## 7. Integrações por canal
@@ -698,6 +800,8 @@ Servidores de saúde já conhecidos (semente do grafo e lista de `releases.atom`
 - Bot próprio via @BotFather (`TELEGRAM_BOT_TOKEN`); *long polling* `getUpdates` (updates expiram em 24 h → coletor a cada 6–12 h ou bot residente como tarefa "ao iniciar sessão"); `TELEGRAM_ALLOWED_USER_ID` ignora terceiros; teclado inline para 👍/👎/🧪/🗄️; links em `message.entities[type=url]`. `python-telegram-bot` 22.8. Alternativa sem limite de 24 h: canal privado + Telethon (`TELEGRAM_API_ID/HASH`).
 
 ### 7.8 Demais fontes
+
+**Semantic Scholar (corrigido em 2026-11-20).** A fonte pedia a busca por relevância (`/paper/search`) sem chave: o pool anônimo respondeu 429 em 14 runs seguidos, a variável `SEMANTIC_SCHOLAR_API_KEY` nunca era lida pelo código, e quando a busca respondia vinham clássicos de 2023, porque relevância não tem data. Agora ela pede a busca em lote (`/paper/search/bulk`) dos artigos de Ciência da Computação dos últimos 60 dias com pelo menos 2 citações, ordenados por citação, 10 por palavra-chave: o que o campo já está usando, sinal que o arXiv e as newsletters não dão. Um 429 é tentado de novo três vezes (2, 4 e 8 s), há no máximo um pedido por segundo, e a chave vai no cabeçalho quando existe. Artigo que está no arXiv entra com o id do arXiv, o mesmo item que a fonte arXiv traz. Sem chave, as quatro palavras-chave do perfil responderam em 26 s, sem erro, e o ensaio do run diário trouxe os itens. O `doctor` avisa da chave vazia e das falhas seguidas.
 
 arXiv, Semantic Scholar (chave opcional `SEMANTIC_SCHOLAR_API_KEY` eleva o limite), PubMed (`NCBI_API_KEY` → 10 req/s), HF Daily Papers e RSS continuam como hoje; novos: medRxiv/bioRxiv (API/RSS por categoria), lista FDA de dispositivos com IA (download periódico), OpenAlex (`OPENALEX_EMAIL` para o *polite pool*), feeds de regulação BR (ANVISA, CFM, ANPD, MS/RNDS) — catálogo e tiers em §5.
 
@@ -1053,7 +1157,16 @@ As respostas mudam a implementação; onde não houver resposta, a suposição i
 16. *(respondida — §16.1: sem Obsidian e sem migração)*
 17. Manter o nome `sotawhat` (versão 3.0) ou renomear o repositório? *Suposição:* manter.
 
-### 16.3 Ações que dependem de você (2026-11-08, ao fim da P6)
+### 16.3 Ações que dependem de você
+
+**Em 2026-11-20:**
+
+1. **Chave do OpenRouter, urgente.** Restam US$ 0,98 do limite de US$ 5, que não renova. O run diário gasta ≈ US$ 0,19: em cerca de cinco dias a triagem para. Ponha crédito e defina a renovação mensal do limite.
+2. **Chave do Semantic Scholar** (grátis, formulário em semanticscholar.org/product/api). A fonte voltou a funcionar sem ela, com retentativas; com `SEMANTIC_SCHOLAR_API_KEY` no `.env` ela deixa de depender do pool anônimo.
+3. **VPS.** Diga a RAM, a CPU e se há GPU, para ajustar `SLM_MODEL`; depois é clonar o repositório lá, `docker compose -f compose.vps.yaml up -d --build` e rodar `scripts\vps_sync.ps1 -Vps usuario@host`.
+4. **Docker Desktop no logon.** Em 2026-11-20 o daily rodou às 09:50, antes do Docker, e o espelho Neo4j ficou 37 itens atrás até o `sotawhat graph sync`.
+
+**Em 2026-11-08, ao fim da P6:**
 
 1. **Chave do OpenRouter.** O limite de US$ 5 da chave não renova (`limit_reset` vazio; o `doctor` avisa). O pipeline gasta ≈ US$ 0,10 por dia mais ≈ US$ 0,13 por semana, ou seja, ≈ US$ 4 por mês, e a chave se esgota em ~5 semanas. Defina a renovação mensal e um limite de ≈ US$ 15–20/mês.
 2. **Gmail.** Crie o filtro que aplica a label `newsletters/ai` às newsletters sem RSS (§16.2, item 2).

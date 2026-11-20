@@ -149,7 +149,7 @@ def test_retrieval_fuses_text_graph_and_mentions(store):
     assert "graph" in found["pmid:2"].channels                            # reached through the problem it mentions
     assert found["pmid:1"].excerpt.startswith("Sepsis is a leading cause") and found["pmid:1"].section == "IA ∩ Saúde"
     facts = "\n".join(pack.facts)
-    assert "sepsis early detection (problema" in facts and "é o alvo de «aborda» de: SepsisNet" in facts
+    assert "sepsis early detection (problema" in facts and "é abordado por: SepsisNet" in facts
     context = pack.context()
     assert context.startswith("## Fatos do grafo") and "[1] SepsisNet prediz sepse na UTI (pubmed, 19/11/2026" in context
     assert 'Trecho do original: "Sepsis is' in context

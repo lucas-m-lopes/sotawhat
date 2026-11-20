@@ -1,5 +1,5 @@
 # sotawhat/rag/commands.py
-"""`sotawhat ask "pergunta"` and `sotawhat rag index|status|up` (SDD §6.15)."""
+"""`sotawhat ask "pergunta"` and `sotawhat rag index|status|up|eval` (SDD §6.15)."""
 import json
 import os
 import subprocess
@@ -118,6 +118,8 @@ def main_rag(ns) -> int:
         ok, message = slm_up(settings, Path.cwd())
         print(message, file=sys.stdout if ok else sys.stderr)
         return 0 if ok else 1
+    if ns.rag_action == "eval":
+        return main_eval(ns, settings)
     with Store(settings.db_path) as store:
         if ns.rag_action == "index":
             started = time.time()
@@ -134,4 +136,32 @@ def main_rag(ns) -> int:
 
         ok, detail = from_settings(settings).ping()
         print(f"SLM: {'ok' if ok else 'fora'} · {detail}")
+    return 0
+
+
+def main_eval(ns, settings) -> int:
+    """`sotawhat rag eval [--gerar] [--n 40]`: the retrieval against questions written from your own items."""
+    from datetime import date
+
+    from sotawhat.rag import evaluate
+    from sotawhat.store.db import Store
+
+    path = settings.sotawhat_data_dir / evaluate.FOLDER / "questions.jsonl"
+    with Store(settings.db_path) as store:
+        retriever, slm = build(settings, store)
+        questions = evaluate.load(path)
+        if ns.gerar or not questions:
+            ok, detail = slm.ping()
+            if not ok:
+                print(f"para gerar as perguntas é preciso o SLM: {detail} (rode `sotawhat rag up`)", file=sys.stderr)
+                return 2
+            questions = evaluate.draft(store, slm, n=ns.n)
+            evaluate.save(questions, path)
+            print(f"{len(questions)} perguntas em {path}")
+        results = evaluate.run(retriever, questions[:ns.n], k=settings.rag_sources)
+    report = evaluate.render(results, k=settings.rag_sources)
+    out = settings.sotawhat_data_dir / evaluate.FOLDER / f"{date.today().isoformat()}-recuperacao.md"
+    out.write_text(report + "\n", encoding="utf-8")
+    print(report)
+    print(f"\n[relatório] {out}")
     return 0

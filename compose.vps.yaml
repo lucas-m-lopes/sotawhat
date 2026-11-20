@@ -20,7 +20,7 @@ services:
     restart: unless-stopped
     environment:
       OLLAMA_KEEP_ALIVE: "${SLM_KEEP_ALIVE:-30m}"
-      OLLAMA_CONTEXT_LENGTH: "${SLM_CONTEXT:-8192}"
+      OLLAMA_CONTEXT_LENGTH: "${SLM_CONTEXT:-6144}"
     volumes:
       - ollama:/root/.ollama
   sotawhat:

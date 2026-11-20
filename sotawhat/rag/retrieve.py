@@ -39,14 +39,28 @@ from sotawhat.store.db import APPROVED
 from sotawhat.store.vectors import query_text
 from sotawhat.textmatch import fold
 
-WEIGHTS = {"dense": 1.0, "bm25": 0.9, "relation": 0.8, "mention": 0.7, "graph": 0.6, "category": 0.4}
+# Measured on 2026-11-20 with 40 questions written from the items (`sotawhat rag eval`): the dense ranking alone put
+# the right item first in 95%, BM25 in 82%, the graph rankings in 42-55% (they are for questions about relations,
+# which that set does not have). Hence dense counts double; with these weights every right item was within the
+# first 16 of the fusion, and the cross-encoder brought 95% of them to the first place reading only 10.
+WEIGHTS = {"dense": 2.0, "bm25": 1.0, "relation": 0.7, "mention": 0.6, "graph": 0.4, "category": 0.2}
 RRF_K = 60
 POOL = 40                 # items each ranking contributes
-RERANK_TOP = 16           # candidates the cross-encoder reads
+RERANK_TOP = 10           # candidates the cross-encoder reads (16 gave the same result and took 2 s more)
 RERANK_WEIGHT = 0.7       # final = 0.7 · cross-encoder + 0.3 · fusion (the graph evidence it cannot see)
-DENSE_ENTITY, DENSE_ENTITY_GAP, DENSE_ENTITIES = 0.52, 0.08, 4
+# Cosine thresholds per embedding model: (the closest entity is linked from here, the next ones from here and
+# only this close to the first, below this the best passage means the graph has nothing on the question).
+# EmbeddingGemma, measured on 2026-11-20 with questions in Portuguese against English names: the right entity
+# came first with 0.36 to 0.56, an off-topic question peaked at 0.24; the best passage of an on-topic question
+# had 0.44 to 0.63, of an off-topic one 0.21 to 0.22.
+THRESHOLDS = {"google/embeddinggemma-300m": (0.35, 0.45, 0.04, 0.30)}
+DEFAULT_THRESHOLDS = (0.52, 0.60, 0.08, None)
+DENSE_ENTITIES = 3
 PPR_DAMPING, PPR_STEPS = 0.5, 20
 ROLE_WEIGHT = {"main": 1.0, "used": 0.6, "mentioned": 0.3}
+# a relation read from its object's side, as a plain phrase: the small models misread "é o alvo de «usa» de"
+INBOUND = {"uses": "é usado por", "addresses": "é abordado por", "developed_by": "desenvolveu",
+           "evaluated_on": "serviu para avaliar", "builds_on": "serve de base para", "regulated_by": "regula"}
 WEAK = 0.02               # below this cross-encoder probability the best source is probably off topic
 CATEGORY_TYPES = q.CATEGORY_TYPES
 _IN = ",".join("?" * len(APPROVED))
@@ -146,11 +160,17 @@ class Pack:
     sources: list = field(default_factory=list)
     notes: list = field(default_factory=list)
     timings: dict = field(default_factory=dict)
+    far: bool = False       # the closest passage is below the embedder's off-topic threshold
 
     @property
     def weak(self) -> bool:
+        """The graph probably has nothing on the question: no source, or neither a named entity nor a close text."""
+        if not self.sources:
+            return True
+        if any(e.how == "nome" for e in self.entities):
+            return False
         best = max((s.relevance for s in self.sources if s.relevance is not None), default=None)
-        return not self.sources or (best is not None and best < WEAK and not self.entities)
+        return bool(self.far) or (best is not None and best < WEAK)
 
     def context(self, budget=9000) -> str:
         """The text the model reads: the facts of the graph, then the numbered sources, inside `budget` characters
@@ -297,6 +317,10 @@ class Retriever:
             self._corpus = Corpus(self.store)
         return self._corpus
 
+    @property
+    def thresholds(self) -> tuple:
+        return THRESHOLDS.get(getattr(self.embedder, "name", ""), DEFAULT_THRESHOLDS)
+
     # --- the question --------------------------------------------------------
     def _embed(self, question):
         corpus = self.corpus
@@ -332,16 +356,17 @@ class Retriever:
                         linked[entity_id] = ("nome", 1.0)
         if vector is not None:
             rows = corpus.rows(("entity",))
+            first, following, gap, _ = self.thresholds
             if len(rows):
                 sims = corpus.matrix[rows] @ vector
                 order = np.argsort(-sims)[:DENSE_ENTITIES]
                 top = float(sims[order[0]])
-                for position in order:
+                for rank, position in enumerate(order):
                     sim = float(sims[position])
                     entity_id = int(corpus.refs[rows[position]])
-                    if sim >= DENSE_ENTITY and sim >= top - DENSE_ENTITY_GAP and entity_id not in linked \
-                            and entity_id in corpus.entities:
-                        linked[entity_id] = ("sentido", round(0.3 + 0.5 * (sim - DENSE_ENTITY) / (1 - DENSE_ENTITY), 3))
+                    close = sim >= first if rank == 0 else (sim >= following and sim >= top - gap)
+                    if close and entity_id not in linked and entity_id in corpus.entities:
+                        linked[entity_id] = ("sentido", round(min(0.8, 0.3 + (sim - first)), 3))
         out = [Linked(e, corpus.entities[e]["name"], corpus.entities[e]["type"], how, weight)
                for e, (how, weight) in linked.items()]
         out.sort(key=lambda x: (x.how != "nome", -x.weight, -corpus.entities[x.entity_id]["mention_count"]))
@@ -448,7 +473,7 @@ class Retriever:
             head += f" Também escrito: {', '.join(d['aliases'][:4])}."
         grouped = {}
         for r in d["relations"][:12]:
-            arrow = {"out": f"{r['label']}", "in": f"é o alvo de «{r['label']}» de", "both": r["label"]}[r["direction"]]
+            arrow = INBOUND.get(r["relation"], f"← {r['label']}") if r["direction"] == "in" else r["label"]
             grouped.setdefault(arrow, []).append(r["other"]["name"])
         lines = [head] + [f"  - {arrow}: {', '.join(names[:6])}" for arrow, names in grouped.items()]
         near = [f"{n['name']} ({n['shared']})" for n in d["neighbors"] if n["type"] in q.ENTITY_TYPES][:6]
@@ -529,7 +554,8 @@ class Retriever:
                 for i in picked if i in found]
 
     # --- the whole thing -----------------------------------------------------
-    def retrieve(self, question, days=None, k=8) -> Pack:
+    def retrieve(self, question, days=None, k=8, channels=None) -> Pack:
+        """`channels`: only these rankings (the evaluation asks each one alone); None = all of them."""
         t0 = time.perf_counter()
         question = " ".join((question or "").split())
         pack = Pack(question=question)
@@ -552,12 +578,16 @@ class Retriever:
 
         t1 = time.perf_counter()
         dense, dense_best, chunk = self._dense(vector, allowed)
+        off_topic = self.thresholds[3]
+        pack.far = bool(dense_best) and off_topic is not None and max(s for s, _ in dense_best.values()) < off_topic
         named = [e.entity_id for e in linked if e.how == "nome" and e.type in q.ENTITY_TYPES]
         categories = [e.entity_id for e in linked if e.type in CATEGORY_TYPES]
         rankings = {"dense": dense, "bm25": self._bm25(question, linked, allowed),
                     "graph": self._graph(linked, allowed), "mention": self._mentioning(named, allowed),
                     "relation": self._relating(named, allowed),
                     "category": self._mentioning(categories, allowed, tags=True)}
+        if channels is not None:
+            rankings = {name: items for name, items in rankings.items() if name in channels}
         fused, positions = {}, {}
         for name, items in rankings.items():
             for rank, item in enumerate(items, 1):

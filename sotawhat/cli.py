@@ -158,10 +158,13 @@ def parse_args(argv):
     p_ask.add_argument("--json", action="store_true", help="the whole answer as JSON")
 
     p_rag = sub.add_parser("rag", help="the retrieval index and the local SLM behind `sotawhat ask`")
-    p_rag.add_argument("rag_action", choices=["index", "status", "up"],
+    p_rag.add_argument("rag_action", choices=["index", "status", "up", "eval"],
                        help="index: refresh the passages and their vectors (the daily run does it); status: what is "
-                            "indexed and whether the SLM answers; up: start Ollama in Docker and pull SLM_MODEL")
+                            "indexed and whether the SLM answers; up: start Ollama in Docker and pull SLM_MODEL; "
+                            "eval: how often the retrieval finds the item a question is about")
     p_rag.add_argument("--rebuild", action="store_true", help="index: drop every passage and embed all again")
+    p_rag.add_argument("--gerar", action="store_true", help="eval: have the local SLM write a new set of questions")
+    p_rag.add_argument("--n", type=int, default=40, help="eval: number of questions (default 40)")
 
     p_calibrate = sub.add_parser("calibrate", help="proposals for the triage cut-offs and the idea weights (P6)")
     p_calibrate.add_argument("--apply", action="store_true", help="write the proposal to config/")

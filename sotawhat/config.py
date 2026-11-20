@@ -59,7 +59,8 @@ class Settings(BaseSettings):
     slm_api_key: str = ""             # only for an endpoint that asks for one
     slm_reasoning: str = "none"       # reasoning_effort: "none" turns the thinking off (faster, same grounded answer)
     slm_timeout: int = 300
-    slm_context: int = 8192           # context window the Ollama container loads the model with
+    slm_context: int = 6144           # context window of the Ollama container: a question uses up to ~3,600 tokens,
+                                      # and with 6144 the 9B model sits whole in a GPU of 8 GB (8192 spills to the CPU)
     slm_keep_alive: str = "15m"       # how long the model stays in memory after a question
     rag_reranker: str = "BAAI/bge-reranker-v2-m3-int8"   # multilingual cross-encoder on the CPU; empty = off
     rag_sources: int = 8              # sources in the context of an answer

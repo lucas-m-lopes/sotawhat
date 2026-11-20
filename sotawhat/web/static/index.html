@@ -117,19 +117,30 @@
   <div class="page-head">
     <div>
       <h1>Perguntar ao grafo</h1>
-      <p id="ask-meta" class="muted">carregando…</p>
+      <p class="muted">Respostas a partir dos itens aprovados, com as fontes citadas.</p>
     </div>
+    <dl id="ask-meta" class="readouts" aria-label="Estado do índice"></dl>
   </div>
   <form id="ask-form" class="ask-form">
     <textarea id="ask-input" rows="2" maxlength="500" placeholder="Ex.: o que saiu sobre agentes clínicos esta semana?" aria-label="Sua pergunta"></textarea>
     <div class="ask-bar">
-      <div id="ask-engine" class="segmented" role="radiogroup" aria-label="Quem responde"></div>
-      <div id="ask-days" class="segmented" role="radiogroup" aria-label="Período"></div>
-      <label class="check"><input id="ask-sources-only" type="checkbox"> só as fontes, sem o modelo local</label>
-      <button id="ask-send" class="primary" type="submit">Perguntar</button>
+      <div class="field">
+        <span id="ask-engine-label" class="label">Resposta</span>
+        <div id="ask-engine" class="segmented" role="radiogroup" aria-labelledby="ask-engine-label"></div>
+        <p id="ask-engine-hint" class="field-hint"></p>
+      </div>
+      <div class="field">
+        <span id="ask-days-label" class="label">Período</span>
+        <div id="ask-days" class="segmented" role="radiogroup" aria-labelledby="ask-days-label"></div>
+        <p id="ask-days-hint" class="field-hint"></p>
+      </div>
+      <button id="ask-send" class="primary" type="submit">Perguntar <span aria-hidden="true">↵</span></button>
     </div>
   </form>
-  <div id="ask-examples" class="chips" aria-label="Exemplos de pergunta"></div>
+  <div class="ask-examples">
+    <span class="label">Experimente</span>
+    <div id="ask-examples" class="chips" aria-label="Exemplos de pergunta"></div>
+  </div>
   <div id="ask-thread" class="thread" aria-live="polite"></div>
 </main>
 <main id="view-glossary" class="page" hidden>

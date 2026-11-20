@@ -69,8 +69,8 @@ def test_ask_from_the_interface(db, tmp_path):
         assert body["answer"].startswith("O SepsisNet") and body["cited"] == [1] and body["warnings"] == []
         assert body["sources"][0]["item_id"] == "pmid:1" and body["entities"][0]["name"] == "SepsisNet"
         status = c.get("/api/rag/status").json()
-        assert status["slm"] == {"ok": True, "detail": "m em http://x/v1"} and status["engine"] == "slm"
-        assert status["jev"] == {"ok": False, "model": None}
+        assert status["slm"] == {"ok": True, "detail": "m em http://x/v1", "model": "m"} and status["engine"] == "slm"
+        assert status["jev"] == {"ok": False, "model": None, "zdr": False}
         only = c.post("/api/ask", json={"question": "O que o SepsisNet faz?", "sources_only": True, "k": 1}).json()
         assert only["answer"] is None and only["error"] is None and len(only["sources"]) == 1
         assert c.post("/api/ask", json={"question": "oi"}).status_code == 422

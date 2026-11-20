@@ -75,3 +75,32 @@ def test_an_early_v6_store_gets_the_card_column(tmp_path):
     con.close()
     with Store(db) as st:
         assert "card_json" in {row[1] for row in st.conn.execute("PRAGMA table_info(radar_picks)")}
+
+
+def test_threads_can_read_the_same_query_at_once(tmp_path):
+    # The interface answers each request in a thread and they share this connection. With the statement cache of the
+    # sqlite3 module on, this test fails by the hundred (wrong counts, missing rows, "API misuse"): see Store.
+    import threading
+
+    store = Store(tmp_path / "t.db")
+    store.conn.executemany("INSERT INTO meta (key, value) VALUES (?, ?)", [(f"k{n}", "x") for n in range(300)])
+    store.conn.commit()
+    expected = store.conn.execute("SELECT COUNT(*) FROM meta WHERE value IN (?, ?)", ["x", "y"]).fetchone()[0]
+    wrong = []
+
+    def read():
+        for _ in range(600):
+            try:
+                row = store.conn.execute("SELECT COUNT(*) FROM meta WHERE value IN (?, ?)", ["x", "y"]).fetchone()
+                if row is None or row[0] != expected:
+                    wrong.append(row and row[0])
+            except Exception as exc:  # noqa: BLE001
+                wrong.append(repr(exc))
+
+    threads = [threading.Thread(target=read) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    store.close()
+    assert expected >= 300 and wrong == []

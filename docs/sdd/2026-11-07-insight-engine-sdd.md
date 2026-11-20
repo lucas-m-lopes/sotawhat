@@ -2,7 +2,13 @@
 
 **Tipo:** Software Design Document (SDD) — serve também como *spec* para desenvolvimento orientado a especificação (spec-driven).
 **Data:** 2026-11-07
-**Status:** v2.8 (2026-11-20), com todas as fases (P0–P6) executadas, as newsletters por RSS com texto completo, as aulas no motor HyperFrames, o radar de ferramentas, o glossário dos digests, as perguntas ao grafo com um SLM local e a interface no tema escuro com o grafo em 3D:
+**Status:** v2.9 (2026-11-20), com todas as fases (P0–P6) executadas, as newsletters por RSS com texto completo, as aulas no motor HyperFrames, o radar de ferramentas, o glossário dos digests, as perguntas ao grafo com um SLM local e a interface no tema escuro com o grafo em 3D:
+- v2.9: a tela Perguntar foi rediagramada (pedido de 2026-11-20, sobre uma captura de tela), e o teste dela achou um defeito de concorrência no banco.
+  - **Cabeçalho:** a frase única com tudo junto virou três leituras curtas ao lado do título (itens no índice, trechos, atualização). Índice vazio ou atrasado aparece ali, em âmbar, com o comando que resolve.
+  - **Campo de pergunta:** um cartão só. A pergunta fica em cima, sem moldura própria (o cartão inteiro acende no foco) e cresce com o texto; abaixo de um fio, as escolhas.
+  - **Escolhas com rótulo:** "Resposta" (modelo local, Jev, só as fontes) e "Período" (automático, 7, 30, 90 dias). A caixa "só as fontes, sem o modelo local" virou a terceira opção de Resposta, porque ela dispensa os dois motores. Sob cada grupo, uma linha diz o que a opção marcada faz, com tempo, modelo e onde roda; se o modelo local estiver fora do ar ou faltar a chave da Jev, é ali que aparece. As colunas têm largura fixa, para os grupos não andarem quando a linha muda.
+  - **Exemplos:** rótulo em coluna própria, para a segunda linha de exemplos começar sob a primeira.
+  - **Defeito corrigido (`store/db.py`):** a interface atende cada requisição numa thread, todas na mesma conexão SQLite. Com o cache de statements do módulo `sqlite3`, duas threads que rodam o mesmo SQL ao mesmo tempo recebem o mesmo statement preparado. Foi assim que `/api/rag/status` respondeu 500 ao cruzar com `/api/stats`. Medido com 8 threads e um COUNT: de 32.000 leituras, cerca de 3.700 deram erro, 5.200 vieram sem linha e 700 devolveram 0 no lugar de 600. Sem o cache (`cached_statements=0`), nenhuma falha; o custo é de 2 µs a mais por consulta. Vale também para as threads da triagem no run diário.
 - v2.8: três pedidos de 2026-11-20, depois de você ver a interface nova.
   - **Visão 3D | 2D** no grafo (seção "Visão" dos filtros, lembrada pelo navegador). O 2D é a mesma cena: a simulação aperta todos os nós contra um plano, a câmera passa a olhar de frente e o arrasto move em vez de girar. A troca é animada, sem recarregar; voltando ao 3D, cada nó ganha sempre o mesmo empurrão para fora do plano e as forças refazem o volume.
   - **Aba do navegador:** o nome é "SOTA What" em qualquer tela, com um ícone próprio (`favicon.svg`: a marca do cabeçalho, uma entidade acesa ligada a duas). Não havia arquivo de logo no projeto; se houver um, é só trocar esse arquivo.
@@ -1193,11 +1199,9 @@ As respostas mudam a implementação; onde não houver resposta, a suposição i
 
 **Em 2026-11-20:**
 
-1. **Limite da chave do OpenRouter, urgente.** São dois números diferentes, e a primeira versão deste item os confundiu:
-   - **saldo da conta:** US$ 6,47 (US$ 37 comprados, US$ 30,53 gastos), o que a página do OpenRouter mostra. Não falta crédito;
-   - **limite desta chave:** US$ 5 no total, sem renovação, com US$ 4,13 gastos. Restam US$ 0,87.
-
-   Os runs param quando o limite da chave acabar, mesmo com saldo na conta. O run diário gasta ≈ US$ 0,19 e o semanal ≈ US$ 0,24: cerca de quatro dias. A correção é na chave (openrouter.ai → Keys → editar): aumentar o limite ou definir renovação mensal. O `doctor` agora mostra os dois números lado a lado.
+1. **Limite da chave do OpenRouter: resolvido em 2026-11-20.** Você retirou o limite da chave (conferido em `/key`: sem limite). Eram dois números diferentes, e a primeira versão deste item os confundiu: o saldo da conta (US$ 6,47: US$ 37 comprados, US$ 30,53 gastos, o que a página do OpenRouter mostra) e o limite de gasto desta chave (US$ 5 no total, sem renovação, com US$ 0,87 restantes).
+   - **O que para os runs agora é o saldo da conta.** O projeto gasta ≈ US$ 1,57 por semana (≈ US$ 0,19 por dia mais ≈ US$ 0,24 do semanal): cerca de quatro semanas, menos se outros projetos usarem a mesma conta.
+   - **Proteção contra gasto fora do normal:** sem limite na chave, ficam os tetos do próprio projeto, no `.env` (US$ 1 por dia, US$ 8 por run semanal, US$ 25 por mês). O `doctor` mostra o saldo da conta e avisa que a chave está sem limite.
 2. **Chave do Semantic Scholar** (grátis, formulário em semanticscholar.org/product/api). A fonte voltou a funcionar sem ela, com retentativas; com `SEMANTIC_SCHOLAR_API_KEY` no `.env` ela deixa de depender do pool anônimo.
 3. **VPS.** Diga a RAM, a CPU e se há GPU, para ajustar `SLM_MODEL`; depois é clonar o repositório lá, `docker compose -f compose.vps.yaml up -d --build` e rodar `scripts\vps_sync.ps1 -Vps usuario@host`.
 4. **Docker Desktop no logon.** Em 2026-11-20 o daily rodou às 09:50, antes do Docker, e o espelho Neo4j ficou 37 itens atrás até o `sotawhat graph sync`.

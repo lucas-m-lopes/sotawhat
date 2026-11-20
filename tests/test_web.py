@@ -88,6 +88,11 @@ def test_packaged_page_loads_only_local_files():
     icon = (STATIC / "favicon.svg").read_text(encoding="utf-8")            # the tab icon: drawn here, nothing fetched
     assert icon.startswith("<svg ") and "<script" not in icon and "href" not in icon
     assert 'id="dims"' in page and 'id="ask-engine"' in page                # the 3D | 2D switch and who answers
+    # the question form: each group of options has its label and a line that says what the chosen one does
+    for group in ("ask-engine", "ask-days"):
+        assert f'id="{group}" class="segmented" role="radiogroup" aria-labelledby="{group}-label"' in page
+        assert f'id="{group}-label" class="label"' in page and f'id="{group}-hint" class="field-hint"' in page
+    assert 'id="ask-sources-only"' not in page                              # "só as fontes" is one of the answer options
     assert '<link rel="stylesheet" href="/static/style.css">' in page
     assert not re.search(r'(src|href)="(https?:)?//', page)                 # no CDN, nothing external
     licenses = (STATIC / "vendor" / "LICENSES.md").read_text(encoding="utf-8")
@@ -100,6 +105,7 @@ def test_packaged_page_loads_only_local_files():
     assert "fetch(" in app_js and "innerHTML" not in app_js                 # data goes in with textContent
     assert 'import("/static/graph3d.js")' in app_js                         # three.js only loads with the graph
     assert 'const TITLE = "SOTA What";' in app_js and "scene3d.setFlat(value === 2)" in app_js
+    assert '["sources", "só as fontes"]' in app_js and 'sources_only: mode === "sources"' in app_js
     graph3d = (STATIC / "graph3d.js").read_text(encoding="utf-8")           # the 3D graph: local modules only
     assert re.findall(r'^import .* from "([^"]+)";$', graph3d, re.M) == ["three", "./vendor/three/OrbitControls.js"]
     assert "innerHTML" not in graph3d and not re.search(r"https?://", graph3d)

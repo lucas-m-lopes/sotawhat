@@ -171,6 +171,10 @@ class OpenRouterClient:
     def key_info(self) -> dict:
         return self._get("/key")
 
+    def credits(self) -> dict:
+        """The account, not the key: `total_credits` bought and `total_usage` spent, in US$."""
+        return self._get("/credits")
+
     def models(self) -> list:
         return self._get("/models")
 

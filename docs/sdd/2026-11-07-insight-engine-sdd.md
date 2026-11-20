@@ -1193,7 +1193,11 @@ As respostas mudam a implementação; onde não houver resposta, a suposição i
 
 **Em 2026-11-20:**
 
-1. **Chave do OpenRouter, urgente.** Restam US$ 0,90 do limite de US$ 5, que não renova (as medições deste dia gastaram US$ 0,17: três execuções do golden set e o backfill do glossário). O run diário gasta ≈ US$ 0,19 e o semanal ≈ US$ 0,24: em cerca de quatro dias a triagem para. Ponha crédito e defina a renovação mensal do limite.
+1. **Limite da chave do OpenRouter, urgente.** São dois números diferentes, e a primeira versão deste item os confundiu:
+   - **saldo da conta:** US$ 6,47 (US$ 37 comprados, US$ 30,53 gastos), o que a página do OpenRouter mostra. Não falta crédito;
+   - **limite desta chave:** US$ 5 no total, sem renovação, com US$ 4,13 gastos. Restam US$ 0,87.
+
+   Os runs param quando o limite da chave acabar, mesmo com saldo na conta. O run diário gasta ≈ US$ 0,19 e o semanal ≈ US$ 0,24: cerca de quatro dias. A correção é na chave (openrouter.ai → Keys → editar): aumentar o limite ou definir renovação mensal. O `doctor` agora mostra os dois números lado a lado.
 2. **Chave do Semantic Scholar** (grátis, formulário em semanticscholar.org/product/api). A fonte voltou a funcionar sem ela, com retentativas; com `SEMANTIC_SCHOLAR_API_KEY` no `.env` ela deixa de depender do pool anônimo.
 3. **VPS.** Diga a RAM, a CPU e se há GPU, para ajustar `SLM_MODEL`; depois é clonar o repositório lá, `docker compose -f compose.vps.yaml up -d --build` e rodar `scripts\vps_sync.ps1 -Vps usuario@host`.
 4. **Docker Desktop no logon.** Em 2026-11-20 o daily rodou às 09:50, antes do Docker, e o espelho Neo4j ficou 37 itens atrás até o `sotawhat graph sync`.

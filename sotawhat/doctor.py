@@ -141,17 +141,36 @@ def check_openrouter_key(client) -> Check:
         return Check("chave OpenRouter", "fail", str(exc))
     usage = info.get("usage_monthly", info.get("usage")) or 0.0
     limit = info.get("limit")
+    # Two different numbers: the balance of the account (credits bought minus spent, what the OpenRouter page
+    # shows) and what is left of this key's own spend limit. The calls stop at whichever ends first.
+    balance = _account_balance(client)
+    account = f" · saldo da conta US$ {balance:.2f}" if balance is not None else ""
     if limit is None:
-        return Check("chave OpenRouter", "warn",
-                     f"válida, SEM limite de gasto (uso no mês US$ {usage:.2f}); defina um limite mensal na chave")
+        return Check("chave OpenRouter", "warn", f"válida, SEM limite de gasto (uso no mês US$ {usage:.2f}){account}; "
+                                                 "defina um limite mensal na chave")
     remaining = info.get("limit_remaining")
-    low = remaining is not None and remaining < 0.2 * limit
     rest = f"US$ {remaining:.2f}" if remaining is not None else "?"
-    detail = f"limite US$ {limit:.2f} · restante {rest} · uso no mês US$ {usage:.2f}"
+    detail = f"limite da chave US$ {limit:.2f} · restante {rest} · uso no mês US$ {usage:.2f}{account}"
+    key_first = balance is None or remaining is None or remaining <= balance      # which of the two ends first
+    if not key_first:
+        detail += " · quem para os runs primeiro é o saldo da conta"
+    left = remaining if key_first else balance
+    low = left is not None and left < 0.2 * limit
     if "limit_reset" in info and not info["limit_reset"]:
         # without a reset the limit is a total for the life of the key: the runs stop once it is spent
-        return Check("chave OpenRouter", "warn", f"{detail} · o limite NÃO renova (defina renovação mensal na chave)")
+        stops = " (os runs param nele, mesmo com saldo na conta)" if balance is not None and key_first else ""
+        return Check("chave OpenRouter", "warn", f"{detail} · o limite da chave NÃO renova{stops}: aumente o limite ou "
+                                                 "defina renovação mensal na chave")
     return Check("chave OpenRouter", "warn" if low else "ok", detail + f" · renova: {info.get('limit_reset') or '?'}")
+
+
+def _account_balance(client) -> float | None:
+    """Credits bought minus credits spent on the whole account; None when it cannot be read (the key check goes on)."""
+    try:
+        credits = client.credits() or {}
+        return float(credits["total_credits"]) - float(credits["total_usage"])
+    except Exception:  # noqa: BLE001 - an optional line of the report
+        return None
 
 
 def check_models(client, requirements, today=None) -> list:

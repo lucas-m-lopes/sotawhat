@@ -19,11 +19,12 @@
                             "#E8C39A", "#8FD3FF", "#5EE6FF", "#FF8A5B"];
   const DAYS = [[7, "7 dias"], [30, "30 dias"], [90, "90 dias"], [365, "1 ano"], [0, "tudo"]];
   const COLOR_BY = [["type", "tipo"], ["community", "comunidade"]];
+  const DIMS = [[3, "3D"], [2, "2D"]];
   const VOTES = [["up", "👍", "relevante"], ["down", "👎", "não relevante"], ["test", "🧪", "quero testar"]];
   const ROLE = { main: "principal", used: "usado", mentioned: "citado", tag: "categoria" };
 
   const state = { days: 30, types: new Set(Object.keys(TYPES)), categories: false, min: 1, limit: 250,
-                  colorBy: "type", focus: null, selected: null, hovered: null, data: null, stats: null, view: null };
+                  colorBy: "type", dims: 3, focus: null, selected: null, hovered: null, data: null, stats: null, view: null };
   let scene3d = null;         // Graph3D of graph3d.js
   let graph = null;
 
@@ -83,7 +84,7 @@
   function saveFilters() {
     try {
       localStorage.setItem("sotawhat.filters", JSON.stringify({ days: state.days, types: [...state.types],
-        categories: state.categories, min: state.min, limit: state.limit, colorBy: state.colorBy }));
+        categories: state.categories, min: state.min, limit: state.limit, colorBy: state.colorBy, dims: state.dims }));
     } catch (e) { /* private window or blocked storage: filters just reset */ }
   }
 
@@ -98,6 +99,7 @@
       state.min = Math.min(Math.max(Number(saved.min) || 1, 1), 10);
       state.limit = Math.min(Math.max(Number(saved.limit) || 250, 50), 1000);
       if (COLOR_BY.some(([c]) => c === saved.colorBy)) state.colorBy = saved.colorBy;
+      if (saved.dims === 2) state.dims = 2;
     } catch (e) { /* ignore */ }
   }
 
@@ -115,6 +117,9 @@
 
   function buildFilters() {
     segmented($("#days"), DAYS, state.days, (value) => { state.days = value; refilter(); });
+    segmented($("#dims"), DIMS, state.dims, (value) => {       // the same scene, flattened or in volume: no reload
+      state.dims = value; saveFilters(); if (scene3d) scene3d.setFlat(value === 2);
+    });
     segmented($("#color-by"), COLOR_BY, state.colorBy, (value) => {
       state.colorBy = value; saveFilters(); paint();
     });
@@ -220,7 +225,7 @@
         onSelect: (node) => selectNode(node),
         onFocus: (node) => focusOn(node),
         onClear: () => { state.selected = null; paint(); },
-      });
+      }, { flat: state.dims === 2 });
     }
     scene3d.setData(
       graph.mapNodes((node, attrs) => ({ id: node, label: attrs.label, size: attrs.size, color: nodeColor(attrs) })),
@@ -456,9 +461,7 @@
                   lessons: "#view-lessons", tools: "#view-tools", glossary: "#view-glossary", ask: "#view-ask" };
   const HASHES = { "#grafo": "graph", "#hoje": "today", "#ideias": "ideas", "#tendencias": "trends", "#aulas": "lessons",
                    "#ferramentas": "tools", "#glossario": "glossary", "#perguntar": "ask" };
-  const TITLES = { graph: "sotawhat · grafo", today: "sotawhat · hoje", ideas: "sotawhat · ideias",
-                   trends: "sotawhat · tendências", lessons: "sotawhat · aulas",
-                   tools: "sotawhat · ferramentas", glossary: "sotawhat · glossário", ask: "sotawhat · perguntar" };
+  const TITLE = "SOTA What";      // the browser tab keeps the name of the product, whichever view is open
   let graphLoaded = false;
 
   function showView(name) {
@@ -466,7 +469,7 @@
     document.querySelectorAll(".views a").forEach((a) => {
       if (a.dataset.view === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
     });
-    document.title = TITLES[name];
+    document.title = TITLE;
     state.view = name;
   }
 
@@ -854,7 +857,8 @@
                         "O que está em alta no grafo?"];
   const RANKINGS = { dense: "sentido", bm25: "palavras", graph: "grafo", mention: "menção", relation: "relação",
                      category: "categoria" };
-  const askState = { days: 0, busy: false };
+  const ENGINES = [["slm", "modelo local · redige"], ["jev", "Jev · extrai, ~2 s"]];
+  const askState = { days: 0, busy: false, engine: null };       // engine: null until the server says its default
 
   function answerNodes(text, card) {   // the answer as text nodes, with each [n] as a button that shows its source
     const nodes = [];
@@ -896,9 +900,12 @@
     if (d.answer) card.append(el("div", { class: "answer-text" }, answerNodes(d.answer, card)));
     else if (d.error) card.append(el("p", { class: "muted" }, `O modelo local não respondeu (${d.error}). As fontes encontradas estão abaixo.`));
     for (const w of d.warnings || []) card.append(el("p", { class: "warn" }, `⚠️ ${w}`));
-    card.append(meta(d.model ? `modelo ${d.model}` : "sem modelo: só a busca",
-      `busca ${num(t.total || 0, 1)} s`, d.answer && d.model ? `resposta ${num(d.seconds || 0, 1)} s` : null,
-      ...(d.notes || [])));
+    card.append(d.engine === "jev"
+      ? meta(d.model ? `${d.model} · frases extraídas das fontes, nada foi redigido` : "sem a Jev: só a busca",
+             `total ${num(t.total || 0, 1)} s`, d.model ? `Jev ${num(d.seconds || 0, 1)} s` : null, ...(d.notes || []))
+      : meta(d.model ? `modelo ${d.model}` : "sem modelo: só a busca",
+             `busca ${num(t.total || 0, 1)} s`, d.answer && d.model ? `resposta ${num(d.seconds || 0, 1)} s` : null,
+             ...(d.notes || [])));
     if ((d.entities || []).length) card.append(el("div", { class: "chips" }, el("span", { class: "muted" }, "No grafo: "),
       d.entities.map((e) => entityLink(e.entity_id, e.name, e.type))));
     if ((d.facts || []).length) card.append(el("details", { open: !d.answer }, el("summary", {}, `fatos do grafo (${d.facts.length})`),
@@ -918,6 +925,7 @@
     button.disabled = true;
     const body = { question, sources_only: $("#ask-sources-only").checked };
     if (askState.days) body.days = askState.days;
+    if (askState.engine) body.engine = askState.engine;
     try {
       const d = await api("/api/ask", { method: "POST", headers: { "content-type": "application/json" },
                                         body: JSON.stringify(body) });
@@ -938,13 +946,31 @@
       return;
     }
     const slm = s.slm ? (s.slm.ok ? `modelo local: ${s.slm.detail}` : `modelo local fora do ar (${s.slm.detail})`) : null;
+    if (askState.engine === null && s.engine) {        // the first status after a question brings the server's default
+      let saved = null;
+      try { saved = localStorage.getItem("sotawhat.engine"); } catch (e) { /* private window */ }
+      askState.engine = ENGINES.some(([value]) => value === saved) ? saved : s.engine;
+      drawEngines();
+    }
     $("#ask-meta").textContent = s.items_indexed
       ? [`${s.items_indexed} de ${s.approved_items} itens aprovados no índice`, `atualizado em ${fmtDate(s.indexed_at)}`,
          "a resposta cita as fontes e roda toda neste computador", slm].filter(Boolean).join(" · ")
       : "Índice vazio: rode sotawhat rag index (minutos na primeira vez).";
   }
 
+  function drawEngines() {
+    segmented($("#ask-engine"), ENGINES, askState.engine || "slm", (value) => {
+      askState.engine = value;
+      try { localStorage.setItem("sotawhat.engine", value); } catch (e) { /* private window */ }
+    });
+  }
+
   function wireAsk() {
+    try {
+      const saved = localStorage.getItem("sotawhat.engine");
+      if (ENGINES.some(([value]) => value === saved)) askState.engine = saved;
+    } catch (e) { /* private window */ }
+    drawEngines();
     segmented($("#ask-days"), ASK_DAYS, askState.days, (value) => { askState.days = value; });
     $("#ask-examples").replaceChildren(el("span", { class: "muted" }, "Experimente: "), ...ASK_EXAMPLES.map((text) =>
       el("button", { class: "chip", type: "button", onclick: () => { $("#ask-input").value = text; sendQuestion(text); } }, text)));

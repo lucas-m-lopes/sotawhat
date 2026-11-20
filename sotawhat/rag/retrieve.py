@@ -75,7 +75,7 @@ existe existem alguma algum alguns algumas fala falam falou sobre diz dizem saiu
 apareceram tenho temos grafo item itens artigo artigos estudo estudos paper papers coisa coisas tipo quero queria
 gostaria saber mostre mostra liste lista explique explica resuma resume conte diga fale""".split())
 TYPE_WORDS = {
-    "model": ("modelo", "modelos", "model", "models", "llm", "llms"),
+    "model": ("modelo", "modelos", "model", "models"),
     "technique": ("tecnica", "tecnicas", "metodo", "metodos", "abordagem", "abordagens", "technique", "techniques"),
     "organization": ("organizacao", "organizacoes", "empresa", "empresas", "laboratorio", "laboratorios", "hospital",
                      "hospitais", "universidade", "universidades", "instituicao", "instituicoes", "startup", "startups"),
@@ -85,7 +85,8 @@ TYPE_WORDS = {
     "regulation": ("regulacao", "regulacoes", "norma", "normas", "lei", "leis", "regulamento", "regulamentos",
                    "padrao", "padroes"),
 }
-_COUNT = re.compile(r"\bquant[oa]s?\b")
+# "quantos itens", "quantas organizações": a count. "Quanto tempo economizou" asks for a fact of a source, not a count.
+_COUNT = re.compile(r"\bquant[oa]s\b|\bnumero de\b|\bquantidade de\b")
 _TOP = re.compile(r"\b(mais (citad|mencionad|frequent|comun|popular|falad|presente)\w*|principais|top\s*\d*|ranking|"
                   r"mais aparece\w*)\b")
 _TREND = re.compile(r"\b(em alta|tendencias?|subiu|subindo|subiram|crescendo|cresceu|novidades?|de novo|bombando|"
@@ -148,7 +149,8 @@ class Source:
     why: str
     excerpt: str = ""               # the chunk of the item's own text closest to the question
     score: float = 0.0
-    relevance: float | None = None  # cross-encoder probability, when a reranker ran
+    relevance: float | None = None  # probability that it answers the question, when a reranker or a judge ran
+    quote: str = ""                 # the sentence of the summary that answers the question (the Jev engine picks it)
     channels: dict = field(default_factory=dict)   # ranking -> position (1 = first)
 
 
@@ -536,11 +538,14 @@ class Retriever:
         if _TOP.search(text) or _COUNT.search(text):
             words = set(_TOKEN.findall(text))
             for type_, keys in TYPE_WORDS.items():
-                if words & set(keys):
-                    rows = [r for r in q._window_counts(store, [type_], since)][:10]
-                    if rows:
-                        facts.append(f"• Mais citados ({q.TYPE_LABELS[type_]}, {period}): "
-                                     + "; ".join(f"{r['name']} ({r['n']})" for r in rows))
+                if not words & set(keys):
+                    continue
+                rows = list(q._window_counts(store, [type_], since))
+                if rows and _COUNT.search(text):         # "quantos modelos": how many of that type there are
+                    facts.append(f"• Contagem: {len(rows)} entidades do tipo {q.TYPE_LABELS[type_]} citadas {period}.")
+                if rows and _TOP.search(text):           # "os modelos mais citados": the ranking
+                    facts.append(f"• Mais citados ({q.TYPE_LABELS[type_]}, {period}): "
+                                 + "; ".join(f"{r['name']} ({r['n']})" for r in rows[:10]))
         if _TREND.search(text):
             rising = intel.trends(store, now=self._now(), limit=10)
             if rising:
@@ -572,8 +577,10 @@ class Retriever:
                 for i in picked if i in found]
 
     # --- the whole thing -----------------------------------------------------
-    def retrieve(self, question, days=None, k=8, channels=None) -> Pack:
-        """`channels`: only these rankings (the evaluation asks each one alone); None = all of them."""
+    def retrieve(self, question, days=None, k=8, channels=None, judge=None) -> Pack:
+        """`channels`: only these rankings (the evaluation asks each one alone); None = all of them.
+        `judge`: reorders the candidates in the place of the cross-encoder (rag/jev.py); it has `score` and may have
+        `evidence`, the sentence it picked in each text."""
         t0 = time.perf_counter()
         question = " ".join((question or "").split())
         pack = Pack(question=question)
@@ -615,20 +622,23 @@ class Retriever:
         pack.timings["buscar"] = round(time.perf_counter() - t1, 3)
 
         t2 = time.perf_counter()
-        candidates = order[:max(k, RERANK_TOP if self.reranker is not None else k)]
+        reranker = judge if judge is not None else self.reranker
+        candidates = order[:max(k, RERANK_TOP if reranker is not None else k)]
         rows = {r["id"]: r for r in self.store.conn.execute(
             "SELECT i.id, i.title, i.canonical_url, i.source, i.fetched_at, t.decision, t.summary_pt, t.why_it_matters_pt"
             f" FROM items i JOIN triage t ON t.item_id = i.id WHERE i.id IN ({','.join('?' * len(candidates))})",
             candidates)} if candidates else {}
         candidates = [i for i in candidates if i in rows]
-        relevance = {}
-        if self.reranker is not None and candidates:
+        relevance, quotes = {}, {}
+        if reranker is not None and candidates:
             try:
                 texts = [f"{rows[i]['title']}\n{rows[i]['summary_pt'] or ''} {rows[i]['why_it_matters_pt'] or ''}"[:900]
                          for i in candidates]
-                relevance = dict(zip(candidates, self.reranker.score(question, texts)))
+                relevance = dict(zip(candidates, reranker.score(question, texts)))
+                if hasattr(reranker, "evidence"):
+                    quotes = {i: reranker.evidence(text) for i, text in zip(candidates, texts)}
             except Exception as exc:  # noqa: BLE001 - e.g. the model is not downloaded here: the fusion order stands
-                pack.notes.append(f"reranker indisponível ({type(exc).__name__}): ordem só da fusão")
+                pack.notes.append(f"reranker indisponível ({type(exc).__name__}: {str(exc)[:120]}): ordem só da fusão")
         if relevance:
             top_r, top_f = max(relevance.values()) or 1.0, max(fused[i] for i in candidates) or 1.0
             final = {i: RERANK_WEIGHT * relevance[i] / top_r + (1 - RERANK_WEIGHT) * fused[i] / top_f for i in candidates}
@@ -651,6 +661,7 @@ class Retriever:
                 day=r["fetched_at"], section=q.SECTIONS.get(r["decision"], r["decision"]),
                 summary=r["summary_pt"] or "", why=r["why_it_matters_pt"] or "", excerpt=excerpts.get(item, ""),
                 score=round(final[item], 4), relevance=round(relevance[item], 4) if item in relevance else None,
+                quote=quotes.get(item, ""),
                 channels=positions.get(item, {})))
 
         linked += self._shared(picked[:5], {e.entity_id for e in linked})

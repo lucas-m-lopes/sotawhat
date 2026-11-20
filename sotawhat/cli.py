@@ -153,6 +153,9 @@ def parse_args(argv):
                                                               "question says, e.g. 'esta semana')")
     p_ask.add_argument("--k", type=int, default=None, help="sources in the context (default RAG_SOURCES, 8)")
     p_ask.add_argument("--so-fontes", dest="so_fontes", action="store_true", help="retrieval only: no SLM call")
+    p_ask.add_argument("--motor", choices=["slm", "jev"], default=None,
+                       help="who answers: slm = the local model writes (default RAG_ENGINE); jev = TypeSafe's Jev through "
+                            "OpenRouter judges the sources and extracts the sentences that answer (about a second)")
     p_ask.add_argument("--sem-rerank", dest="sem_rerank", action="store_true", help="skip the cross-encoder (faster)")
     p_ask.add_argument("--detalhes", action="store_true", help="show the graph facts, the scores and the rankings")
     p_ask.add_argument("--json", action="store_true", help="the whole answer as JSON")
@@ -165,6 +168,7 @@ def parse_args(argv):
     p_rag.add_argument("--rebuild", action="store_true", help="index: drop every passage and embed all again")
     p_rag.add_argument("--gerar", action="store_true", help="eval: have the local SLM write a new set of questions")
     p_rag.add_argument("--n", type=int, default=40, help="eval: number of questions (default 40)")
+    p_rag.add_argument("--jev", action="store_true", help="eval: also measure the Jev judge (paid, cents)")
 
     p_calibrate = sub.add_parser("calibrate", help="proposals for the triage cut-offs and the idea weights (P6)")
     p_calibrate.add_argument("--apply", action="store_true", help="write the proposal to config/")

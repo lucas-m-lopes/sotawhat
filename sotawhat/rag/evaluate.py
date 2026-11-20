@@ -57,14 +57,14 @@ def load(path) -> list:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def measure(retriever, questions, k=8, channels=None, rerank=True) -> dict:
+def measure(retriever, questions, k=8, channels=None, rerank=True, judge=None) -> dict:
     reranker = retriever.reranker
     if not rerank:
         retriever.reranker = None
     ranks, seconds = [], 0.0
     try:
         for entry in questions:
-            pack = retriever.retrieve(entry["question"], k=k, channels=channels)
+            pack = retriever.retrieve(entry["question"], k=k, channels=channels, judge=judge)
             seconds += pack.timings.get("total", 0.0)
             found = [s.item_id for s in pack.sources]
             ranks.append(found.index(entry["item_id"]) + 1 if entry["item_id"] in found else None)
@@ -76,10 +76,14 @@ def measure(retriever, questions, k=8, channels=None, rerank=True) -> dict:
             "seconds": seconds / n, "ranks": ranks}
 
 
-def run(retriever, questions, k=8) -> dict:
-    return {name: measure(retriever, questions, k=k, channels=channels,
-                          rerank=rerank and retriever.reranker is not None)
-            for name, channels, rerank in SETUPS if rerank is False or retriever.reranker is not None}
+def run(retriever, questions, k=8, jev=None) -> dict:
+    """`jev`: also measure the Jev judge in the place of the cross-encoder (paid: about US$ 0.0002 a question)."""
+    results = {name: measure(retriever, questions, k=k, channels=channels,
+                             rerank=rerank and retriever.reranker is not None)
+               for name, channels, rerank in SETUPS if rerank is False or retriever.reranker is not None}
+    if jev is not None and jev.configured:
+        results["Jev no lugar do reranker"] = measure(retriever, questions, k=k, judge=jev)
+    return results
 
 
 def render(results, k=8) -> str:

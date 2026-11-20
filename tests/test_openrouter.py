@@ -91,10 +91,13 @@ def test_key_info_and_models():
     def handler(request):
         if request.url.path.endswith("/key"):
             return httpx.Response(200, json={"data": {"limit": 30, "usage": 1.5, "limit_remaining": 28.5}})
+        if request.url.path.endswith("/credits"):
+            return httpx.Response(200, json={"data": {"total_credits": 37, "total_usage": 30.5}})
         return httpx.Response(200, json={"data": [{"id": "deepseek/deepseek-v4.1-flash-1017"}]})
 
     client = _client(handler)
     assert client.key_info()["limit_remaining"] == 28.5
+    assert client.credits() == {"total_credits": 37, "total_usage": 30.5}
     assert client.models()[0]["id"] == "deepseek/deepseek-v4.1-flash-1017"
 
 

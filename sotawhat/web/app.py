@@ -66,6 +66,7 @@ class Question(BaseModel):
     days: int | None = Field(default=None, ge=1, le=3650)
     k: int | None = Field(default=None, ge=1, le=20)
     sources_only: bool = False
+    engine: Literal["slm", "jev"] | None = None      # None: RAG_ENGINE
 
 
 class TermStatus(BaseModel):
@@ -90,8 +91,9 @@ async def json_body(request: Request) -> dict:
 
 
 def create_app(db_path, static_dir=STATIC, rag=None) -> FastAPI:
-    """`rag`: a callable store -> (retriever, slm, settings-like with rag_sources and rag_context_chars), called at
-    the first question (the embedding model takes seconds to load); None answers 503 on /api/ask."""
+    """`rag`: a callable store -> (retriever, slm, jev, settings-like with rag_sources, rag_context_chars and
+    rag_engine), called at the first question (the embedding model takes seconds to load); None answers 503 on
+    /api/ask."""
     static_dir = Path(static_dir)
     parts = {}
     rag_lock = threading.Lock()
@@ -260,10 +262,11 @@ def create_app(db_path, static_dir=STATIC, rag=None) -> FastAPI:
         st = store(request)
 
         def work():
-            retriever, slm, knobs = rag_parts(st)
+            retriever, slm, jev, knobs = rag_parts(st)
             with rag_lock:                          # one question at a time: one GPU, one SQLite connection
                 return ask(retriever, None if asked.sources_only else slm, asked.question, days=asked.days,
-                           k=asked.k or knobs.rag_sources, budget=knobs.rag_context_chars)
+                           k=asked.k or knobs.rag_sources, budget=knobs.rag_context_chars,
+                           engine="slm" if asked.sources_only else (asked.engine or knobs.rag_engine), jev=jev)
 
         answer = await run_in_threadpool(work)
         if asked.sources_only:
@@ -276,8 +279,11 @@ def create_app(db_path, static_dir=STATIC, rag=None) -> FastAPI:
 
         status = index.status(store(request))
         if rag is not None and "rag" in parts:
-            ok, detail = parts["rag"][1].ping()
+            _, slm, jev, knobs = parts["rag"]
+            ok, detail = slm.ping()
             status["slm"] = {"ok": ok, "detail": detail}
+            status["jev"] = {"ok": bool(jev is not None and jev.configured), "model": getattr(jev, "model", None)}
+            status["engine"] = knobs.rag_engine
         return status
 
     # --- lessons (aulas 3D) ------------------------------------------------------------

@@ -144,7 +144,9 @@ def build_sources(profile, crossref_mailto="", settings=None, segmenter=None, st
     state = settings.sotawhat_data_dir / "state" if settings is not None else None
     crossref_mailto = crossref_mailto or getattr(settings, "crossref_mailto", "") or ""
     if profile == "geral":
-        sources = [ArxivSource(("cs.LG", "cs.CL", "cs.AI")), SemanticScholarSource(), HFPapersSource(),
+        sources = [ArxivSource(("cs.LG", "cs.CL", "cs.AI")),
+                   SemanticScholarSource(api_key=getattr(settings, "semantic_scholar_api_key", "") or ""),
+                   HFPapersSource(),
                    RSSSource("labs", LAB_FEEDS),
                    RSSSource("ai-news", AI_NEWS_FEEDS, keywordless=True, max_items=10, max_age_days=2, ai_specific=True)]
         if state is not None:

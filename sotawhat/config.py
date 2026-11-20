@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     embeddings_model: str = "google/embeddinggemma-300m"
 
     crossref_mailto: str = ""
+    semantic_scholar_api_key: str = ""   # free key: your own 1 request/s instead of the saturated anonymous pool
     github_token: str = ""            # P2 and the radar: GitHub search (30 req/min with a token, 10 without), star history
     hf_token: str = ""                # P2: Hugging Face Hub (higher rate limit)
     openalex_email: str = ""          # P4 prior art: OpenAlex polite pool (falls back to CROSSREF_MAILTO)

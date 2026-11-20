@@ -1182,8 +1182,10 @@
   }
 
   // --- lessons (aulas 3D) -------------------------------------------------------------
-  const LESSON_STATUS = { nova: "nova", planejada: "roteiro pronto", narrada: "narrada", renderizada: "renderizada",
-                          pronta: "pronta", entregue: "entregue", falhou: "parou" };
+  // F1 of 2026-11-20 (docs/superpowers/specs/2026-11-20-aulas-pela-interface-design.md): a lesson is planned, reviewed
+  // and produced from here. Each step is a `sotawhat lessons` process the server starts; one runs at a time.
+  const LESSON_STATUS = { nova: "sem roteiro", planejada: "roteiro pronto", narrada: "narrada", renderizada: "renderizada",
+                          pronta: "pronta", entregue: "entregue", falhou: "parou", descartada: "descartada" };
   const REVIEW = { ok: "✅ sem erros", erro: "⚠️ tem erro" };
   const COMPARISON = { melhor: "🏆 melhor que o NotebookLM", empate: "🤝 empate com o NotebookLM", pior: "📉 pior que o NotebookLM" };
   const CHECKLIST = ["Toda afirmação é rastreável e não é mais forte que a fonte", "Anatomia/orientação/rótulos corretos",
@@ -1191,12 +1193,218 @@
     "Status regulatório e off-label sinalizados", "Conteúdo de IA bate com os artigos; metáforas rotuladas",
     "Nenhum dado de paciente", "Licenças e créditos em ordem", "Uso de IA declarado", "Template pedagógico seguido",
     "Legendas legíveis e paleta segura"];
+  const STAGE_LABELS = { roteiro: "roteiro", storyboard: "storyboard", voz: "voz", "3d": "cenas 3D", checagem: "checagem",
+                         video: "vídeo", envio: "envio" };
+  const JOB_VERB = { roteiro: "planejando", aula: "produzindo", envio: "enviando" };
+  const LESSON_MODES = [["economico", "econômico"], ["equilibrado", "equilibrado"]];
+  const MODE_HINT = { economico: "DeepSeek V4.1 Flash escreve o roteiro · 2 a 4 min · US$ 0,01 a 0,02",
+                      equilibrado: "Kimi K3.1 Pro escreve o roteiro, com teto de preço maior · custo ainda não medido" };
+  const lessonsState = { state: null, lessons: [], entities: [], mode: "economico", send: true, poll: null, ticker: null,
+                         logOpen: false, searchTimer: null };
   const clock = (s) => `${Math.floor((s || 0) / 60)}:${String(Math.round((s || 0) % 60)).padStart(2, "0")}`;
+  const minutes = (s) => (s >= 90 ? `~${Math.round(s / 60)} min` : `~${Math.max(1, Math.round(s || 0))} s`);
+  const thousands = (n) => Number(n || 0).toLocaleString("pt-BR");
+  const modeLabel = (mode) => (LESSON_MODES.find(([value]) => value === mode) || [null, "econômico"])[1];
+
+  async function postJSON(path, body) {     // every write: a JSON body (the server refuses forms); the error is its detail
+    const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" },
+                                         body: JSON.stringify(body || {}) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || `erro ${response.status}`);
+    return data;
+  }
+
+  function liveJob() {
+    const job = lessonsState.state && lessonsState.state.job;
+    return job && job.alive ? job : null;
+  }
+
+  function jobLine(job) {
+    const what = JOB_VERB[job.action] || job.action;
+    const stage = job.stage ? ` · etapa ${STAGE_LABELS[job.stage] || job.stage}` : "";
+    return `aula #${job.lesson_id} · ${what}${stage}`;
+  }
+
+  // a button that asks for a second click ("confirmar?") and goes back after 4 s: no browser dialog
+  function confirmButton(label, armedLabel, run, cls = "btn") {
+    const button = el("button", { class: cls, type: "button" }, label);
+    let timer = null;
+    button.addEventListener("click", () => {
+      if (!button.classList.contains("armed")) {
+        button.classList.add("armed");
+        button.textContent = armedLabel;
+        timer = setTimeout(() => { button.classList.remove("armed"); button.textContent = label; }, 4000);
+        return;
+      }
+      clearTimeout(timer);
+      run(button);
+    });
+    return button;
+  }
+
+  async function lessonAction(card, path, body) {
+    card.querySelectorAll(".actions button").forEach((b) => { b.disabled = true; });
+    const error = card.querySelector(".action-error");
+    try {
+      await postJSON(path, body);
+      await loadLessons();
+    } catch (e) {
+      if (error) error.textContent = e.message;
+      card.querySelectorAll(".actions button").forEach((b) => { b.disabled = false; });
+    }
+  }
+
+  function lessonHead(lesson, badge, badgeClass, ...parts) {
+    return el("div", { class: "head" }, el("span", { class: `badge ${badgeClass || ""}` }, badge),
+      meta(`aula #${lesson.id}`, fmtDate(lesson.created_at), ...parts));
+  }
+
+  function logBlock(lesson, job) {
+    const lines = (job && job.log) || [];
+    const folder = String(lesson.id).padStart(3, "0");
+    const block = el("details", { class: "log", open: lessonsState.logOpen && lines.length ? true : null },
+      el("summary", {}, "log"),
+      lines.length ? el("pre", {}, lines.join("\n")) : el("p", { class: "muted" }, "as últimas linhas aparecem aqui"),
+      el("a", { href: `/lessons/${folder}/job.log`, target: "_blank", rel: "noopener" }, "log completo"));
+    block.addEventListener("toggle", () => { lessonsState.logOpen = block.open; });
+    return block;
+  }
+
+  // the steps of a running job: the ones done with their time, the current one counting, the next ones with their
+  // estimate (the review's, measured on lessons 6 to 8)
+  function progressBody(lesson, job) {
+    const s = lessonsState.state || {};
+    const planned = (lesson.estimate || {}).stages || {};
+    const expected = (name) => (name === "roteiro" ? s.plan_s || 200 : planned[name] || 0);
+    const now = Date.now();
+    let left = 0;
+    for (const step of job.stages || []) {
+      if (step.state === "pendente") left += expected(step.name);
+      if (step.state === "rodando") left += Math.max(0, expected(step.name) - (now - Date.parse(step.started_at)) / 1000);
+    }
+    const steps = (job.stages || []).map((step) => {
+      const label = STAGE_LABELS[step.name] || step.name;
+      if (step.state === "feita") return el("li", { class: "step done" }, el("b", {}, label), el("span", {}, clock(step.seconds)));
+      if (step.state === "parou") return el("li", { class: "step stop" }, el("b", {}, label), el("span", {}, clock(step.seconds)));
+      if (step.state === "rodando") {
+        return el("li", { class: "step run", "aria-current": "step" }, el("b", {}, label),
+          el("span", { "data-since": step.started_at, "data-of": expected(step.name) || "" }, "…"));
+      }
+      return el("li", { class: "step todo" }, el("b", {}, label), el("span", {}, expected(step.name) ? minutes(expected(step.name)) : "—"));
+    });
+    return el("div", { class: "job-live" },
+      lessonHead(lesson, JOB_VERB[job.action] || "rodando", "", job.origin === "terminal" ? "iniciada no terminal" : null,
+                 job.detached === false ? "morre se a interface reiniciar" : null),
+      el("h2", {}, lesson.title),
+      steps.length ? el("ol", { class: "stepper" }, steps) : el("p", { class: "muted" }, "iniciando o processo…"),
+      el("p", { class: "muted small" }, "decorrido ", el("span", { "data-since": job.started_at }, clock(job.elapsed_s)),
+        left > 0 ? ` · faltam ${minutes(left)}` : "", " · pode fechar a página: a aula continua"));
+  }
+
+  function progressCard(lesson, job) {
+    const card = el("article", { class: "idea lesson working", "data-lesson": lesson.id }, progressBody(lesson, job));
+    card.append(el("div", { class: "actions" },
+      confirmButton("Cancelar", "Cancelar mesmo?", () => lessonAction(card, `/api/lessons/${lesson.id}/cancel`))),
+      el("p", { class: "action-error" }), logBlock(lesson, job));
+    return card;
+  }
+
+  // a poll redraws the steps and the log only: a "Cancelar" waiting for its second click must stay armed
+  function refreshProgress(card, lesson, job) {
+    card.querySelector(".job-live").replaceWith(progressBody(lesson, job));
+    card.querySelector(".log").replaceWith(logBlock(lesson, job));
+  }
+
+  function planDetails(lesson, open) {
+    const more = el("details", { open: open || null }, el("summary", {}, open ? "roteiro, quiz e checagem de fatos" : "roteiro, quiz, portões e checklist"));
+    const fill = async () => {
+      if (more.dataset.loaded) return;
+      more.dataset.loaded = "1";
+      try { more.append(...lessonDetails(await api(`/api/lessons/${lesson.id}`))); }
+      catch (e) { more.append(el("p", { class: "muted" }, `não carregou (${e.message})`)); }
+    };
+    more.addEventListener("toggle", () => { if (more.open) fill(); });
+    if (open) fill();
+    return more;
+  }
+
+  // the review: the plan with the numbers of its production, before any credit of voice
+  function reviewCard(lesson) {
+    const s = lessonsState.state || {};
+    const est = lesson.estimate || {};
+    const credits = s.credits;
+    const short = Boolean(credits && !lesson.voice_paid && credits.left < est.credits);
+    const busy = liveJob();
+    const card = el("article", { class: "idea lesson review", "data-lesson": lesson.id },
+      lessonHead(lesson, "roteiro pronto", "", `modelos ${modeLabel(lesson.mode)}`,
+                 lesson.llm_usd != null ? el("span", { title: "todos os roteiros desta aula, inclusive os refeitos e os cancelados" },
+                                             `LLM até aqui US$ ${num(lesson.llm_usd, 3)}`) : null),
+      el("h2", {}, lesson.title),
+      lesson.objective ? el("p", {}, lesson.objective) : null,
+      el("dl", { class: "readouts" },
+        readout("Duração", `~${clock(est.video_s)}`),
+        readout("Cenas", String(est.scenes || 0), est.free3d ? `${est.free3d} em 3D` : null),
+        readout("Voz", `~${thousands(est.credits)}`, "créditos", short ? "bad" : null),
+        readout("Custo", `~US$ ${num(est.total_usd, 2)}`),
+        readout("Produção", minutes(est.seconds))),
+      el("p", { class: "muted small" },
+        `Créditos de voz disponíveis: ${credits ? thousands(credits.left) : "sem leitura"}`
+        + (credits && credits.resets_at ? ` (renovam em ${fmtDate(credits.resets_at)})` : "")
+        + `. Custo: voz ao preço do plano (US$ ${num(est.voice_usd, 2)}) + LLM do storyboard`
+        + (est.free3d ? " e das cenas 3D" : "") + ` (US$ ${num(est.llm_usd, 2)}). Estimativas medidas nas aulas 6 a 8.`));
+    const telegram = Boolean(s.telegram);
+    const sendBox = el("input", { type: "checkbox", checked: telegram && lessonsState.send ? true : null,
+                                  disabled: telegram ? null : true });
+    sendBox.addEventListener("change", () => { lessonsState.send = sendBox.checked; });
+    const produce = el("button", { class: "primary", type: "button", disabled: short || busy || !s.available ? true : null,
+                                   onclick: () => lessonAction(card, `/api/lessons/${lesson.id}/produce`, { send: sendBox.checked }) },
+      "Produzir aula");
+    card.append(el("div", { class: "actions" }, produce,
+      el("label", { class: "check-inline", title: telegram ? "" : "Telegram não configurado no .env" }, sendBox,
+         "enviar ao Telegram ao terminar"),
+      el("span", { class: "spacer" }),
+      confirmButton("Refazer roteiro", "Refazer mesmo?", () => lessonAction(card, `/api/lessons/${lesson.id}/plan`)),
+      confirmButton("Descartar", "Descartar mesmo?", () => lessonAction(card, `/api/lessons/${lesson.id}/discard`))),
+      el("p", { class: "action-error" }, short ? `Faltam créditos de voz para esta aula (~${thousands(est.credits)}).`
+        : busy ? `Espere: ${jobLine(busy)}.` : ""),
+      planDetails(lesson, true));
+    return card;
+  }
+
+  // a lesson that stopped: where and why, and the way on
+  function stoppedCard(lesson, job) {
+    const s = lessonsState.state || {};
+    const where = job && job.stage ? STAGE_LABELS[job.stage] || job.stage : null;
+    const why = lesson.error || (job && job.error) || (lesson.has_plan ? "a produção não terminou" : "o roteiro não terminou");
+    const busy = liveJob();
+    const card = el("article", { class: "idea lesson stopped", "data-lesson": lesson.id },
+      lessonHead(lesson, lesson.has_plan ? "parou" : "sem roteiro", "radar",
+                 job && job.finished_at ? `${job.state} em ${fmtDate(job.finished_at)}` : null),
+      el("h2", {}, lesson.title),
+      el("p", {}, where && !why.includes("(etapa") ? `Parou na etapa ${where}: ${why}` : `Parou: ${why}`));
+    const again = lesson.has_plan
+      ? el("button", { class: "primary", type: "button", disabled: busy || !s.available ? true : null,
+                       onclick: () => lessonAction(card, `/api/lessons/${lesson.id}/produce`,
+                                                   { send: job && job.send != null ? job.send : Boolean(s.telegram) }) },
+          "Retomar produção")
+      : el("button", { class: "primary", type: "button", disabled: busy || !s.available ? true : null,
+                       onclick: () => lessonAction(card, `/api/lessons/${lesson.id}/plan`) }, "Planejar roteiro");
+    card.append(el("div", { class: "actions" }, again,
+      lesson.has_plan ? el("span", { class: "muted small" }, "o que já foi pago fica em cache") : null,
+      el("span", { class: "spacer" }),
+      lesson.has_plan ? confirmButton("Refazer roteiro", "Refazer mesmo?", () => lessonAction(card, `/api/lessons/${lesson.id}/plan`)) : null,
+      confirmButton("Descartar", "Descartar mesmo?", () => lessonAction(card, `/api/lessons/${lesson.id}/discard`))),
+      el("p", { class: "action-error" }, busy ? `Espere: ${jobLine(busy)}.` : ""));
+    if (job) card.append(logBlock(lesson, job));
+    if (lesson.has_plan) card.append(planDetails(lesson, false));
+    return card;
+  }
 
   function lessonCard(lesson) {
     const [r0, r1] = lesson.quiz_score || [[0, 0], [0, 0]];
-    const card = el("article", { class: "idea lesson" },
-      el("div", { class: "head" }, el("span", { class: "badge" }, LESSON_STATUS[lesson.status] || lesson.status),
+    const card = el("article", { class: "idea lesson", "data-lesson": lesson.id },
+      el("div", { class: "head" }, el("span", { class: `badge ${lesson.status === "entregue" ? "main" : ""}` },
+                                      LESSON_STATUS[lesson.status] || lesson.status),
         meta(`aula #${lesson.id}`, fmtDate(lesson.created_at), lesson.duration_s ? clock(lesson.duration_s) : null,
              lesson.cost_usd !== null ? `US$ ${num(lesson.cost_usd, 3)}` + (lesson.cost_brl != null ? ` · R$ ${num(lesson.cost_brl, 2)}` : "") : null,
              lesson.voice ? el("span", { title: lesson.voice }, lesson.voice_label || lesson.voice) : null,
@@ -1204,7 +1412,6 @@
              REVIEW[lesson.review], COMPARISON[lesson.comparison])),
       el("h2", {}, lesson.title),
       lesson.objective ? el("p", {}, lesson.objective) : null,
-      lesson.error ? el("p", { class: "muted" }, `parou: ${lesson.error} — retome com sotawhat lessons resume ${lesson.id}`) : null,
       lesson.video ? el("video", { controls: true, preload: "metadata", src: lesson.video, class: "lesson-video" }) : null,
       lesson.scenes3d.length ? el("div", { class: "chips" }, el("span", { class: "muted" }, "Cenas 3D interativas: "),
         ...lesson.scenes3d.map((s) => el("a", { class: "chip", href: s.url, target: "_blank", rel: "noopener" }, `${s.n}. ${s.title}`))) : null,
@@ -1213,15 +1420,30 @@
       lesson.sources_md ? el("p", { class: "muted" }, "Linha de base: suba ",
         el("a", { href: lesson.sources_md, target: "_blank", rel: "noopener" }, "fontes.md"),
         " no NotebookLM e gere um Video Overview (Explainer, pt-BR) para comparar.") : null);
-    const more = el("details", {}, el("summary", {}, "roteiro, quiz, portões e checklist"));
-    more.addEventListener("toggle", async () => {
-      if (!more.open || more.dataset.loaded) return;
-      more.dataset.loaded = "1";
-      try { more.append(...lessonDetails(await api(`/api/lessons/${lesson.id}`))); }
-      catch (e) { more.append(el("p", { class: "muted" }, `não carregou (${e.message})`)); }
-    });
-    card.append(more);
+    if (lesson.video && !lesson.delivered_at) {          // ready and not sent yet (unchecked box, or the sending failed)
+      const s = lessonsState.state || {};
+      const busy = liveJob();
+      const failed = lesson.job && lesson.job.action === "envio" && lesson.job.state !== "concluida" ? lesson.job.error : null;
+      card.append(el("div", { class: "actions" },
+        el("button", { class: "primary", type: "button", disabled: busy || !s.telegram || !s.available ? true : null,
+                       title: s.telegram ? "" : "Telegram não configurado no .env",
+                       onclick: () => lessonAction(card, `/api/lessons/${lesson.id}/send`) }, "Enviar ao Telegram"),
+        el("span", { class: "muted small" }, "vídeo, 3D interativo e quiz")),
+        el("p", { class: "action-error" }, failed ? `O último envio parou: ${failed}` : busy ? `Espere: ${jobLine(busy)}.` : ""));
+    }
+    card.append(planDetails(lesson, false));
     return card;
+  }
+
+  function lessonView(lesson) {
+    const job = lesson.job;
+    if (job && job.alive) return progressCard(lesson, job);
+    if (!lesson.has_plan) return stoppedCard(lesson, job);
+    if (!lesson.video) {
+      const tried = job && job.action === "aula";     // a production started: no longer a review, a lesson to resume
+      return lesson.status === "planejada" && !tried ? reviewCard(lesson) : stoppedCard(lesson, job);
+    }
+    return lessonCard(lesson);
   }
 
   function lessonDetails(d) {
@@ -1245,7 +1467,7 @@
         el("li", {}, `G1 fatos: ${(gates.G1_first || []).length} problema(s) na 1ª checagem, ${after.length} depois da revisão`),
         ...after.map((p) => el("li", { class: "muted" }, p)),
         el("li", {}, `G2 roteiro: ${(gates.G2 || []).length ? gates.G2.join("; ") : "ok"}`),
-        el("li", {}, `hyperframes check: ${(check.errors || []).length} erro(s), ${(check.warnings || []).length} aviso(s)`)));
+        report.check ? el("li", {}, `hyperframes check: ${(check.errors || []).length} erro(s), ${(check.warnings || []).length} aviso(s)`) : null));
       if (report.cost_usd != null) out.push(el("h3", {}, "Custo"), el("ul", {},
         el("li", {}, `LLM: US$ ${num(report.llm_usd || 0, 3)}`),
         el("li", {}, `voz: ${voice.credits || 0} créditos ElevenLabs = US$ ${num(voice.usd || 0, 3)}` +
@@ -1277,14 +1499,184 @@
     return out;
   }
 
+  // --- the composer of a new lesson ---------------------------------------------------
+  function drawLessonsMeta() {
+    const s = lessonsState.state || {};
+    const credits = s.credits;
+    const parts = [readout("Aulas", thousands(lessonsState.lessons.length), s.discarded ? `${s.discarded} descartada(s)` : null),
+      credits ? readout("Créditos de voz", thousands(credits.left), `de ${thousands(credits.limit)}`)
+        : readout("Créditos de voz", "sem leitura", s.available ? "a ElevenLabs não respondeu" : null, "bad")];
+    if (credits && credits.resets_at) parts.push(readout("Renovam", fmtDate(credits.resets_at)));
+    $("#lessons-meta").replaceChildren(...parts);
+  }
+
+  function drawComposer() {
+    const s = lessonsState.state || {};
+    const busy = liveJob();
+    const problems = s.ready || [];
+    let text = `Planejar gasta até ~US$ ${num(s.plan_usd ?? 0.02, 2)} em ${minutes(s.plan_s || 200)}. A voz só é paga depois que você aprovar o roteiro.`;
+    if (!s.available) text = "Aulas pela interface desligadas neste servidor.";
+    else if (busy) text = `Espere a tarefa em andamento: ${jobLine(busy)}.`;
+    else if (problems.length) text = `Para produzir, falta: ${problems.join("; ")}.`;
+    const note = $("#lesson-form-note");
+    note.textContent = text;
+    note.classList.toggle("bad", !s.available || Boolean(busy) || problems.length > 0);
+    $("#lesson-plan").disabled = !s.available || Boolean(busy);
+    $("#lesson-mode-hint").textContent = MODE_HINT[lessonsState.mode];
+    $("#lesson-entities-hint").textContent = lessonsState.entities.length
+      ? "o roteiro parte das fontes destas entidades" : "opcional; sem entidade, vale o que o grafo achar pelo tema";
+    $("#lesson-entities").replaceChildren(...lessonsState.entities.map((e) => el("span", { class: "chip picked" },
+      el("span", { class: "dot", style: `background:${typeColor(e.type)}` }), e.name,
+      el("button", { class: "x", type: "button", title: "remover", "aria-label": `remover ${e.name}`, onclick: () => {
+        lessonsState.entities = lessonsState.entities.filter((x) => x.id !== e.id);
+        drawComposer();
+      } }, "×"))));
+    $("#lesson-entity-search").hidden = lessonsState.entities.length >= 3;
+  }
+
+  function drawSuggestions() {
+    const list = (lessonsState.state || {}).suggestions || [];
+    $("#lesson-suggestions").replaceChildren(...(list.length ? list.map((t) => el("button", { class: "chip", type: "button",
+      title: `tendência da semana · z ${num(t.z, 1)} · ${t.mentions} menções · liga a aula a esta entidade`, onclick: () => {
+        $("#lesson-topic").value = t.name;
+        fitLessonTopic();
+        lessonsState.entities = [{ id: t.entity_id, name: t.name, type: t.type }];
+        drawComposer();
+        $("#lesson-topic").focus();
+      } }, el("span", { class: "dot", style: `background:${typeColor(t.type)}` }), t.name, el("small", {}, t.type_label)))
+      : [el("span", { class: "muted" }, "nenhuma tendência nova com fontes no último relatório semanal")]));
+  }
+
+  function fitLessonTopic() {
+    const input = $("#lesson-topic");
+    input.style.height = "auto";
+    input.style.height = `${input.scrollHeight}px`;
+  }
+
+  async function searchLessonEntities(text) {
+    let found;
+    try { found = await api(`/api/search?q=${encodeURIComponent(text)}`); } catch (e) { return; }
+    const box = $("#lesson-entity-results");
+    const picked = new Set(lessonsState.entities.map((e) => e.id));
+    const options = (found.entities || []).filter((e) => !picked.has(e.entity_id)).slice(0, 8);
+    box.replaceChildren(...(options.length ? options.map((e) => el("button", { type: "button", onclick: () => {
+      lessonsState.entities.push({ id: e.entity_id, name: e.name, type: e.type });
+      $("#lesson-entity-search").value = "";
+      box.hidden = true;
+      drawComposer();
+    } }, el("span", { class: "dot", style: `background:${typeColor(e.type)}` }), el("span", {}, e.name),
+         el("small", { class: "muted" }, `${e.type_label} · ${e.mentions} menções`)))
+      : [el("p", { class: "muted pad" }, "nenhuma entidade com esse nome")]));
+    box.hidden = false;
+  }
+
+  async function planNewLesson() {
+    const input = $("#lesson-topic");
+    const note = $("#lesson-form-note");
+    const topic = input.value.trim();
+    if (topic.length < 3) {
+      note.textContent = "Escreva o tema da aula (ou escolha uma sugestão da semana).";
+      note.classList.add("bad");
+      return;
+    }
+    $("#lesson-plan").disabled = true;
+    try {
+      await postJSON("/api/lessons", { topic, entities: lessonsState.entities.map((e) => e.id), mode: lessonsState.mode });
+      input.value = "";
+      lessonsState.entities = [];
+      fitLessonTopic();
+      await loadLessons();
+    } catch (e) {
+      note.textContent = e.message;
+      note.classList.add("bad");
+      $("#lesson-plan").disabled = false;
+    }
+  }
+
+  function wireLessons() {
+    segmented($("#lesson-mode"), LESSON_MODES, lessonsState.mode, (value) => { lessonsState.mode = value; drawComposer(); });
+    const input = $("#lesson-topic");
+    input.addEventListener("input", fitLessonTopic);
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); $("#lesson-form").requestSubmit(); }
+    });
+    $("#lesson-form").addEventListener("submit", (ev) => { ev.preventDefault(); planNewLesson(); });
+    const search = $("#lesson-entity-search");
+    search.addEventListener("input", () => {
+      clearTimeout(lessonsState.searchTimer);
+      const text = search.value.trim();
+      if (text.length < 2) { $("#lesson-entity-results").hidden = true; return; }
+      lessonsState.searchTimer = setTimeout(() => searchLessonEntities(text), 220);
+    });
+    search.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") $("#lesson-entity-results").hidden = true;
+      if (ev.key === "Enter") {             // the first result, not the form
+        ev.preventDefault();
+        const first = $("#lesson-entity-results button");
+        if (first) first.click();
+      }
+    });
+    document.addEventListener("click", (ev) => {
+      if (!ev.target.closest(".entity-picker")) $("#lesson-entity-results").hidden = true;
+    });
+  }
+
+  // --- a running job: polled every 2.5 s, its seconds counted here --------------------
+  function tickLessonTimes() {
+    if (state.view !== "lessons" || !liveJob()) {
+      clearInterval(lessonsState.ticker);
+      lessonsState.ticker = null;
+      return;
+    }
+    const now = Date.now();
+    document.querySelectorAll("#lessons-list [data-since]").forEach((node) => {
+      const seconds = Math.max(0, (now - Date.parse(node.dataset.since)) / 1000);
+      const of = Number(node.dataset.of || 0);
+      node.textContent = of ? `${clock(seconds)} de ${minutes(of)}` : clock(seconds);
+    });
+  }
+
+  function followJob() {
+    clearTimeout(lessonsState.poll);
+    if (state.view !== "lessons" || !liveJob()) return;
+    if (!lessonsState.ticker) lessonsState.ticker = setInterval(tickLessonTimes, 1000);
+    tickLessonTimes();
+    lessonsState.poll = setTimeout(pollLessonJob, 2500);
+  }
+
+  async function pollLessonJob() {
+    let data;
+    try { data = await api("/api/lessons/job"); } catch (e) { followJob(); return; }
+    const job = data.job;
+    if (!job || !job.alive) { await loadLessons(); return; }        // it ended: the lesson changed
+    lessonsState.state.job = job;
+    const lesson = lessonsState.lessons.find((l) => l.id === job.lesson_id);
+    const card = $(`#lessons-list [data-lesson="${job.lesson_id}"]`);
+    if (!lesson || !card) { await loadLessons(); return; }
+    lesson.job = job;
+    if (card.classList.contains("working")) refreshProgress(card, lesson, job);
+    else card.replaceWith(progressCard(lesson, job));
+    followJob();
+  }
+
   async function loadLessons() {
-    let lessons;
-    try { lessons = await api("/api/lessons"); }
-    catch (e) { $("#lessons-meta").textContent = `Não consegui carregar as aulas (${e.message}).`; return; }
-    $("#lessons-meta").textContent = lessons.length
-      ? `${lessons.length} aula(s) · vídeo narrado com cenas 3D, quiz no Telegram e re-quiz em 2 dias`
-      : "Nenhuma aula ainda: sotawhat lessons make --tema \"…\" (ou --auto, a tendência mais forte da semana).";
-    $("#lessons-list").replaceChildren(...lessons.map(lessonCard));
+    let lessons, s;
+    try { [s, lessons] = await Promise.all([api("/api/lessons/state"), api("/api/lessons")]); }
+    catch (e) {
+      $("#lessons-meta").replaceChildren(readout("Aulas", "sem leitura", e.message, "bad"));
+      return;
+    }
+    lessonsState.state = s;
+    lessonsState.lessons = lessons;
+    for (const lesson of lessons) {        // the state's copy of the job has the end of the log
+      if (s.job && lesson.job && s.job.id === lesson.job.id) lesson.job = s.job;
+    }
+    drawLessonsMeta();
+    drawComposer();
+    drawSuggestions();
+    $("#lessons-list").replaceChildren(...(lessons.length ? lessons.map(lessonView)
+      : [el("p", { class: "empty-note" }, "Nenhuma aula ainda: escreva um tema acima ou escolha uma sugestão da semana.")]));
+    followJob();
   }
 
   // --- start -----------------------------------------------------------------------
@@ -1294,6 +1686,7 @@
     wireSearch();
     wireGlossary();
     wireAsk();
+    wireLessons();
     $("#unfocus").addEventListener("click", () => { state.focus = null; loadGraph(); });
     let resizeTimer = null;
     window.addEventListener("resize", () => {

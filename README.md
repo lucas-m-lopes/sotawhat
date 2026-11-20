@@ -251,10 +251,30 @@ Animated lessons (aulas; research in `docs/research/reports/Aulas didáticas ani
   - The LLM cap per lesson (`SOTAWHAT_LLM_BUDGET_USD_LESSON`) counts only the LLM.
 - Other commands:
   - `lessons resume N [--refazer plano,storyboard,voz,3d,video]` continues a lesson or redoes some steps (`voz`
-    spends credits again);
+    spends credits again); `--so-roteiro` (with `make` too) stops after the plan, for the review on the Aulas tab;
   - `lessons hf N` remakes an older lesson (its plan and sources) in the HyperFrames engine;
   - `lessons send N`, `lessons pack N` and `lessons list` deliver a lesson, export its pack and list the lessons.
-- The Aulas tab of the interface shows:
+- The Aulas tab makes lessons too (since 2026-11-20; design in
+  `docs/superpowers/specs/2026-11-20-aulas-pela-interface-design.md`):
+  1. **Nova aula.** Write a topic, or click a suggestion of the week (the trends without a lesson). Optionally link
+     up to 3 graph entities, and choose the models (econômico or equilibrado). "Planejar roteiro" makes only the plan:
+     2 to 4 minutes and US$ 0.01 to 0.02, no voice.
+  2. **Review.** The card shows the plan (scenes with their narration, quiz, fact gate) and the estimate of its
+     production: length, 3D scenes, voice credits, cost and time, beside the ElevenLabs credits left. Then
+     "Produzir aula" (with "enviar ao Telegram ao terminar"), "Refazer roteiro" or "Descartar".
+  3. **Production.** It runs in the background. The card shows the steps (done, running, still to come with their
+     estimate), the time and the end of the log, with "Cancelar". The page can be closed, and the interface can
+     restart: the lesson goes on.
+  4. **After.** A ready lesson that was not sent has "Enviar ao Telegram". A lesson that stopped says where and why,
+     with "Retomar": what was paid stays in its cache.
+
+  Each action runs the same command as the terminal (`sotawhat lessons resume N --so-roteiro`, `resume N`,
+  `send N`) in a process of its own, out of the job object of the scheduled task. One lesson is made at a time,
+  from the interface or the terminal: a `lessons make/resume/hf/send` started while another is running refuses and
+  says which one is. The state of the jobs is the `lesson_jobs` table (schema 8), and each lesson keeps its log in
+  `data/lessons/<id>/job.log`. "Cancelar", "Refazer roteiro" and "Descartar" ask for a second click instead of a
+  dialog. A discarded lesson leaves the list, keeps its files and gives its entities back to the suggestions.
+- The Aulas tab also shows, for every lesson:
   - the videos;
   - the interactive 3D page;
   - the plan with the template of each scene;

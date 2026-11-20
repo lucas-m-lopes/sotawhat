@@ -93,6 +93,10 @@ def test_packaged_page_loads_only_local_files():
         assert f'id="{group}" class="segmented" role="radiogroup" aria-labelledby="{group}-label"' in page
         assert f'id="{group}-label" class="label"' in page and f'id="{group}-hint" class="field-hint"' in page
     assert 'id="ask-sources-only"' not in page                              # "só as fontes" is one of the answer options
+    # the Aulas tab plans a lesson: the composer (shared with Perguntar), its two groups and the suggestions
+    assert '<form id="lesson-form" class="composer"' in page and 'id="lesson-topic"' in page
+    assert 'id="lesson-mode" class="segmented" role="radiogroup" aria-labelledby="lesson-mode-label"' in page
+    assert 'id="lesson-entity-search"' in page and 'id="lesson-suggestions"' in page and 'id="lessons-meta" class="readouts"' in page
     assert '<link rel="stylesheet" href="/static/style.css">' in page
     assert not re.search(r'(src|href)="(https?:)?//', page)                 # no CDN, nothing external
     licenses = (STATIC / "vendor" / "LICENSES.md").read_text(encoding="utf-8")
@@ -106,6 +110,9 @@ def test_packaged_page_loads_only_local_files():
     assert 'import("/static/graph3d.js")' in app_js                         # three.js only loads with the graph
     assert 'const TITLE = "SOTA What";' in app_js and "scene3d.setFlat(value === 2)" in app_js
     assert '["sources", "só as fontes"]' in app_js and 'sources_only: mode === "sources"' in app_js
+    for route in ("/api/lessons/state", "/api/lessons/job", "/produce", "/plan", "/cancel", "/discard", "/send"):
+        assert route in app_js
+    assert "confirm(" not in app_js                                        # second clicks, never a blocking dialog
     graph3d = (STATIC / "graph3d.js").read_text(encoding="utf-8")           # the 3D graph: local modules only
     assert re.findall(r'^import .* from "([^"]+)";$', graph3d, re.M) == ["three", "./vendor/three/OrbitControls.js"]
     assert "innerHTML" not in graph3d and not re.search(r"https?://", graph3d)

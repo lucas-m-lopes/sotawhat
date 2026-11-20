@@ -17,6 +17,7 @@ import re
 import subprocess
 import wave
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -85,6 +86,30 @@ class ElevenLabs:
         except ValueError:
             credits = len(text)
         return base64.b64decode(data["audio_base64"]), alignment, credits
+
+    def subscription(self) -> dict:
+        """The plan: `character_limit` (with the credits rolled over from earlier months), `character_count` (used in
+        this period) and `next_character_count_reset_unix`. Reading it spends nothing."""
+        r = self.client.get("/v1/user/subscription")
+        if r.status_code != 200:
+            raise ElevenError(f"ElevenLabs {r.status_code}: {r.text[:300]}")
+        return r.json()
+
+
+def credit_balance(api_key, client=None) -> dict | None:
+    """What is left of the voice credits, for the review step of the Aulas tab.
+    -> {"left", "limit", "used", "tier", "resets_at"} or None (no key, or ElevenLabs did not answer)."""
+    if not api_key:
+        return None
+    try:
+        el = ElevenLabs(api_key, client=client or httpx.Client(base_url=API, timeout=15, headers={"xi-api-key": api_key}))
+        data = el.subscription()
+        limit, used = int(data["character_limit"]), int(data["character_count"])
+        reset = data.get("next_character_count_reset_unix")
+        resets_at = datetime.fromtimestamp(int(reset), timezone.utc).date().isoformat() if reset else None
+    except (ElevenError, httpx.HTTPError, KeyError, TypeError, ValueError):
+        return None
+    return {"left": max(0, limit - used), "limit": limit, "used": used, "tier": data.get("tier"), "resets_at": resets_at}
 
 
 def spans(sentences) -> list:

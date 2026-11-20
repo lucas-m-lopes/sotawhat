@@ -94,18 +94,28 @@ def pack_markdown(pack, plan=None) -> str:
     return "\n".join(out)
 
 
-def pick_topic(store, min_sources=2):
-    """The strongest trend of the latest weekly report that is a process-like entity, has sources and no lesson
-    yet. -> (name, [entity_id]) or None."""
+def suggest_topics(store, n=5, min_sources=2) -> list:
+    """The strongest trends of the latest weekly report that are process-like entities, have sources and no lesson
+    yet (a discarded or failed lesson frees its entities): the suggestions of the Aulas tab.
+    -> [{"name", "entity_id", "type", "type_label", "z", "mentions"}]"""
     report = store.latest_weekly_report("weekly") or store.latest_weekly_report()
     if not report:
-        return None
-    taught = store.taught_entities()
+        return []
+    taught, out = store.taught_entities(), []
     for trend in sorted(report["payload"].get("trends") or [], key=lambda t: -(t.get("z") or 0)):
         eid = trend.get("entity_id")
         if eid is None or eid in taught or trend.get("type") not in LESSON_TYPES:
             continue
         detail = q.entity_detail(store, eid, items_limit=min_sources)
         if detail and len(detail["items"]) >= min_sources:
-            return trend["name"], [eid]
-    return None
+            out.append({"name": trend["name"], "entity_id": eid, "type": detail["type"], "type_label": detail["type_label"],
+                        "z": trend.get("z"), "mentions": detail["mention_count"]})
+            if len(out) >= n:
+                break
+    return out
+
+
+def pick_topic(store, min_sources=2):
+    """The strongest of the suggestions (`lessons make --auto`). -> (name, [entity_id]) or None."""
+    found = suggest_topics(store, 1, min_sources)
+    return (found[0]["name"], [found[0]["entity_id"]]) if found else None

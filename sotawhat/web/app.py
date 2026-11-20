@@ -281,8 +281,9 @@ def create_app(db_path, static_dir=STATIC, rag=None) -> FastAPI:
         if rag is not None and "rag" in parts:
             _, slm, jev, knobs = parts["rag"]
             ok, detail = slm.ping()
-            status["slm"] = {"ok": ok, "detail": detail}
-            status["jev"] = {"ok": bool(jev is not None and jev.configured), "model": getattr(jev, "model", None)}
+            status["slm"] = {"ok": ok, "detail": detail, "model": slm.model}
+            status["jev"] = {"ok": bool(jev is not None and jev.configured), "model": getattr(jev, "model", None),
+                             "zdr": bool(getattr(jev, "zdr", False))}
             status["engine"] = knobs.rag_engine
         return status
 

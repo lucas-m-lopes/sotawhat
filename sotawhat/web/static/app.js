@@ -850,15 +850,19 @@
       : [el("p", { class: "muted" }, "Nenhuma ferramenta no radar ainda.")]));
   }
 
-  // --- questions to the graph (2026-11-20): hybrid retrieval, then the local SLM ------------------
-  const ASK_DAYS = [[0, "o período que a pergunta disser"], [7, "7 dias"], [30, "30 dias"], [90, "90 dias"]];
+  // --- questions to the graph (2026-11-20): hybrid retrieval, then who answers: the local SLM, Jev or nobody ---
+  const ASK_DAYS = [[0, "automático"], [7, "7 dias"], [30, "30 dias"], [90, "90 dias"]];
   const ASK_EXAMPLES = ["O que saiu esta semana sobre agentes clínicos?", "Quais modelos abordam sepse e quem os desenvolveu?",
                         "Quais as organizações mais citadas este mês?", "O que é RAG e em que itens apareceu?",
                         "O que está em alta no grafo?"];
   const RANKINGS = { dense: "sentido", bm25: "palavras", graph: "grafo", mention: "menção", relation: "relação",
                      category: "categoria" };
-  const ENGINES = [["slm", "modelo local · redige"], ["jev", "Jev · extrai, ~2 s"]];
-  const askState = { days: 0, busy: false, engine: null };       // engine: null until the server says its default
+  // Who answers. "sources" is nobody: the request goes with sources_only and brings the ranked sources alone.
+  const ANSWERERS = [["slm", "modelo local"], ["jev", "Jev"], ["sources", "só as fontes"]];
+  const WAITING = { slm: "buscando no grafo e perguntando ao modelo local…", jev: "buscando no grafo e julgando as fontes com a Jev…",
+                    sources: "buscando no grafo…" };
+  // engine: null until the server says its default; status: the last /api/rag/status
+  const askState = { days: 0, busy: false, engine: null, status: null };
 
   function answerNodes(text, card) {   // the answer as text nodes, with each [n] as a button that shows its source
     const nodes = [];
@@ -898,7 +902,8 @@
     const t = d.timings || {};
     card.append(el("h2", {}, d.question));
     if (d.answer) card.append(el("div", { class: "answer-text" }, answerNodes(d.answer, card)));
-    else if (d.error) card.append(el("p", { class: "muted" }, `O modelo local não respondeu (${d.error}). As fontes encontradas estão abaixo.`));
+    else if (d.error) card.append(el("p", { class: "muted" },
+      `${d.engine === "jev" ? "A Jev" : "O modelo local"} não respondeu (${d.error}). As fontes encontradas estão abaixo.`));
     for (const w of d.warnings || []) card.append(el("p", { class: "warn" }, `⚠️ ${w}`));
     card.append(d.engine === "jev"
       ? meta(d.model ? `${d.model} · frases extraídas das fontes, nada foi redigido` : "sem a Jev: só a busca",
@@ -919,13 +924,14 @@
     if (askState.busy || question.trim().length < 3) return;
     askState.busy = true;
     const button = $("#ask-send");
+    const mode = askState.engine;
     const waiting = el("article", { class: "idea answer" }, el("h2", {}, question),
-      el("p", { class: "muted" }, "buscando no grafo e perguntando ao modelo local…"));
+      el("p", { class: "muted" }, WAITING[mode] || WAITING.slm));
     $("#ask-thread").prepend(waiting);
     button.disabled = true;
-    const body = { question, sources_only: $("#ask-sources-only").checked };
+    const body = { question, sources_only: mode === "sources" };
     if (askState.days) body.days = askState.days;
-    if (askState.engine) body.engine = askState.engine;
+    if (mode && mode !== "sources") body.engine = mode;
     try {
       const d = await api("/api/ask", { method: "POST", headers: { "content-type": "application/json" },
                                         body: JSON.stringify(body) });
@@ -939,50 +945,99 @@
     loadAsk();
   }
 
-  async function loadAsk() {
-    let s;
-    try { s = await api("/api/rag/status"); } catch (e) {
-      $("#ask-meta").textContent = `Não consegui ler o índice (${e.message}).`;
+  function readout(label, value, note, state) {
+    return el("div", { "data-state": state || null }, el("dt", {}, label), el("dd", {}, value, note ? el("small", {}, note) : null));
+  }
+
+  function drawAskMeta(error) {              // the state of the index, as three short readouts beside the heading
+    const s = askState.status;
+    const box = $("#ask-meta");
+    if (error) { box.replaceChildren(readout("Índice", "sem leitura", error, "bad")); return; }
+    if (!s) return;
+    if (!s.items_indexed) {
+      box.replaceChildren(readout("Índice", "vazio", "rode sotawhat rag index (minutos na primeira vez)", "bad"));
       return;
     }
-    const slm = s.slm ? (s.slm.ok ? `modelo local: ${s.slm.detail}` : `modelo local fora do ar (${s.slm.detail})`) : null;
+    const count = (n) => Number(n || 0).toLocaleString("pt-BR");
+    const behind = s.approved_items - s.items_indexed;
+    const passages = Object.values(s.kinds || {}).reduce((sum, kind) => sum + (kind.passages || 0), 0);
+    box.replaceChildren(
+      readout("Itens no índice", `${count(s.items_indexed)} / ${count(s.approved_items)}`,
+              behind > 0 ? `faltam ${behind}: rode sotawhat rag index` : null, behind > 0 ? "bad" : null),
+      readout("Trechos", count(passages)),
+      readout("Atualizado", fmtDate(s.indexed_at)));
+  }
+
+  function engineHint() {                    // -> [what the chosen option does, whether it is a problem]
+    const s = askState.status || {};
+    const mode = askState.engine || "slm";
+    if (mode === "sources") return ["sem resposta redigida: só as fontes, em ordem de relevância · ~3 s", false];
+    if (mode === "jev") {
+      if (s.jev && !s.jev.ok) return ["sem a chave do OpenRouter: quem responde é o modelo local", true];
+      const model = s.jev && s.jev.model ? s.jev.model.split("/").pop() : "Jev";
+      const kept = s.jev && s.jev.zdr ? " (ZDR, sem retenção)" : "";
+      return [`extrai frases das fontes, sem redigir · ~2 s · ${model} via OpenRouter${kept}`, false];
+    }
+    if (s.slm && !s.slm.ok) return [`fora do ar: ${s.slm.detail} · rode sotawhat rag up`, true];
+    return [`redige a resposta com citações · ~12 s · ${s.slm && s.slm.model ? `${s.slm.model}, ` : ""}neste computador`, false];
+  }
+
+  function drawAskHints() {
+    const [text, bad] = engineHint();
+    const hint = $("#ask-engine-hint");
+    hint.textContent = text;
+    hint.classList.toggle("bad", bad);
+    $("#ask-days-hint").textContent = askState.days ? `só itens dos últimos ${askState.days} dias`
+      : "segue a pergunta (“esta semana”); sem período nela, todo o grafo";
+  }
+
+  async function loadAsk() {
+    let s;
+    try { s = await api("/api/rag/status"); } catch (e) { drawAskMeta(e.message); return; }
+    askState.status = s;
     if (askState.engine === null && s.engine) {        // the first status after a question brings the server's default
       let saved = null;
       try { saved = localStorage.getItem("sotawhat.engine"); } catch (e) { /* private window */ }
-      askState.engine = ENGINES.some(([value]) => value === saved) ? saved : s.engine;
+      askState.engine = ANSWERERS.some(([value]) => value === saved) ? saved : s.engine;
       drawEngines();
     }
-    $("#ask-meta").textContent = s.items_indexed
-      ? [`${s.items_indexed} de ${s.approved_items} itens aprovados no índice`, `atualizado em ${fmtDate(s.indexed_at)}`,
-         "a resposta cita as fontes e roda toda neste computador", slm].filter(Boolean).join(" · ")
-      : "Índice vazio: rode sotawhat rag index (minutos na primeira vez).";
+    drawAskMeta();
+    drawAskHints();
   }
 
   function drawEngines() {
-    segmented($("#ask-engine"), ENGINES, askState.engine || "slm", (value) => {
+    segmented($("#ask-engine"), ANSWERERS, askState.engine || "slm", (value) => {
       askState.engine = value;
       try { localStorage.setItem("sotawhat.engine", value); } catch (e) { /* private window */ }
+      drawAskHints();
     });
+    drawAskHints();
   }
 
   function wireAsk() {
     try {
       const saved = localStorage.getItem("sotawhat.engine");
-      if (ENGINES.some(([value]) => value === saved)) askState.engine = saved;
+      if (ANSWERERS.some(([value]) => value === saved)) askState.engine = saved;
     } catch (e) { /* private window */ }
+    segmented($("#ask-days"), ASK_DAYS, askState.days, (value) => { askState.days = value; drawAskHints(); });
     drawEngines();
-    segmented($("#ask-days"), ASK_DAYS, askState.days, (value) => { askState.days = value; });
-    $("#ask-examples").replaceChildren(el("span", { class: "muted" }, "Experimente: "), ...ASK_EXAMPLES.map((text) =>
-      el("button", { class: "chip", type: "button", onclick: () => { $("#ask-input").value = text; sendQuestion(text); } }, text)));
+    const input = $("#ask-input");
+    const fit = () => {                      // the field grows with the question, up to the max-height of the style
+      input.style.height = "auto";
+      input.style.height = `${input.scrollHeight}px`;
+    };
+    input.addEventListener("input", fit);
+    $("#ask-examples").replaceChildren(...ASK_EXAMPLES.map((text) =>
+      el("button", { class: "chip", type: "button", onclick: () => { input.value = text; fit(); sendQuestion(text); } }, text)));
     $("#ask-form").addEventListener("submit", (ev) => {
       ev.preventDefault();
-      const input = $("#ask-input");
       const question = input.value.trim();
       if (question.length < 3) return;
       input.value = "";
+      fit();
       sendQuestion(question);
     });
-    $("#ask-input").addEventListener("keydown", (ev) => {
+    input.addEventListener("keydown", (ev) => {
       if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); $("#ask-form").requestSubmit(); }
     });
   }

@@ -82,16 +82,24 @@ def test_packaged_page_loads_only_local_files():
 
     page = (STATIC / "index.html").read_text(encoding="utf-8")
     scripts = re.findall(r'<script src="([^"]+)"', page)
-    assert scripts == ["/static/vendor/graphology.umd.min.js", "/static/vendor/graphology-library.min.js",
-                       "/static/vendor/sigma.min.js", "/static/app.js"]
+    assert scripts == ["/static/vendor/graphology.umd.min.js", "/static/vendor/graphology-library.min.js", "/static/app.js"]
+    assert '<script type="importmap">{"imports": {"three": "/static/vendor/three/three.module.js"}}</script>' in page
     assert '<link rel="stylesheet" href="/static/style.css">' in page
     assert not re.search(r'(src|href)="(https?:)?//', page)                 # no CDN, nothing external
     licenses = (STATIC / "vendor" / "LICENSES.md").read_text(encoding="utf-8")
-    for name in ("sigma.min.js", "graphology.umd.min.js", "graphology-library.min.js"):
+    for name in ("graphology.umd.min.js", "graphology-library.min.js", "three/three.module.js", "three/three.core.js",
+                 "three/OrbitControls.js"):
         digest = hashlib.sha256((STATIC / "vendor" / name).read_bytes()).hexdigest()
         assert digest in licenses, name
+    assert not (STATIC / "vendor" / "sigma.min.js").exists()                # the 2D graph left with its library
     app_js = (STATIC / "app.js").read_text(encoding="utf-8")
     assert "fetch(" in app_js and "innerHTML" not in app_js                 # data goes in with textContent
+    assert 'import("/static/graph3d.js")' in app_js                         # three.js only loads with the graph
+    graph3d = (STATIC / "graph3d.js").read_text(encoding="utf-8")           # the 3D graph: local modules only
+    assert re.findall(r'^import .* from "([^"]+)";$', graph3d, re.M) == ["three", "./vendor/three/OrbitControls.js"]
+    assert "innerHTML" not in graph3d and not re.search(r"https?://", graph3d)
+    css = (STATIC / "style.css").read_text(encoding="utf-8")
+    assert not re.search(r"url\(|@import|https?://", css)                   # no remote font, image or stylesheet
 
 
 def test_cli_serve():

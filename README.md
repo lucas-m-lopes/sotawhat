@@ -63,7 +63,7 @@ Phase P3 adds the knowledge graph and its own interface (no Obsidian):
   `config/aliases.yaml`, a cheap LLM judge for look-alike names (never across version numbers) and an
   audit trail of merges. The triage categories become graph nodes too. `sotawhat graph extract
   [--limit N]` does the same on demand, e.g. for the items approved before P3.
-- `sotawhat serve` opens the interface at http://127.0.0.1:8765: the graph (sigma.js + graphology,
+- `sotawhat serve` opens the interface at http://127.0.0.1:8765: the graph (in 3D since 2026-11-20: three.js + graphology,
   shipped in the package), filters by period, type and mentions, search (accents optional; an exact
   name or alias such as "EHR" comes first, the triage categories after the entities), entity and item
   panels, and 👍 👎 🧪 votes that count like the Telegram ones. It reads SQLite, so it works with Docker

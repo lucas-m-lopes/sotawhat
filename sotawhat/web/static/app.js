@@ -1,22 +1,22 @@
 // sotawhat/web/static/app.js — the graph interface (SDD §6.11). Vanilla JS over the local API;
-// graphology + graphology-library (ForceAtlas2, Louvain) + sigma.js 3, all served from /static/vendor.
+// graphology + graphology-library (Louvain) from /static/vendor, and the 3D graph of graph3d.js (three.js).
 // Three views behind the header tabs (#grafo, #ideias, #tendencias); the ideas and trends pages are P4.
 // Every piece of data goes into the page through textContent, never as HTML.
 "use strict";
 (() => {
   const TYPES = {
-    technique: { label: "técnica", color: "#4C78A8" },
-    model: { label: "modelo", color: "#B279A2" },
-    dataset: { label: "dataset", color: "#2FA39C" },
-    organization: { label: "organização", color: "#F58518" },
-    product: { label: "produto", color: "#54A24B" },
-    problem: { label: "problema", color: "#E45756" },
-    regulation: { label: "regulação", color: "#9D755D" },
+    technique: { label: "técnica", color: "#4DA3FF" },        // light sources on a dark scene: saturated and bright
+    model: { label: "modelo", color: "#B58CFF" },
+    dataset: { label: "dataset", color: "#2EE6C8" },
+    organization: { label: "organização", color: "#FFB454" },
+    product: { label: "produto", color: "#7CF07C" },
+    problem: { label: "problema", color: "#FF6B88" },
+    regulation: { label: "regulação", color: "#E8C39A" },
   };
   const CATEGORIES = { domain: "domínio", problem_type: "tipo de problema", technique_family: "família de técnica" };
-  const CATEGORY_COLOR = "#A8A29E";
-  const COMMUNITY_COLORS = ["#4C78A8", "#F58518", "#54A24B", "#E45756", "#2FA39C", "#B279A2", "#E2B000", "#FF8FA3",
-                            "#9D755D", "#6F7A85", "#2E86AB", "#C05621"];
+  const CATEGORY_COLOR = "#9AA7BD";
+  const COMMUNITY_COLORS = ["#4DA3FF", "#FFB454", "#7CF07C", "#FF6B88", "#2EE6C8", "#B58CFF", "#FFE066", "#FF9AD5",
+                            "#E8C39A", "#8FD3FF", "#5EE6FF", "#FF8A5B"];
   const DAYS = [[7, "7 dias"], [30, "30 dias"], [90, "90 dias"], [365, "1 ano"], [0, "tudo"]];
   const COLOR_BY = [["type", "tipo"], ["community", "comunidade"]];
   const VOTES = [["up", "👍", "relevante"], ["down", "👎", "não relevante"], ["test", "🧪", "quero testar"]];
@@ -24,7 +24,7 @@
 
   const state = { days: 30, types: new Set(Object.keys(TYPES)), categories: false, min: 1, limit: 250,
                   colorBy: "type", focus: null, selected: null, hovered: null, data: null, stats: null, view: null };
-  let renderer = null;
+  let scene3d = null;         // Graph3D of graph3d.js
   let graph = null;
 
   // --- helpers ---------------------------------------------------------------
@@ -46,7 +46,6 @@
     return node;
   }
 
-  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   const typeColor = (type) => (TYPES[type] || {}).color || CATEGORY_COLOR;
   const typeLabel = (type) => (TYPES[type] || {}).label || CATEGORIES[type] || type;
   const safeUrl = (url) => (/^https?:\/\//i.test(url || "") ? url : null);
@@ -68,12 +67,6 @@
     const response = await fetch(path, options);
     if (!response.ok) throw new Error(`${response.status} ${(await response.text()).slice(0, 200)}`);
     return response.json();
-  }
-
-  function hash(text) {   // FNV-1a: stable initial positions, so the layout does not jump on reload
-    let h = 2166136261;
-    for (let i = 0; i < text.length; i += 1) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
-    return h >>> 0;
   }
 
   function seededRandom(seed) {
@@ -123,7 +116,7 @@
   function buildFilters() {
     segmented($("#days"), DAYS, state.days, (value) => { state.days = value; refilter(); });
     segmented($("#color-by"), COLOR_BY, state.colorBy, (value) => {
-      state.colorBy = value; saveFilters(); if (renderer) renderer.refresh({ skipIndexation: true });
+      state.colorBy = value; saveFilters(); paint();
     });
     $("#types").replaceChildren(...Object.entries(TYPES).map(([type, info]) => el("label", { class: "check" },
       el("input", { type: "checkbox", checked: state.types.has(type), onchange: (ev) => {
@@ -150,7 +143,9 @@
     loadGraph();
   }
 
-  // --- graph -------------------------------------------------------------------
+  // --- graph (3D, graph3d.js) ------------------------------------------------------
+  let engine = null;          // the graph3d.js module: three.js is only loaded when the graph is first drawn
+
   function setStatus(text) { $("#status").textContent = text; }
 
   function showOverlay(text) {
@@ -174,7 +169,7 @@
       showOverlay(`Não consegui carregar o grafo (${e.message}).`);
       return;
     }
-    draw(state.data);
+    await draw(state.data);
   }
 
   function nodeColor(attrs) {
@@ -184,132 +179,53 @@
     return typeColor(attrs.kind);
   }
 
-  function drawHover(context, data, settings) {
-    const size = settings.labelSize;
-    context.font = `600 ${size}px ${settings.labelFont}`;
-    const label = data.label || "";
-    const width = context.measureText(label).width + 14;
-    const height = size + 10;
-    const x = data.x + data.size + 5;
-    const y = data.y - height / 2;
-    context.fillStyle = css("--panel");
-    context.strokeStyle = css("--line");
-    context.lineWidth = 1;
-    context.beginPath();
-    if (context.roundRect) context.roundRect(x, y, width, height, 6); else context.rect(x, y, width, height);
-    context.fill();
-    context.stroke();
-    context.fillStyle = css("--fg");
-    context.fillText(label, x + 7, data.y + size / 3);
-    context.beginPath();
-    context.arc(data.x, data.y, data.size + 2.5, 0, Math.PI * 2);
-    context.strokeStyle = css("--accent");
-    context.lineWidth = 2;
-    context.stroke();
+  function paint() {          // colors and the lit neighborhood, after the hover, the selection or "Cores" change
+    if (!scene3d || !graph) return;
+    scene3d.setColors(graph.mapNodes((node, attrs) => nodeColor(attrs)));
+    scene3d.setActive(state.hovered || state.selected);
   }
 
-  function nodeReducer(node, data) {
-    const res = { ...data, color: nodeColor(data) };
-    const active = state.hovered || state.selected;
-    if (active && graph.hasNode(active)) {
-      if (node === active) {
-        res.highlighted = true;
-        res.zIndex = 2;
-      } else if (graph.areNeighbors(active, node)) {
-        res.zIndex = 1;
-      } else {
-        res.color = css("--dim");
-        res.label = "";
-        res.zIndex = 0;
-      }
-    }
-    return res;
-  }
-
-  function edgeReducer(edge, data) {
-    const res = { ...data, color: data.kind === "co" ? css("--edge") : css("--edge-typed") };
-    const active = state.hovered || state.selected;
-    if (active && graph.hasNode(active) && !graph.hasExtremity(edge, active)) res.hidden = true;
-    return res;
-  }
-
-  // sigma's label grid keeps about one label per cell, but long labels spill into the next cells and pile up in
-  // the middle of the graph. So sigma only queues them while it renders; at the end of the frame they are drawn
-  // with the highlighted and the biggest nodes first, and a label that would cover one already drawn is skipped
-  // (hovering a node still shows its name).
-  let pendingLabels = [];
-
-  function queueLabel(context, data) {
-    if (data.label) pendingLabels.push(data);
-  }
-
-  function drawLabels() {
-    const queued = pendingLabels;
-    pendingLabels = [];
-    const canvas = renderer && renderer.getCanvases().labels;
-    if (!canvas || !queued.length) return;
-    const context = canvas.getContext("2d");
-    const size = renderer.getSetting("labelSize");
-    context.font = `${renderer.getSetting("labelWeight")} ${size}px ${renderer.getSetting("labelFont")}`;
-    context.fillStyle = renderer.getSetting("labelColor").color;
-    queued.sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0) || b.size - a.size);
-    const placed = [];
-    for (const data of queued) {
-      const x = data.x + data.size + 3;
-      const box = { left: x - 2, right: x + context.measureText(data.label).width + 2,
-                    top: data.y - size * 0.8, bottom: data.y + size * 0.45 };
-      if (placed.some((p) => box.left < p.right && box.right > p.left && box.top < p.bottom && box.bottom > p.top)) {
-        continue;
-      }
-      placed.push(box);
-      context.fillText(data.label, x, data.y + size / 3);
-    }
-  }
-
-  function draw(data) {
+  async function draw(data) {
     graph = new graphology.Graph({ type: "undirected", multi: false, allowSelfLoops: false });
     for (const node of data.nodes) {
-      const start = seededRandom(hash(node.id));
-      graph.addNode(node.id, { label: node.label, kind: node.type, entity: node, x: start(), y: start(),
-                               size: Math.min(5 + 2.4 * Math.sqrt(node.count || 1), 22) });
+      graph.addNode(node.id, { label: node.label, kind: node.type, entity: node,
+                               size: Math.min(1 + 0.6 * Math.sqrt(node.count || 1), 5.5) });
     }
     for (const edge of data.edges) {
       if (!graph.hasNode(edge.source) || !graph.hasNode(edge.target) || graph.hasEdge(edge.source, edge.target)) continue;
-      graph.addEdgeWithKey(edge.id, edge.source, edge.target, {
-        kind: edge.kind, label: edge.label, weight: edge.weight, type: edge.directed ? "arrow" : "line",
-        size: Math.min(0.6 + Math.log2(1 + edge.weight), 4) });
+      graph.addEdgeWithKey(edge.id, edge.source, edge.target, { kind: edge.kind, label: edge.label, weight: edge.weight });
     }
-    const lib = graphologyLibrary;
     if (graph.order > 1) {
       try {
-        lib.communitiesLouvain.assign(graph, { rng: seededRandom(42) });
+        graphologyLibrary.communitiesLouvain.assign(graph, { rng: seededRandom(42) });
       } catch (e) { /* no edges at all: no communities */ }
-      const settings = lib.layoutForceAtlas2.inferSettings(graph);
-      lib.layoutForceAtlas2.assign(graph, { iterations: graph.order > 500 ? 150 : 300,
-        settings: { ...settings, gravity: 0.6, scalingRatio: 18, slowDown: 3, barnesHutOptimize: graph.order > 300 } });
     }
     if (state.selected && !graph.hasNode(state.selected)) state.selected = null;
-    if (renderer) renderer.kill();
-    renderer = new Sigma(graph, $("#graph"), {
-      // most entities start with a single mention: label them too and let the label grid avoid overlaps
-      renderEdgeLabels: false, zIndex: true, labelRenderedSizeThreshold: 6, labelDensity: 0.8, labelGridCellSize: 60,
-      labelFont: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", labelSize: 13, labelWeight: "500",
-      labelColor: { color: css("--fg") }, defaultEdgeColor: css("--edge"), defaultNodeColor: CATEGORY_COLOR,
-      minCameraRatio: 0.05, maxCameraRatio: 4, defaultDrawNodeHover: drawHover, nodeReducer, edgeReducer,
-      defaultDrawNodeLabel: queueLabel,
-      allowInvalidContainer: true,   // the graph view can be hidden while another tab is open
-    });
-    renderer.on("beforeRender", () => { pendingLabels = []; });
-    renderer.on("afterRender", drawLabels);
-    renderer.refresh({ skipIndexation: true });   // the constructor already rendered once, before these handlers
-    renderer.on("enterNode", ({ node }) => { state.hovered = node; renderer.refresh({ skipIndexation: true }); });
-    renderer.on("leaveNode", () => { state.hovered = null; renderer.refresh({ skipIndexation: true }); });
-    renderer.on("leaveStage", () => {   // the pointer can leave the canvas without a leaveNode
-      if (state.hovered) { state.hovered = null; renderer.refresh({ skipIndexation: true }); }
-    });
-    renderer.on("clickNode", ({ node }) => selectNode(node));
-    renderer.on("doubleClickNode", ({ node, event }) => { event.preventSigmaDefault(); focusOn(node); });
-    renderer.on("clickStage", () => { state.selected = null; renderer.refresh({ skipIndexation: true }); });
+    state.hovered = null;
+    if (!engine) {
+      try { engine = await import("/static/graph3d.js"); } catch (e) {
+        setStatus("");
+        showOverlay(`Não consegui carregar o grafo 3D (${e.message}).`);
+        return;
+      }
+    }
+    if (!scene3d) {
+      if (!engine.supported()) {
+        setStatus("");
+        showOverlay("Este navegador está sem WebGL 2, e o grafo 3D precisa dele. As outras abas funcionam.");
+        return;
+      }
+      scene3d = new engine.Graph3D($("#graph"), {
+        onHover: (node) => { state.hovered = node; paint(); },
+        onSelect: (node) => selectNode(node),
+        onFocus: (node) => focusOn(node),
+        onClear: () => { state.selected = null; paint(); },
+      });
+    }
+    scene3d.setData(
+      graph.mapNodes((node, attrs) => ({ id: node, label: attrs.label, size: attrs.size, color: nodeColor(attrs) })),
+      graph.mapEdges((edge, attrs, source, target) => ({ source, target, typed: attrs.kind !== "co", weight: attrs.weight })));
+    paint();
     updateCounts(data);
     const window = data.window.days ? `últimos ${data.window.days} dias` : "todo o período";
     setStatus(`${data.nodes.length} entidades · ${data.edges.length} conexões · ${window}`
@@ -334,19 +250,12 @@
     });
   }
 
-  function centerOn(node) {
-    const display = renderer && renderer.getNodeDisplayData(node);
-    if (!display) return;
-    const camera = renderer.getCamera();
-    camera.animate({ x: display.x, y: display.y, ratio: Math.min(camera.ratio, 0.7) }, { duration: 450 });
-  }
-
-  function selectInGraph(node) {   // highlight and center a node, when the current graph has it
-    if (!renderer || !graph || !graph.hasNode(node)) return;
+  function selectInGraph(node) {   // light a node and bring it to the center, when the current graph has it
+    if (!scene3d || !graph || !graph.hasNode(node)) return;
     state.selected = node;
     state.hovered = null;
-    renderer.refresh({ skipIndexation: true });
-    centerOn(node);
+    paint();
+    scene3d.flyTo(node);
   }
 
   function selectNode(node, open = true) {
@@ -563,7 +472,7 @@
 
   function ensureGraph() {   // the graph loads the first time its tab is shown
     if (!graphLoaded) loadGraph();
-    else if (renderer) { renderer.resize(); renderer.refresh(); }
+    else if (scene3d) scene3d.resize();
   }
 
   function route() {
@@ -583,7 +492,7 @@
     if (state.view === "graph") return;
     showView("graph");
     if (location.hash !== "#grafo") location.hash = "#grafo";
-    if (renderer) { renderer.resize(); renderer.refresh(); }
+    if (scene3d) scene3d.resize();
   }
 
   function openInGraph(entityId) {
@@ -1308,17 +1217,19 @@
     let resizeTimer = null;
     window.addEventListener("resize", () => {
       clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => { if (renderer) { renderer.resize(); renderer.refresh(); } }, 150);
-    });
-    const scheme = window.matchMedia("(prefers-color-scheme: dark)");
-    scheme.addEventListener("change", () => {
-      if (!renderer) return;
-      renderer.setSetting("labelColor", { color: css("--fg") });
-      renderer.setSetting("defaultEdgeColor", css("--edge"));
-      renderer.refresh();
+      resizeTimer = setTimeout(() => { if (scene3d) scene3d.resize(); }, 150);
     });
     document.addEventListener("keydown", (ev) => {
-      if (ev.key === "Escape" && state.selected && renderer) { state.selected = null; renderer.refresh({ skipIndexation: true }); }
+      if (ev.key === "Escape" && state.selected) { state.selected = null; paint(); }
+    });
+    let lightFrame = 0;       // the pointer lights the page: a soft glow follows it (style.css reads --mx and --my)
+    window.addEventListener("pointermove", (ev) => {
+      if (lightFrame) return;
+      lightFrame = requestAnimationFrame(() => {
+        lightFrame = 0;
+        document.documentElement.style.setProperty("--mx", `${ev.clientX}px`);
+        document.documentElement.style.setProperty("--my", `${ev.clientY}px`);
+      });
     });
     const all = $("#ideas-all");
     all.addEventListener("change", () => { ideasState.all = all.checked; loadIdeas(); });

@@ -113,6 +113,9 @@ def test_packaged_page_loads_only_local_files():
     for route in ("/api/lessons/state", "/api/lessons/job", "/produce", "/plan", "/cancel", "/discard", "/send"):
         assert route in app_js
     assert "confirm(" not in app_js                                        # second clicks, never a blocking dialog
+    # votes both ways: each group of buttons can be relit by a vote made in Telegram, read every 15 s and on focus
+    assert '"data-item": itemId' in app_js and '"data-idea": idea.id' in app_js and '"data-tool": p.name.toLowerCase()' in app_js
+    assert "/api/votes?after=" in app_js and 'addEventListener("visibilitychange"' in app_js
     graph3d = (STATIC / "graph3d.js").read_text(encoding="utf-8")           # the 3D graph: local modules only
     assert re.findall(r'^import .* from "([^"]+)";$', graph3d, re.M) == ["three", "./vendor/three/OrbitControls.js"]
     assert "innerHTML" not in graph3d and not re.search(r"https?://", graph3d)

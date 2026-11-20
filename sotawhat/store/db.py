@@ -408,6 +408,7 @@ CREATE TABLE IF NOT EXISTS lesson_jobs(   -- lessons/jobs.py: one lesson at a ti
     error TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_lesson_jobs_lesson ON lesson_jobs(lesson_id, id);
+CREATE INDEX IF NOT EXISTS idx_deliveries_item ON deliveries(item_id);   -- a vote in the interface finds its messages
 """
 _FTS = "CREATE VIRTUAL TABLE IF NOT EXISTS rag_fts USING fts5(title, body, tokenize=\"unicode61 remove_diacritics 2\")"
 LESSON_FIELDS = ("status", "title", "voice", "video_path", "duration_s", "size_bytes", "run_id", "cost_usd",

@@ -1161,7 +1161,7 @@ As respostas mudam a implementação; onde não houver resposta, a suposição i
 
 **Em 2026-11-20:**
 
-1. **Chave do OpenRouter, urgente.** Restam US$ 0,98 do limite de US$ 5, que não renova. O run diário gasta ≈ US$ 0,19: em cerca de cinco dias a triagem para. Ponha crédito e defina a renovação mensal do limite.
+1. **Chave do OpenRouter, urgente.** Restam US$ 0,90 do limite de US$ 5, que não renova (as medições deste dia gastaram US$ 0,17: três execuções do golden set e o backfill do glossário). O run diário gasta ≈ US$ 0,19 e o semanal ≈ US$ 0,24: em cerca de quatro dias a triagem para. Ponha crédito e defina a renovação mensal do limite.
 2. **Chave do Semantic Scholar** (grátis, formulário em semanticscholar.org/product/api). A fonte voltou a funcionar sem ela, com retentativas; com `SEMANTIC_SCHOLAR_API_KEY` no `.env` ela deixa de depender do pool anônimo.
 3. **VPS.** Diga a RAM, a CPU e se há GPU, para ajustar `SLM_MODEL`; depois é clonar o repositório lá, `docker compose -f compose.vps.yaml up -d --build` e rodar `scripts\vps_sync.ps1 -Vps usuario@host`.
 4. **Docker Desktop no logon.** Em 2026-11-20 o daily rodou às 09:50, antes do Docker, e o espelho Neo4j ficou 37 itens atrás até o `sotawhat graph sync`.

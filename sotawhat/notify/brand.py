@@ -22,6 +22,7 @@ GAPS = "🧩"           # the missing piece
 RULES = "📜"
 DISCARDED = "🗑️"
 TOOLS = "🧰"
+GLOSSARY = "📖"      # the ML/AI terms of the day, one sentence each
 FRONTS = {"skills_mcp": "🔌", "agents_evals": "🤖", "tokens_context": "🪙", "lessons_media": "🎬"}   # the tools radar
 
 

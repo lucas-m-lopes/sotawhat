@@ -24,7 +24,7 @@ def no_cjk(value):
 
 
 class TriageOutput(BaseModel):
-    summary_pt: str = Field(description="até 60 palavras, pt-BR, só fatos presentes no texto")
+    summary_pt: str = Field(description="pt-BR, só fatos presentes no texto, no tamanho que o prompt pede")
     hard_exclusion: Exclusion
     inclusion_rules: list[Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]]
     frontier_ai: Score = Field(description="A: avanço de IA/ML")
@@ -222,6 +222,19 @@ class RadarVerdict(_Portuguese):
 
 class RadarBatch(BaseModel):
     veredictos: list[RadarVerdict]
+
+
+class GlossaryEntry(_Portuguese):
+    termo: str = Field(description="o termo como está no texto, até 5 palavras")
+    sigla_de: str = Field(description="o que a sigla significa, em inglês; vazio se não é sigla")
+    definicao: str = Field(description="1 frase, pt-BR, até 28 palavras, linguagem simples")
+    variantes: list[str] = Field(description="outras grafias do termo nos textos; [] se não há")
+    itens: list[int] = Field(description="números dos textos onde o termo aparece")
+
+
+class GlossaryBatch(BaseModel):
+    """The ML/AI terms of one digest that the glossary lacks (task `glossary`, 2026-11-20)."""
+    termos: list[GlossaryEntry]
 
 
 class SameEntity(BaseModel):

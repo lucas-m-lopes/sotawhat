@@ -544,12 +544,12 @@
 
   // --- views (P4) --------------------------------------------------------------------
   const VIEWS = { graph: "#view-graph", today: "#view-today", ideas: "#view-ideas", trends: "#view-trends",
-                  lessons: "#view-lessons", tools: "#view-tools" };
+                  lessons: "#view-lessons", tools: "#view-tools", glossary: "#view-glossary" };
   const HASHES = { "#grafo": "graph", "#hoje": "today", "#ideias": "ideas", "#tendencias": "trends", "#aulas": "lessons",
-                   "#ferramentas": "tools" };
+                   "#ferramentas": "tools", "#glossario": "glossary" };
   const TITLES = { graph: "sotawhat · grafo", today: "sotawhat · hoje", ideas: "sotawhat · ideias",
                    trends: "sotawhat · tendências", lessons: "sotawhat · aulas",
-                   tools: "sotawhat · ferramentas" };
+                   tools: "sotawhat · ferramentas", glossary: "sotawhat · glossário" };
   let graphLoaded = false;
 
   function showView(name) {
@@ -574,6 +574,7 @@
     else if (name === "ideas") loadIdeas();
     else if (name === "lessons") loadLessons();
     else if (name === "tools") loadTools();
+    else if (name === "glossary") loadGlossary();
     else loadTrends();
   }
 
@@ -936,6 +937,92 @@
       : [el("p", { class: "muted" }, "Nenhuma ferramenta no radar ainda.")]));
   }
 
+  // --- glossary of the digests (2026-11-20) ----------------------------------------------
+  const GLOSSARY_FILTERS = [["", "todos"], ["ativo", "nos digests"], ["conhecido", "já sei"]];
+  const glossaryState = { status: "", text: "", loading: 0 };
+  const initial = (term) => {
+    const letter = term.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").charAt(0).toUpperCase();
+    return /[A-Z]/.test(letter) ? letter : "#";
+  };
+
+  function termCard(t) {
+    const known = t.status === "conhecido";
+    const card = el("article", { class: `term${known ? " known" : ""}`, id: `termo-${t.id}` });
+    const toggle = el("button", { class: "chip", type: "button", "aria-pressed": String(known),
+      title: known ? "voltar a mostrar este termo nos digests" : "não mostrar mais este termo nos digests",
+      onclick: async () => {
+        try {
+          await api("/api/glossary/status", { method: "POST", headers: { "content-type": "application/json" },
+                                              body: JSON.stringify({ term_id: t.id, status: known ? "ativo" : "conhecido" }) });
+          loadGlossary();
+        } catch (e) { toggle.after(el("span", { class: "error" }, " não salvou")); }
+      } }, known ? "✓ já sei" : "já sei");
+    const seen = [t.items ? `em ${t.items} ${t.items === 1 ? "item" : "itens"}` : "ainda em nenhum item",
+                  t.last_seen ? `último em ${fmtDate(t.last_seen)}` : null,
+                  t.shown_count ? `saiu em ${t.shown_count} ${t.shown_count === 1 ? "digest" : "digests"}` : null];
+    card.append(
+      el("div", { class: "term-head" },
+        el("h2", {}, t.term, t.expansion ? el("span", { class: "expansion" }, ` ${t.expansion}`) : null), toggle),
+      el("p", { class: "definition" }, t.definition),
+      meta(...seen, t.aliases.length ? `também: ${t.aliases.join(", ")}` : null),
+      el("div", { class: "chips" },
+        t.entity_id ? el("button", { class: "chip", type: "button", title: "abrir esta técnica no grafo",
+                                     onclick: () => openInGraph(t.entity_id) },
+          el("span", { class: "dot", style: `background:${typeColor("technique")}` }), `no grafo: ${t.entity}`) : null,
+        t.latest.map((item) => el("button", { class: "chip", type: "button", title: `${item.title} · abrir o item`,
+          onclick: () => { toGraph(); ensureGraph(); openItem(item.id); } },
+          item.title.length > 54 ? `${item.title.slice(0, 53)}…` : item.title))));
+    return card;
+  }
+
+  async function loadGlossary() {
+    const ticket = ++glossaryState.loading;
+    const params = new URLSearchParams();
+    if (glossaryState.text) params.set("q", glossaryState.text);
+    if (glossaryState.status) params.set("status", glossaryState.status);
+    let d;
+    try { d = await api(`/api/glossary?${params}`); } catch (e) {
+      $("#glossary-meta").textContent = `Não consegui carregar o glossário (${e.message}).`;
+      return;
+    }
+    if (ticket !== glossaryState.loading) return;       // a newer keystroke already asked again
+    const counts = d.counts || {};
+    segmented($("#glossary-status"), GLOSSARY_FILTERS.map(([value, label]) =>
+      [value, `${label} ${value ? counts[value] || 0 : d.total}`]), glossaryState.status,
+      (value) => { glossaryState.status = value; loadGlossary(); });
+    $("#glossary-meta").textContent = d.total
+      ? `${d.total} termos de ML/IA que apareceram nos seus digests, uma frase cada · ${counts.conhecido || 0} marcados como já sei`
+      : "Ainda vazio: o run diário define os termos de cada digest (ou rode sotawhat glossary backfill).";
+    const list = $("#glossary-list");
+    if (!d.terms.length) {
+      $("#glossary-letters").replaceChildren();
+      list.replaceChildren(el("p", { class: "empty-note" }, d.total ? "Nenhum termo com este filtro." : "Nenhum termo ainda."));
+      return;
+    }
+    const blocks = [];
+    const letters = [];
+    for (const t of d.terms) {
+      const letter = initial(t.term);
+      if (letters[letters.length - 1] !== letter) {
+        letters.push(letter);
+        blocks.push(el("h3", { class: "letter", id: `letra-${letter === "#" ? "0" : letter}` }, letter));
+      }
+      blocks.push(termCard(t));
+    }
+    $("#glossary-letters").replaceChildren(...letters.map((letter) => el("button", { type: "button", class: "chip",
+      onclick: () => document.getElementById(`letra-${letter === "#" ? "0" : letter}`).scrollIntoView({ block: "start" }) },
+      letter)));
+    list.replaceChildren(...blocks);
+  }
+
+  function wireGlossary() {
+    let timer = null;
+    $("#glossary-filter").addEventListener("input", (ev) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => { glossaryState.text = ev.target.value.trim(); loadGlossary(); }, 200);
+    });
+  }
+
   // --- today (P6) --------------------------------------------------------------------
   const TODAY_SECTIONS = [["main", "IA ∩ Saúde"], ["frontier", "Fronteira de IA"], ["radar", "Radar"]];
   const RUN_KINDS = { daily: "diário", weekly: "semanal", ideate: "ideação", eval: "avaliação", graph: "grafo",
@@ -1100,6 +1187,7 @@
     loadFilters();
     buildFilters();
     wireSearch();
+    wireGlossary();
     $("#unfocus").addEventListener("click", () => { state.focus = null; loadGraph(); });
     let resizeTimer = null;
     window.addEventListener("resize", () => {

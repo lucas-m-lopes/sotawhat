@@ -275,3 +275,25 @@ def test_dates_without_time_keep_their_calendar_day():
                          capture_output=True, text=True, timeout=60)
     assert out.returncode == 0, out.stderr
     assert json.loads(out.stdout) == ["24/11/26", "10/11/26", "?", "x"]
+
+
+def test_glossary_tab_api(client):
+    c, _, db = client
+    assert c.get("/api/glossary").json() == {"terms": [], "total": 0, "counts": {"ativo": 0, "conhecido": 0}}
+    with Store(db) as st:
+        rag, _ = st.add_glossary_term("RAG", "rag", "Consulta documentos antes de responder.",
+                                      expansion="retrieval-augmented generation")
+        st.add_glossary_term("embedding", "embedding", "Texto representado como números.")
+        st.link_glossary_items(rag, ["pmid:1"], "2026-11-20")
+    listed = c.get("/api/glossary").json()
+    assert [t["term"] for t in listed["terms"]] == ["embedding", "RAG"] and listed["total"] == 2
+    assert listed["terms"][1]["latest"] == [{"id": "pmid:1", "title": "MedGemma reads CT", "day": "2026-11-20"}]
+    assert [t["term"] for t in c.get("/api/glossary", params={"q": "retrieval"}).json()["terms"]] == ["RAG"]
+    known = c.post("/api/glossary/status", json={"term_id": rag, "status": "conhecido"}, headers={"origin": BASE})
+    assert known.status_code == 200 and known.json() == {"term_id": rag, "status": "conhecido"}
+    assert [t["term"] for t in c.get("/api/glossary", params={"status": "conhecido"}).json()["terms"]] == ["RAG"]
+    assert c.get("/api/glossary", params={"status": "nope"}).status_code == 422
+    assert c.post("/api/glossary/status", json={"term_id": 999, "status": "ativo"}).status_code == 404
+    assert c.post("/api/glossary/status", json={"term_id": rag, "status": "talvez"}).status_code == 422
+    assert c.post("/api/glossary/status", json={"term_id": rag, "status": "ativo"},
+                  headers={"origin": "https://evil.example"}).status_code == 403

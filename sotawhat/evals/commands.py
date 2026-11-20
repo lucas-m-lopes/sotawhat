@@ -56,16 +56,18 @@ def main_models(ns) -> int:
     spec = resolve(ns.task, settings, config.llm["tasks"])
     candidates = ns.models.split(",") if ns.models else (config.llm["bakeoff"].get(ns.task) or list(spec.models))
     results, outcomes = {}, {}
+    prompt = getattr(ns, "prompt", None) or config.digest.triage_prompt
     with Store(settings.db_path) as store:
         run_id = store.start_run("eval")
         client = OpenRouterClient(settings.openrouter_api_key, base_url=settings.openrouter_base_url,
                                   app_title=settings.openrouter_app_title)
         gateway = LLMGateway(client, store=store, settings=settings, run_id=run_id, tasks=config.llm["tasks"])
         estimate = (store.avg_llm_cost(ns.task) or DEFAULT_COST_PER_ITEM) * len(candidates) * len(golden)
-        print(f"bake-off {ns.task}: {len(candidates)} modelos × {len(golden)} itens · estimativa ≈ US$ {estimate:.2f}")
+        print(f"bake-off {ns.task} ({prompt}): {len(candidates)} modelos × {len(golden)} itens · "
+              f"estimativa ≈ US$ {estimate:.2f}")
         try:
             for model in candidates:
-                outcomes[model] = evaluate_model(gateway, golden, config.rubric, model, ns.concurrency)
+                outcomes[model] = evaluate_model(gateway, golden, config.rubric, model, ns.concurrency, prompt=prompt)
                 results[model] = metrics(outcomes[model])
                 r = results[model]
                 print(f"  {model}: F1 {r['f1']:.2f} · acurácia {100 * r['accuracy']:.0f}% · "
@@ -80,10 +82,12 @@ def main_models(ns) -> int:
     winner = pick_winner(results)
     folder = settings.sotawhat_data_dir / "evals"
     folder.mkdir(parents=True, exist_ok=True)
-    out = folder / f"{date.today().isoformat()}-{ns.task}-bakeoff.md"
-    out.write_text(render_report(ns.task, date.today().isoformat(), results, outcomes, golden, winner), encoding="utf-8")
+    stem = f"{date.today().isoformat()}-{ns.task}" + (f"-{prompt}" if getattr(ns, "prompt", None) else "")
+    out = folder / f"{stem}-bakeoff.md"
+    out.write_text(render_report(f"{ns.task} ({prompt})", date.today().isoformat(), results, outcomes, golden, winner),
+                   encoding="utf-8")
     rows = [{"model": m, **asdict(o)} for m, items in outcomes.items() for o in items]
-    (folder / f"{date.today().isoformat()}-{ns.task}-outcomes.jsonl").write_text(
+    (folder / f"{stem}-outcomes.jsonl").write_text(
         "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")   # for calibration
     print(f"[relatório] {out}\nvencedor: {winner or 'nenhum'}")
     if ns.apply and winner:

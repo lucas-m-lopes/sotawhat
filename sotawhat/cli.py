@@ -3,7 +3,7 @@ import argparse
 import sys
 
 _SUBCOMMANDS = {"search", "run", "ideate", "doctor", "feedback", "eval", "serve", "serve-mcp", "graph", "instagram",
-                "newsletters", "backup", "calibrate", "repair", "lessons", "radar"}
+                "newsletters", "backup", "calibrate", "repair", "lessons", "radar", "glossary"}
 _LESSON_ID_ACTIONS = ("resume", "rerender", "send", "pack", "hf")
 
 def _hhmm(text):
@@ -114,6 +114,8 @@ def parse_args(argv):
     p_models.add_argument("--limit", type=int, default=0)
     p_models.add_argument("--concurrency", type=int, default=4)
     p_models.add_argument("--apply", action="store_true", help="put the winner first in config/llm.yaml")
+    p_models.add_argument("--prompt", default=None, help="triage prompt to evaluate, e.g. triage_v3 (default: the one "
+                                                         "config/digest.yaml picks)")
     eval_sub.add_parser("triage", help="precision of the triage by your votes (G2)")
     eval_sub.add_parser("ideas", help="the idea ledger: finalists and the share you want to explore (G4)")
     p_report = eval_sub.add_parser("report", help="the SDD goals G1-G4 in data/reports (P6)")
@@ -138,6 +140,12 @@ def parse_args(argv):
                               "the star history of the last --dias days (GITHUB_TOKEN)")
     p_radar.add_argument("--no-notify", action="store_true", help="report: do not send it to Telegram")
     p_radar.add_argument("--dias", type=int, default=14, help="backfill: days of star history (default 14)")
+
+    p_gloss = sub.add_parser("glossary", help="the glossary of the digests: ML/AI terms, one sentence each")
+    p_gloss.add_argument("glossary_action", choices=["list", "backfill"],
+                         help="list: every term; backfill: define the terms of the digests already sent (one LLM "
+                              "call per digest)")
+    p_gloss.add_argument("--dias", type=int, default=14, help="backfill: digests of the last N days (default 14)")
 
     p_calibrate = sub.add_parser("calibrate", help="proposals for the triage cut-offs and the idea weights (P6)")
     p_calibrate.add_argument("--apply", action="store_true", help="write the proposal to config/")
@@ -226,6 +234,9 @@ def main(argv=None):
     elif ns.command == "radar":
         from sotawhat.radar.commands import main_radar
         raise SystemExit(main_radar(ns))
+    elif ns.command == "glossary":
+        from sotawhat.glossary import main_glossary
+        raise SystemExit(main_glossary(ns))
     elif ns.command == "calibrate":
         from sotawhat.evals.calibrate import main_calibrate
         raise SystemExit(main_calibrate(ns))

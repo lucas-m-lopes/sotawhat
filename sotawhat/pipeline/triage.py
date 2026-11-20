@@ -25,7 +25,9 @@ from sotawhat.llm.schemas import TriageOutput
 from sotawhat.pipeline.dedup import find_duplicates
 from sotawhat.store.vectors import item_text, novelty_scores
 
-PROMPT_VERSION = "triage_v3"   # v3 (P5): Instagram posts and items sent by hand; v1 and v2 stay for history
+# v3 (P5): Instagram posts and items sent by hand. v4 (2026-11-20) is v3 with the texts written for a physician
+# who is not an ML specialist; config/digest.yaml picks between the two (`didactic`). v1 and v2 stay for history.
+PROMPT_VERSION = "triage_v3"
 HARD_REJECT = {"clinical_without_ai", "marketing_no_substance", "identifiable_patient_data"}
 DEFAULT_COST_PER_ITEM = 0.001   # US$, until the ledger has real triage calls (≈ 0.0005 expected)
 log = logging.getLogger("sotawhat.triage")
@@ -53,8 +55,8 @@ class TriageStats:
         return asdict(self)
 
 
-def system_prompt() -> str:
-    text = load_prompt(PROMPT_VERSION)
+def system_prompt(version=None) -> str:
+    text = load_prompt(version or PROMPT_VERSION)
     for token, table in {"DOMAINS": tx.DOMAINS, "PROBLEMS": tx.PROBLEMS, "TECHNIQUES": tx.TECHNIQUES,
                          "EVIDENCE": tx.EVIDENCE, "STAKEHOLDERS": tx.STAKEHOLDERS, "BR": tx.BR_APPLICABILITY,
                          "CFM": tx.CFM_RISK, "AUDIENCE": tx.AUDIENCE}.items():
@@ -173,8 +175,10 @@ def _stage_a(store, run_id, items, rubric, mutes, embedder, gates, now, stats):
     return survivors, novelty, pre
 
 
-def run_triage(store, run_id, gateway, rubric, mutes, embedder=None, gates=None, now=None) -> TriageStats:
+def run_triage(store, run_id, gateway, rubric, mutes, embedder=None, gates=None, now=None,
+               prompt_version=None) -> TriageStats:
     now = now or datetime.now(timezone.utc)
+    prompt_version = prompt_version or PROMPT_VERSION
     stats = TriageStats(llm=gateway is not None)
     since = (now - timedelta(days=rubric.backlog_days)).isoformat(timespec="seconds")
     items = [from_row(row) for row in store.triage_candidates(since)][:rubric.max_items_per_run]
@@ -192,7 +196,7 @@ def run_triage(store, run_id, gateway, rubric, mutes, embedder=None, gates=None,
         stats.stopped = f"orçamento: {cap} de {len(survivors)} itens triados neste run"
         survivors = survivors[:cap]
 
-    system = system_prompt()
+    system = system_prompt(prompt_version)
     with ThreadPoolExecutor(max_workers=max(1, rubric.concurrency)) as pool:
         futures = {pool.submit(gateway.structured_call, "triage", messages_for(it, rubric, system),
                                TriageOutput): it for it in survivors}
@@ -210,7 +214,7 @@ def run_triage(store, run_id, gateway, rubric, mutes, embedder=None, gates=None,
                     pending_future.cancel()
                 continue
             except LLMFailure as exc:
-                store.record_triage(it.id, run_id, "error", reason=str(exc)[:300], prompt_version=PROMPT_VERSION)
+                store.record_triage(it.id, run_id, "error", reason=str(exc)[:300], prompt_version=prompt_version)
                 stats.errors += 1
                 continue
             out = res.output
@@ -224,7 +228,7 @@ def run_triage(store, run_id, gateway, rubric, mutes, embedder=None, gates=None,
                 scores={"A": out.frontier_ai, "B": out.medical_applicability, "C": out.actionability,
                         "D": novelty.get(it.id, 5), "S": out.substance},
                 tags=out.tags(), pre_score=p, classifier_version=version, model=res.model,
-                prompt_version=PROMPT_VERSION, cost_usd=res.cost_usd)
+                prompt_version=prompt_version, cost_usd=res.cost_usd)
             if out.hard_exclusion == "identifiable_patient_data":
                 store.redact_item(it.id)
             stats.triaged += 1

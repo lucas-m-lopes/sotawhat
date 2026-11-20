@@ -31,8 +31,8 @@ class Outcome:
     scores: dict = field(default_factory=dict)       # A, B, C, S (substance), X (exclusion), V (vendor only)
 
 
-def evaluate_model(gateway, golden, rubric, model, concurrency=4) -> list:
-    system = system_prompt()
+def evaluate_model(gateway, golden, rubric, model, concurrency=4, prompt=None) -> list:
+    system = system_prompt(prompt)
 
     def one(entry):
         item = as_item(entry)

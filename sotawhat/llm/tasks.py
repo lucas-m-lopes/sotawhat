@@ -33,6 +33,7 @@ DEFAULT_TASKS = {
     "judge": TaskSpec((DEEPSEEK_FLASH, GLM_FLASH, MIMO_PRO), "low", 2500),
     "synth": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO), "high", 12000),
     "accounts": TaskSpec((DEEPSEEK_FLASH, GLM_FLASH), "low", 3000),   # Instagram accounts to scan (P5)
+    "glossary": TaskSpec((DEEPSEEK_FLASH, GLM_FLASH), "low", 4000),   # the day's new ML/AI terms, one call a digest
     # lessons (aulas 3D): the economic scenario of docs/research/reports/Aulas didáticas animadas em 3D.md;
     # sotawhat/lessons/coder.py passes the models per call (PRIMARY, ESCALATE, VISUAL_FIX); these are the defaults
     "lesson_plan": TaskSpec((DEEPSEEK_FLASH, MIMO_PRO, GLM_FLASH), "high", 24000),

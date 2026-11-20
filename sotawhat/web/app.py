@@ -8,7 +8,8 @@ A local server still gets requests that other web pages trigger in the browser, 
 P4 adds the ideas page (/api/ideas, /api/ideas/{id}, /api/ideas/vote) and the trends panel (/api/trends).
 The tools radar (2026-11-10) adds /api/radar and /api/radar/vote.
 The lessons (aulas 3D) add /api/lessons and the files of data/lessons under /lessons: the videos and the
-interactive pages of the 3D scenes."""
+interactive pages of the 3D scenes. The glossary of the digests (2026-11-20) adds /api/glossary and
+/api/glossary/status ("já sei")."""
 import json
 import logging
 import mimetypes
@@ -27,6 +28,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from sotawhat import glossary
 from sotawhat.graph import query as q
 from sotawhat.ideation import ledger
 from sotawhat.lessons.eleven import VOICE_NAMES
@@ -55,6 +57,11 @@ class IdeaVote(BaseModel):
 class ToolVote(BaseModel):
     repo: str = Field(min_length=3, max_length=200, pattern=r"^[A-Za-z0-9-]+/[A-Za-z0-9_.-]+$")
     value: Literal["test", "up", "down", "archive"]
+
+
+class TermStatus(BaseModel):
+    term_id: int
+    status: Literal["ativo", "conhecido"]
 
 
 async def json_body(request: Request) -> dict:
@@ -202,6 +209,23 @@ def create_app(db_path, static_dir=STATIC) -> FastAPI:
             raise HTTPException(404, "ferramenta fora do radar")
         st.add_feedback("tool", key, vote.value, "web")
         return {"repo": key, "vote": vote.value}
+
+    # --- glossary of the digests (2026-11-20) -------------------------------------------
+    @app.get("/api/glossary")
+    def api_glossary(request: Request, text: str = Query("", alias="q", max_length=100), status: str = ""):
+        if status and status not in glossary.STATUSES:
+            raise HTTPException(422, f"status inválido; use um de {', '.join(glossary.STATUSES)}")
+        return glossary.view(store(request), text=text, status=status)
+
+    @app.post("/api/glossary/status")
+    async def api_glossary_status(request: Request):
+        try:
+            change = TermStatus.model_validate(await json_body(request))
+        except ValidationError as exc:
+            raise HTTPException(422, f"pedido inválido: {exc}") from None
+        if not store(request).set_glossary_status(change.term_id, change.status):
+            raise HTTPException(404, "termo não encontrado")
+        return {"term_id": change.term_id, "status": change.status}
 
     # --- lessons (aulas 3D) ------------------------------------------------------------
     lessons_dir = Path(db_path).parent / "lessons"

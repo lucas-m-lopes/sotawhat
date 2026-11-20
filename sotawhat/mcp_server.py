@@ -6,6 +6,7 @@ ideation/ledger.py; `cypher` runs read-only Cypher on the Neo4j mirror. Nothing 
 Telegram and in the interface), and nothing but the protocol goes to stdout."""
 import re
 
+from sotawhat import glossary as gloss
 from sotawhat.graph import intelligence as intel
 from sotawhat.graph import query as q
 from sotawhat.ideation import ledger
@@ -99,6 +100,15 @@ def idea_tool(db_path, idea_id) -> dict:
         return detail or {"error": f"ideia não encontrada: {idea_id}; tente list_ideas"}
 
 
+def glossary_tool(db_path, query="", limit=50) -> dict:
+    with Store(db_path) as store:
+        found = gloss.view(store, text=query)
+        terms = [{"term": t["term"], "expansion": t["expansion"], "definition": t["definition"], "aliases": t["aliases"],
+                  "entity": t["entity"], "items": t["items"], "status": t["status"]}
+                 for t in found["terms"][:max(1, min(int(limit), 500))]]
+        return {"terms": terms, "total": found["total"]}
+
+
 def cypher_tool(db_path, query, limit=200, mirror_factory=None) -> dict:
     if _WRITE.search(query or ""):
         return {"error": "só consultas de leitura (MATCH ... RETURN); escrita e procedimentos administrativos são recusados"}
@@ -172,6 +182,12 @@ def build_server(db_path, mirror_factory=None):
         """Uma ideia completa pelo id (ex.: '12' ou 'idea:12'): card, eixos da rubrica, novidade por faceta,
         vizinhos de prior art, críticas por papel, dossiê, fatos do grafo usados e histórico de votos."""
         return idea_tool(db_path, idea_id)
+
+    @server.tool()
+    def glossary(query: str = "", limit: int = 50) -> dict:
+        """O glossário dos digests: termos de ML/IA com a definição em uma frase (pt-BR), a técnica do grafo que
+        cada um nomeia e em quantos itens apareceu. query filtra pelo termo, pela sigla ou pela definição."""
+        return glossary_tool(db_path, query, limit)
 
     @server.tool()
     def cypher(query: str, limit: int = 200) -> dict:

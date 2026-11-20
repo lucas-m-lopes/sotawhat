@@ -55,7 +55,7 @@ class FakeDriver:
 def test_server_registers_the_tools(db):
     tools = asyncio.run(m.build_server(db).list_tools())
     assert {t.name for t in tools} == {"search", "entity", "neighbors", "recent_items", "graph_stats", "cypher",
-                                       "trends", "gaps", "list_ideas", "idea"}
+                                       "trends", "gaps", "list_ideas", "idea", "glossary"}
     assert all(t.description for t in tools)
 
 
@@ -127,3 +127,11 @@ def test_entity_lookup_prefers_the_exact_alias_and_neighbors_skip_categories(db)
     for key in ("EHR", "ehr", "electronic health record"):
         assert m.entity_tool(db, key)["name"] == "electronic health record", key
     assert {n["name"] for n in m.neighbors_tool(db, "EHR")} == {"MedGemma 1.5", "Google"}     # no category
+
+
+def test_glossary_tool(db):
+    with Store(db) as st:
+        st.add_glossary_term("RAG", "rag", "Consulta documentos antes de responder.", expansion="retrieval-augmented generation")
+    found = m.glossary_tool(db, "documentos")
+    assert found["total"] == 1 and found["terms"][0]["term"] == "RAG" and found["terms"][0]["status"] == "ativo"
+    assert m.glossary_tool(db, "nada disso")["terms"] == []

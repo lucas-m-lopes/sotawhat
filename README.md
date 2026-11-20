@@ -51,6 +51,10 @@ Phase P1 adds the triage and the real digest:
   `GMAIL_ADDRESS` and the app password in `GMAIL_APP_PASSWORD`, never the account password).
 - `sotawhat feedback pull|listen` records the votes; after 100 votes a profile gets its own
   classifier (logistic regression over the embeddings), which then decides what reaches the LLM.
+- The votes go both ways between Telegram and the interface (2026-11-20). A vote in the interface (an item, an idea
+  or a tool of the radar) moves the ✅ on the Telegram buttons of every message that carries it. A vote in Telegram
+  lights the same button in the open page within 15 s, or at once when the page comes back to the front. The store
+  is the one record; each side only redraws (`pipeline/feedback.py`: `mirror_vote`, `vote_changes`, `/api/votes`).
 - `sotawhat eval golden draft|import` builds a golden set that you label by editing a Markdown
   file, and `sotawhat eval models [--apply]` runs the bake-off of triage models against it
   and can put the winner first in `config/llm.yaml`.

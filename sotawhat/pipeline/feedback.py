@@ -1,7 +1,11 @@
 # sotawhat/pipeline/feedback.py
 """Telegram feedback (SDD §6.11, §7.7). Buttons -> `feedback`; messages from the user (links) ->
 `inbox`, kept for manual capture (P5). Telegram keeps updates for 24 h only, so `run daily` pulls them
-first, and `sotawhat feedback listen` can run all day as a logon task (instant ✅ on the buttons)."""
+first, and `sotawhat feedback listen` can run all day as a logon task (instant ✅ on the buttons).
+
+Both ways (2026-11-20): a vote made in the interface moves the ✅ on the Telegram buttons of every message that
+carries that item, idea or tool (`mirror_vote`), and the interface reads the votes made in Telegram since its last
+look (`vote_changes`) to light the same buttons there. The store is the one record; each side only redraws."""
 import logging
 import re
 import time
@@ -10,7 +14,7 @@ from datetime import datetime, timezone
 from sotawhat.lessons.deliver import handle_callback as handle_lesson_callback
 from sotawhat.notify.telegram import TelegramError
 from sotawhat.pipeline.deliver import CODES, VOTES, idea_keyboard, keyboard
-from sotawhat.store.db import utcnow
+from sotawhat.store.db import IDEA_STATUS, utcnow
 
 VALUES = {code: value for value, code in CODES.items()}
 OFFSET_KEY = "telegram_offset"
@@ -118,6 +122,55 @@ def pull(store, notifier, allowed_user, timeout=0) -> dict:
             break
     store.meta_set(LAST_PULL_KEY, utcnow())
     return counts
+
+
+def mirror_vote(store, notifier, kind, target, value) -> int:
+    """A vote made in the interface, on the Telegram buttons: every sent message that carries the item (a digest
+    message, or the radar list with its numbered pairs), the idea or the tool is redrawn with the ✅ on the choice.
+    -> messages edited. A Telegram error (message unchanged, deleted, too old) is logged and left: the vote is in the
+    store either way, and the next press in Telegram redraws from the store."""
+    if notifier is None or not notifier.configured:
+        return 0
+    key = {"item": target, "idea": f"idea:{target}", "tool": f"tool:{target}"}[kind]
+    messages = store.conn.execute("SELECT DISTINCT chat_id, message_id FROM deliveries WHERE item_id = ? AND chat_id IS NOT"
+                                  " NULL AND message_id IS NOT NULL", (key,)).fetchall()
+    edited = 0
+    for chat, message in messages:
+        if kind == "item":
+            rows = store.deliveries_for_message(chat, message)
+            markup = keyboard(rows, store.item_votes(ids=[r["item_id"] for r in rows]))
+        else:
+            from sotawhat.pipeline.deliver import tool_keyboard
+
+            row = store.conn.execute("SELECT * FROM deliveries WHERE chat_id = ? AND message_id = ? AND item_id = ?"
+                                     " ORDER BY id DESC LIMIT 1", (chat, message, key)).fetchone()
+            markup = (idea_keyboard if kind == "idea" else tool_keyboard)(row, value)
+        try:
+            notifier.edit_reply_markup(chat, message, markup)
+            edited += 1
+        except TelegramError as exc:
+            log.info("voto da interface no Telegram (%s %s, mensagem %s): %s", kind, target, message, exc)
+    return edited
+
+
+def vote_changes(store, after=None) -> dict:
+    """The votes recorded since feedback id `after`, from either side, the latest per target: what the interface
+    relights without a reload. Without `after`, only the cursor (where the interface starts watching).
+    -> {"items": {id: value}, "ideas": {id: status}, "tools": {repo: value}, "cursor": last feedback id}"""
+    cursor = store.conn.execute("SELECT COALESCE(MAX(id), 0) FROM feedback").fetchone()[0]
+    out = {"items": {}, "ideas": {}, "tools": {}, "cursor": cursor}
+    if after is None:
+        return out
+    for kind, target, value in store.conn.execute(
+            "SELECT target_type, target_id, value FROM feedback WHERE id > ? AND id <= ? AND target_type IN"
+            " ('item', 'idea', 'tool') ORDER BY id", (int(after), cursor)):
+        if kind == "item":
+            out["items"][target] = value
+        elif kind == "idea" and value in IDEA_STATUS:
+            out["ideas"][target] = IDEA_STATUS[value]
+        elif kind == "tool":
+            out["tools"][target] = value
+    return out
 
 
 def listener_active(store, now=None, max_age_s=180) -> bool:

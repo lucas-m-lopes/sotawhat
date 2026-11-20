@@ -301,14 +301,16 @@
   }
 
   function voteButtons(itemId, current) {
-    const box = el("div", { class: "votes", role: "group", "aria-label": "Votar neste item" });
+    const box = el("div", { class: "votes", role: "group", "aria-label": "Votar neste item", "data-item": itemId });
+    // the vote of this item, wherever it came from (here, or Telegram through syncVotes)
+    box.relight = (vote) => box.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-pressed", String(VOTES[i][0] === vote)));
     for (const [value, emoji, title] of VOTES) {
       box.append(el("button", { class: "vote", type: "button", title, "aria-label": title,
                                 "aria-pressed": String(current === value), onclick: async () => {
         try {
           const res = await api("/api/feedback", { method: "POST", headers: { "content-type": "application/json" },
                                                    body: JSON.stringify({ item_id: itemId, value }) });
-          box.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-pressed", String(VOTES[i][0] === res.vote)));
+          box.relight(res.vote);
         } catch (e) {
           box.append(el("span", { class: "error" }, " erro ao votar"));
         }
@@ -686,11 +688,18 @@
   }
 
   function ideaVotes(idea, badge) {
-    const box = el("div", { class: "idea-votes", role: "group", "aria-label": "Decidir sobre esta ideia" });
+    const box = el("div", { class: "idea-votes", role: "group", "aria-label": "Decidir sobre esta ideia",
+                            "data-idea": idea.id });
     const reasons = el("div", { class: "reasons" });
     reasons.hidden = true;
     const buttons = [];
     const mark = (status) => buttons.forEach(([wanted, button]) => button.setAttribute("aria-pressed", String(wanted === status)));
+    box.relight = (status) => {                // a decision taken in Telegram (syncVotes)
+      idea.status = status;
+      badge.className = `badge st-${status}`;
+      badge.textContent = IDEA_STATUS[status] || status;
+      mark(status);
+    };
 
     async function send(value, note) {
       try {
@@ -801,14 +810,16 @@
   }
 
   function toolVoteButtons(p) {
-    const box = el("div", { class: "votes", role: "group", "aria-label": `Votar em ${p.name}` });
+    const box = el("div", { class: "votes", role: "group", "aria-label": `Votar em ${p.name}`,
+                            "data-tool": p.name.toLowerCase() });
+    box.relight = (vote) => box.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-pressed", String(TOOL_VOTES[i][0] === vote)));
     for (const [value, label] of TOOL_VOTES) {
       box.append(el("button", { class: "vote", type: "button", title: label, "aria-pressed": String(p.vote === value),
                                 onclick: async () => {
         try {
           const res = await api("/api/radar/vote", { method: "POST", headers: { "content-type": "application/json" },
                                                      body: JSON.stringify({ repo: p.name, value }) });
-          box.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-pressed", String(TOOL_VOTES[i][0] === res.vote)));
+          box.relight(res.vote);
         } catch (e) {
           box.append(el("span", { class: "error" }, " erro ao votar"));
         }
@@ -1679,6 +1690,36 @@
     followJob();
   }
 
+  // --- votes, both ways (2026-11-20) -------------------------------------------------
+  // A vote here moves the ✅ of the Telegram buttons (the server does it). A vote in Telegram lights the same buttons
+  // here without a reload: every 15 s while the page is visible, and at once when it comes back to the front.
+  const voteSync = { cursor: null, timer: null };
+
+  function relightVotes(changes) {
+    const each = (attribute, entries) => {
+      for (const [target, vote] of Object.entries(entries || {})) {
+        document.querySelectorAll(`[${attribute}="${CSS.escape(String(target))}"]`).forEach((box) => {
+          if (box.relight) box.relight(vote);
+        });
+      }
+    };
+    each("data-item", changes.items);
+    each("data-idea", changes.ideas);
+    each("data-tool", changes.tools);
+  }
+
+  async function syncVotes() {
+    clearTimeout(voteSync.timer);
+    if (!document.hidden) {
+      try {
+        const data = await api(voteSync.cursor === null ? "/api/votes" : `/api/votes?after=${voteSync.cursor}`);
+        if (voteSync.cursor !== null) relightVotes(data);
+        voteSync.cursor = data.cursor;
+      } catch (e) { /* the server restarting: the next round catches up */ }
+    }
+    voteSync.timer = setTimeout(syncVotes, 15000);
+  }
+
   // --- start -----------------------------------------------------------------------
   function init() {
     loadFilters();
@@ -1687,6 +1728,9 @@
     wireGlossary();
     wireAsk();
     wireLessons();
+    syncVotes();
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) syncVotes(); });
+    window.addEventListener("focus", () => syncVotes());
     $("#unfocus").addEventListener("click", () => { state.focus = null; loadGraph(); });
     let resizeTimer = null;
     window.addEventListener("resize", () => {

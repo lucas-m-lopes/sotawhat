@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
@@ -104,10 +104,12 @@ async def json_body(request: Request) -> dict:
     return body
 
 
-def create_app(db_path, static_dir=STATIC, rag=None, lessons=None) -> FastAPI:
+def create_app(db_path, static_dir=STATIC, rag=None, lessons=None, telegram=None) -> FastAPI:
     """`rag`: a callable store -> (retriever, slm, jev, settings-like with rag_sources, rag_context_chars and
     rag_engine), called at the first question (the embedding model takes seconds to load); None answers 503 on
-    /api/ask. `lessons`: the launcher of lesson jobs (lessons/launcher.py); None answers 503 on the lesson actions."""
+    /api/ask. `lessons`: the launcher of lesson jobs (lessons/launcher.py); None answers 503 on the lesson actions.
+    `telegram`: the notifier whose buttons follow the votes made here (pipeline/feedback.mirror_vote); None: they
+    stay as they are."""
     static_dir = Path(static_dir)
     parts = {}
     rag_lock = threading.Lock()
@@ -176,8 +178,24 @@ def create_app(db_path, static_dir=STATIC, rag=None, lessons=None) -> FastAPI:
     def api_search(request: Request, text: str = Query("", alias="q", max_length=200)):
         return q.search(store(request), text)
 
+    def mirror(st, kind, target, value):
+        """After the answer: the ✅ of the Telegram buttons moves too (a few hundred ms per message)."""
+        from sotawhat.pipeline.feedback import mirror_vote
+
+        try:
+            mirror_vote(st, telegram, kind, target, value)
+        except Exception:  # noqa: BLE001 - the vote is recorded; the buttons catch up at the next press
+            log.exception("voto no Telegram")
+
+    @app.get("/api/votes")
+    def api_votes(request: Request, after: int | None = Query(None, ge=0)):
+        """The votes since `after` (a feedback id), from Telegram or here: the page relights its buttons."""
+        from sotawhat.pipeline.feedback import vote_changes
+
+        return vote_changes(store(request), after)
+
     @app.post("/api/feedback")
-    async def api_feedback(request: Request):
+    async def api_feedback(request: Request, background: BackgroundTasks):
         try:
             vote = Vote.model_validate(await json_body(request))
         except ValidationError as exc:
@@ -186,6 +204,7 @@ def create_app(db_path, static_dir=STATIC, rag=None, lessons=None) -> FastAPI:
         if not st.get_items([vote.item_id]):
             raise HTTPException(404, "item não encontrado")
         st.add_feedback("item", vote.item_id, vote.value, channel="web")
+        background.add_task(mirror, st, "item", vote.item_id, vote.value)
         return {"item_id": vote.item_id, "vote": st.item_votes(ids=[vote.item_id]).get(vote.item_id)}
 
     # --- today and runs (P6) ----------------------------------------------------------
@@ -212,7 +231,7 @@ def create_app(db_path, static_dir=STATIC, rag=None, lessons=None) -> FastAPI:
         return detail
 
     @app.post("/api/ideas/vote")
-    async def api_idea_vote(request: Request):
+    async def api_idea_vote(request: Request, background: BackgroundTasks):
         try:
             vote = IdeaVote.model_validate(await json_body(request))
         except ValidationError as exc:
@@ -221,6 +240,7 @@ def create_app(db_path, static_dir=STATIC, rag=None, lessons=None) -> FastAPI:
         if st.get_idea(vote.idea_id) is None:
             raise HTTPException(404, "ideia não encontrada")
         status = st.vote_idea(vote.idea_id, vote.value, "web", note=(vote.note or "").strip() or None)
+        background.add_task(mirror, st, "idea", vote.idea_id, vote.value)
         return {"idea_id": vote.idea_id, "status": status}
 
     @app.get("/api/trends")
@@ -234,7 +254,7 @@ def create_app(db_path, static_dir=STATIC, rag=None, lessons=None) -> FastAPI:
         return radar_view(store(request))
 
     @app.post("/api/radar/vote")
-    async def api_radar_vote(request: Request):
+    async def api_radar_vote(request: Request, background: BackgroundTasks):
         try:
             vote = ToolVote.model_validate(await json_body(request))
         except ValidationError as exc:
@@ -243,6 +263,7 @@ def create_app(db_path, static_dir=STATIC, rag=None, lessons=None) -> FastAPI:
         if st.conn.execute("SELECT 1 FROM radar_picks WHERE full_name = ? LIMIT 1", (key,)).fetchone() is None:
             raise HTTPException(404, "ferramenta fora do radar")
         st.add_feedback("tool", key, vote.value, "web")
+        background.add_task(mirror, st, "tool", key, vote.value)
         return {"repo": key, "vote": vote.value}
 
     # --- glossary of the digests (2026-11-20) -------------------------------------------
@@ -567,7 +588,7 @@ def lesson_payload(st, row, lessons_dir, detail=False, job=None, price=None) -> 
     return out
 
 
-def serve(db_path, port=8765, open_browser=True, host="127.0.0.1", rag=None, lessons=None):
+def serve(db_path, port=8765, open_browser=True, host="127.0.0.1", rag=None, lessons=None, telegram=None):
     """`host` is 127.0.0.1 except inside a container (SOTAWHAT_IN_CONTAINER=1), whose own network is the boundary:
     there the port is published on the host's 127.0.0.1 only (compose.vps.yaml). The Host check stays local."""
     import uvicorn
@@ -582,7 +603,8 @@ def serve(db_path, port=8765, open_browser=True, host="127.0.0.1", rag=None, les
         threading.Timer(1.5, webbrowser.open, args=(url,)).start()
     print(f"sotawhat · interface em {url} (Ctrl+C para parar)")
     log.info("serving %s", url)
-    uvicorn.run(create_app(db_path, rag=rag, lessons=lessons), host=host, port=port, log_config=None, access_log=False)
+    uvicorn.run(create_app(db_path, rag=rag, lessons=lessons, telegram=telegram), host=host, port=port, log_config=None,
+                access_log=False)
 
 
 def main_serve(ns) -> int:
@@ -603,6 +625,9 @@ def main_serve(ns) -> int:
 
     # lessons are made on this computer (HyperFrames, Chrome and FFmpeg); the container serves the reading only
     lessons = None if in_container else Launcher.from_settings(settings)
+    from sotawhat.notify.telegram import TelegramNotifier
+
+    telegram = TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id, timeout=10.0)
     serve(settings.db_path, port=ns.port or settings.sotawhat_web_port, open_browser=not ns.no_browser and not in_container,
-          host="0.0.0.0" if in_container else "127.0.0.1", rag=rag, lessons=lessons)
+          host="0.0.0.0" if in_container else "127.0.0.1", rag=rag, lessons=lessons, telegram=telegram)
     return 0

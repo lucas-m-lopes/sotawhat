@@ -113,6 +113,11 @@ def _budget_cap(store, gateway, now):
     return max(0, int(room / per_item))
 
 
+# Items of these sources are triaged by their own command and never by the daily run, whose triage makes the digest:
+# the backlog of your saved Instagram posts (sources/instagram_saved.py, BACKLOG) would fill a digest with old posts.
+OWN_RUN_SOURCES = ("instagram:salvos",)
+
+
 def manual(item) -> bool:
     """Sent by the reader (P5 manual capture): no mute filter, no classifier gate, never rejected, first in line."""
     return (item.source or "").startswith("manual:")
@@ -176,12 +181,15 @@ def _stage_a(store, run_id, items, rubric, mutes, embedder, gates, now, stats):
 
 
 def run_triage(store, run_id, gateway, rubric, mutes, embedder=None, gates=None, now=None,
-               prompt_version=None) -> TriageStats:
+               prompt_version=None, sources=None) -> TriageStats:
+    """`sources`: triage only the items of these sources, whenever they were fetched (the command that owns them);
+    None, the daily run: every recent item except those of OWN_RUN_SOURCES."""
     now = now or datetime.now(timezone.utc)
     prompt_version = prompt_version or PROMPT_VERSION
     stats = TriageStats(llm=gateway is not None)
-    since = (now - timedelta(days=rubric.backlog_days)).isoformat(timespec="seconds")
-    items = [from_row(row) for row in store.triage_candidates(since)][:rubric.max_items_per_run]
+    since = "" if sources else (now - timedelta(days=rubric.backlog_days)).isoformat(timespec="seconds")
+    items = [it for it in (from_row(row) for row in store.triage_candidates(since))
+             if (it.source in sources if sources else it.source not in OWN_RUN_SOURCES)][:rubric.max_items_per_run]
     stats.candidates = len(items)
     survivors, novelty, pre = _stage_a(store, run_id, items, rubric, mutes, embedder, gates, now, stats)
     if gateway is None:

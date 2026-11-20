@@ -259,3 +259,14 @@ class AccountVerdict(BaseModel):
 class AccountBatch(BaseModel):
     """Classification of followed Instagram accounts (task `accounts`, P5)."""
     contas: list[AccountVerdict] = Field(description="uma por conta da lista, na mesma ordem")
+
+
+class SavedVerdict(BaseModel):
+    codigo: str = Field(description="o código do post, como veio na lista")
+    categoria: Literal["ia", "medicina", "ambos", "fora", "incerto"]
+    motivo: str = Field(description="até 10 palavras, pt-BR")
+
+
+class SavedBatch(BaseModel):
+    """Your saved Instagram posts, kept or dropped by their caption before they are read (task `saved`, 2026-11-20)."""
+    posts: list[SavedVerdict] = Field(description="um por post da lista, na mesma ordem")

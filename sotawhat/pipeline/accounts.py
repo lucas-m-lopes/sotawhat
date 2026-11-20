@@ -221,6 +221,15 @@ def main_instagram(ns) -> int:
             gateway = LLMGateway(OpenRouterClient(settings.openrouter_api_key, base_url=settings.openrouter_base_url,
                                                   app_title=settings.openrouter_app_title),
                                  store=store, settings=settings, tasks=config.llm["tasks"])
+        if ns.instagram_action == "salvos":
+            try:
+                return run_saved(settings, ns, store, config, ApifyClient(settings.apify_token), gateway)
+            except (ApifyError, ConfigError, OSError, ValueError) as exc:
+                print(f"[salvos] {exc}", file=sys.stderr)
+                return 1
+        if not ns.file:
+            print("instagram import precisa do following.json", file=sys.stderr)
+            return 2
         try:
             return run_import(settings, ns.file, ApifyClient(settings.apify_token), gateway,
                               TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id),
@@ -230,3 +239,93 @@ def main_instagram(ns) -> int:
         except (ApifyError, ConfigError, OSError, ValueError) as exc:
             print(f"[instagram] {exc}", file=sys.stderr)
             return 1
+
+
+def run_saved(settings, ns, store, config, apify, gateway, out=print, triage_runner=None, describer=None) -> int:
+    """`sotawhat instagram salvos [ZIP] [--yes] [--max-usd X] [--colecao NOME] [--limit N]`: the first sweep of your
+    saved posts (sources/instagram_saved.py). Without --yes, the inventory only."""
+    from collections import Counter
+
+    from sotawhat.configfiles import ConfigError
+    from sotawhat.sources import instagram_saved as saved
+    from sotawhat.sources.apify import ApifyError
+
+    export = Path(ns.file) if ns.file else next(iter(reversed(saved.exports_in(saved.folder(settings)))), None)
+    if export is None or not export.exists():
+        out(f"nenhuma exportação em {saved.folder(settings)}: na Central de Contas, peça “Baixar suas informações” só "
+            "com “Itens salvos”, desde o início, em JSON, e salve o zip nessa pasta")
+        return 2
+    posts = saved.parse_export(export)
+    if not posts:
+        out(f"{export.name} não tem posts salvos: a exportação precisa de “Itens salvos”, em JSON")
+        return 1
+    state = saved.SavedState(saved.state_path(settings))
+    try:
+        accounts = load_accounts(settings.sotawhat_config_dir / "instagram_accounts.yaml")
+    except ConfigError:
+        accounts = []
+    usage = None
+    if apify.configured:
+        try:
+            usage = apify.usage()
+        except ApifyError:
+            usage = None
+    out(f"[salvos] {export.name}")
+    out(saved.render_inventory(saved.inventory(posts, state, store, accounts, ns.colecao), usage, ns.colecao))
+    max_usd = ns.max_usd if getattr(ns, "max_usd", None) is not None else settings.instagram_saved_max_usd
+    if not ns.yes:
+        out(f"\nNada foi gasto. Para ler: sotawhat instagram salvos \"{export}\" --yes [--max-usd {max_usd:.2f}]")
+        return 0
+    if not apify.configured:
+        out("APIFY_TOKEN vazio no .env: os posts são lidos pelo Apify")
+        return 2
+    if gateway is None:
+        out("OPENROUTER_API_KEY vazia no .env: o filtro e a triagem usam LLM")
+        return 2
+    run_id = store.start_run("salvos")
+    gateway.run_id = run_id
+    notes = []
+    if describer is None:
+        from sotawhat.pipeline.media import Transcriber, make_describer, whisper_available
+
+        describer = make_describer(gateway, transcriber=Transcriber(settings.models_dir) if whisper_available() else None)
+    if triage_runner is None:
+        from sotawhat.store.vectors import get_embedder
+        from sotawhat.pipeline.triage import run_triage
+
+        embedder = get_embedder(settings)
+
+        def triage_runner(rid):
+            totals = Counter()
+            for _ in range(10):            # 300 items a pass; what errs is retried, three times at most
+                stats = run_triage(store, rid, gateway, config.rubric, config.mutes, embedder, gates=None,
+                                   prompt_version=config.digest.triage_prompt, sources=(saved.BACKLOG,))
+                for key in ("triaged", "main", "frontier", "radar", "rejected", "muted", "duplicates", "errors"):
+                    totals[key] += getattr(stats, key)
+                if stats.stopped:
+                    notes.append(f"triagem interrompida: {stats.stopped}")
+                    break
+                if stats.candidates == 0 or (stats.triaged == 0 and not stats.errors):
+                    break
+            return dict(totals)
+
+    report = saved.sweep(store, posts, state, apify, saved.make_classifier(gateway, notes), describer, triage_runner,
+                         run_id, max_usd=max_usd, limit=ns.limit, collection=ns.colecao, out=out)
+    state.exports.setdefault(saved.fingerprint(export), {"file": export.name, "at": saved.utcnow(), "posts": len(posts),
+                                                         "sweep": True})
+    state.save()
+    stats = {k: (dict(v) if isinstance(v, Counter) else v) for k, v in report.items()}
+    store.finish_run(run_id, not str(report["stopped"] or "").startswith("Apify"), stats, error=report["stopped"])
+    out(f"[salvos] lidos {report['read']} · fora do tema {report['fora']} · importados {report['imported']} · "
+        f"indisponíveis {report['missing']} · Apify US$ {saved.money(report['usd'])}")
+    t = report["triage"]
+    if t:
+        out(f"[triagem] IA ∩ saúde {t.get('main', 0)} · fronteira {t.get('frontier', 0)} · radar {t.get('radar', 0)} · "
+            f"rejeitados {t.get('rejected', 0)} · duplicados {t.get('duplicates', 0)} · erros {t.get('errors', 0)}")
+    for note in notes:
+        out(f"[aviso] {note}")
+    if report["stopped"]:
+        out(f"[parou] {report['stopped']}. Rode de novo para continuar: o que já foi lido não é pago outra vez.")
+    out("Os aprovados entram no grafo no próximo run diário (extração de entidades) e nas perguntas quando o índice "
+        "for refeito; o acervo não vai para o digest.")
+    return 0

@@ -140,6 +140,23 @@ Phase P5 adds Instagram and the manual capture (SDD §7.2, §7.7), with no Meta 
   description joins the caption. Reels are transcribed on the CPU if you install `uv pip install -e ".[audio]"`.
 - The triage prompt is v3 (it knows `instagram_post`), and `sotawhat doctor` shows the Apify usage of the
   month and the accounts in the scan.
+- **Your saved posts instead of the accounts (2026-11-20, `sotawhat/sources/instagram_saved.py`).** The scan of 51
+  accounts brought 212 posts in nine days and 1 was approved, so it can be turned off (`INSTAGRAM_ACCOUNT_SCAN=false`)
+  in favour of what you save. There is no API for the saved posts and no login is used: you ask for the export in
+  the Accounts Center (Download your information → only "Saved items", all time, JSON) and drop the zip in
+  `data/instagram/salvos/`.
+  - `sotawhat instagram salvos [ZIP]` shows the inventory: posts, accounts, years, collections, what is already
+    stored and what reading the rest costs on Apify. Nothing is spent.
+  - With `--yes [--max-usd 1.0] [--limit N] [--colecao NAME]` it reads the posts by URL, newest saves first, 40 per
+    Apify run, up to the cap (`INSTAGRAM_SAVED_MAX_USD`). Before any image is paid for, a cheap model drops by the
+    caption what is neither AI nor medicine (task `saved`, 25 posts a call; in doubt it keeps). The rest is
+    described (images; reels too with the audio extra) and imported as `instagram:salvos` items.
+  - These items are triaged in the command's own run: the backlog enters the graph and the questions, never a
+    digest (the daily triage leaves them alone). A sweep that stops resumes where it stopped, and nothing is paid
+    twice (`data/state/instagram_saved.json`).
+  - Afterwards, save what matters in a collection (`INSTAGRAM_SAVED_COLLECTION`, "IA/Med" by default) and drop a new
+    export in the folder every week or so: the daily run reads that collection's new posts as `manual:instagram`
+    items, like the links sent to the bot. They skip the filters and come first in the digest.
 
 Phase P6 hardens it and measures the SDD goals:
 

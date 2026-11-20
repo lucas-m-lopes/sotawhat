@@ -184,11 +184,13 @@ input[type="checkbox"], input[type="range"] { accent-color: var(--accent); }
 /* pages: hoje, perguntar, ideias, tendências, aulas, ferramentas, glossário */
 .page { overflow: auto; padding: 30px 28px 56px; min-height: 0; }
 .page > * { max-width: 1180px; margin-left: auto; margin-right: auto; }
-.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
-.page-head h1 { font: 300 38px/1.08 var(--display); letter-spacing: -.025em; margin: 0 0 8px;
+.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
+/* The gradient of the title is painted only inside the box of the heading, so the box has to hold the descenders
+   (g, p, ç): with a line height of 1.08 they fell outside it and were cut. */
+.page-head h1 { font: 300 38px/1.34 var(--display); letter-spacing: -.025em; margin: 0 0 6px; padding-bottom: 3px;
                 background: linear-gradient(92deg, #fff 30%, #bfe9ff 62%, #c9bfff); -webkit-background-clip: text;
                 background-clip: text; color: transparent; }
-.page-head p { margin: 0; font-size: 13px; }
+.page-head p { margin: 0; font-size: 13.5px; line-height: 1.55; }
 .cards { display: grid; gap: 12px; margin-top: 16px; }
 /* no backdrop blur on the cards: a page has a hundred of them (the glossary), and a blur behind each one is paid on
    every scroll frame. An almost opaque ground looks the same; the header and the two panels of the graph keep the blur. */

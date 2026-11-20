@@ -26,7 +26,7 @@ def render(answer, verbose=False) -> str:
         out += [f"[sem resposta do SLM] {answer.error}", ""]
     out += [f"⚠️ {w}" for w in answer.warnings] + ([""] if answer.warnings else [])
     if pack.entities:
-        out.append("Entidades: " + ", ".join(f"{e.name} ({e.type}, por {e.how})" for e in pack.entities))
+        out.append("Entidades: " + ", ".join(f"{e.name} ({e.type}, por {e.how})" for e in pack.entities))   # nome | sentido | fontes
     if pack.facts and (verbose or not answer.text):
         out += ["", "Fatos do grafo:"] + pack.facts
     if pack.sources:

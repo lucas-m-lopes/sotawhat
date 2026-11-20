@@ -949,7 +949,9 @@
 
   function answerNodes(text, card) {   // the answer as text nodes, with each [n] as a button that shows its source
     const nodes = [];
-    for (const part of text.replace(/\*\*/g, "").split(/(\[\d{1,2}\])/)) {
+    // the model writes Markdown: bullets become "•" and the emphasis marks go, the rest is plain text
+    const plain = text.replace(/\*\*/g, "").replace(/^[ \t]*[*-][ \t]+/gm, "• ").replace(/\*([^*\n]+)\*/g, "$1");
+    for (const part of plain.split(/(\[\d{1,2}\])/)) {
       const cite = /^\[(\d{1,2})\]$/.exec(part);
       if (!cite) { nodes.push(document.createTextNode(part)); continue; }
       nodes.push(el("button", { class: "cite", type: "button", title: "ver a fonte", onclick: () => {

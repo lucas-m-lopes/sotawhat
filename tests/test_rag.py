@@ -309,3 +309,45 @@ def test_rag_up_starts_ollama_and_pulls_the_model(tmp_path):
     assert calls[1][1] == "unused" and calls[2][0] == ["docker", "exec", "sotawhat-ollama", "ollama", "pull", "m"]
     failed = slm_up(settings, tmp_path, run=lambda cmd, **kw: Done(1, "no docker"))
     assert failed[0] is False and "Docker" in failed[1]
+
+
+def test_rag_eval_asks_the_whole_retrieval_and_each_ranking(store, tmp_path):
+    from sotawhat.rag import evaluate
+
+    index.refresh(store, HashEmbedder())
+    post, get, calls = _server((200, '"Que modelo antecipa sepse em seis horas na terapia intensiva?"'))
+    questions = evaluate.draft(store, SLM("http://x/v1", "m", post=post, get=get), n=2, seed=1)
+    assert len(questions) == 0 and len(calls) == 0             # summaries under 120 characters are not sampled
+    store.record_triage("pmid:1", 1, "main", summary_pt="SepsisNet usa gradient boosting para prever sepse 6 horas antes, "
+                        "com AUROC 0,91, em pacientes de terapia intensiva de três hospitais universitários.",
+                        why_it_matters_pt="Útil para a rede hospitalar.")
+    index.refresh(store, HashEmbedder())
+    questions = evaluate.draft(store, SLM("http://x/v1", "m", post=post, get=get), n=2, seed=1)
+    assert questions == [{"question": "Que modelo antecipa sepse em seis horas na terapia intensiva?", "item_id": "pmid:1",
+                          "title": "SepsisNet prediz sepse na UTI"}]
+    assert "Título: SepsisNet prediz sepse na UTI" in calls[0][1]["messages"][1]["content"]
+    path = tmp_path / "evals" / "questions.jsonl"
+    evaluate.save(questions, path)
+    assert evaluate.load(path) == questions and evaluate.load(tmp_path / "missing.jsonl") == []
+    retriever = _retriever(store, FakeReranker(favourite="SepsisNet"))
+    results = evaluate.run(retriever, questions, k=3)
+    assert set(results) == {name for name, _, _ in evaluate.SETUPS} and results["tudo"]["hit1"] == 1.0
+    assert results["só palavras (BM25)"]["ranks"] == [1] and retriever.reranker is not None      # put back after each run
+    without = evaluate.run(_retriever(store), questions, k=3)
+    assert "tudo" not in without and "sem reranker" in without                                  # no reranker to compare
+    report = evaluate.render(results, k=3)
+    assert "| tudo | 100% | 100% | 100% | 1.00 |" in report and "1 perguntas" in report
+    only = _retriever(store).retrieve("Quais modelos abordam sepse?", channels={"bm25"})
+    assert all(set(s.channels) == {"bm25"} for s in only.sources)
+    assert parse_args(["rag", "eval", "--gerar", "--n", "5"]).n == 5
+
+
+def test_an_entity_shared_by_the_best_sources_is_linked(store):
+    index.refresh(store, HashEmbedder())
+    pack = _retriever(store).retrieve("alertas de deterioração clínica")           # no entity name in the question
+    how = {e.name: e.how for e in pack.entities}
+    assert how["sepsis early detection"] == "fontes" and how["terapia intensiva/deterioração"] == "nome"
+    assert any(f.startswith("• sepsis early detection (problema") for f in pack.facts)
+    assert not any("nenhuma entidade" in n for n in pack.notes)
+    alone = _retriever(store).retrieve("o que o Google abriu?", k=1)                 # one source: nothing is "shared"
+    assert [e.how for e in alone.entities] == ["nome"]

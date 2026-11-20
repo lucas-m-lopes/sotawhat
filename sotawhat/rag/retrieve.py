@@ -130,7 +130,8 @@ class Linked:
     entity_id: int
     name: str
     type: str
-    how: str            # "nome" (written in the question) | "sentido" (close in meaning)
+    how: str            # "nome" (written in the question) | "sentido" (close in meaning) | "fontes" (shared by
+                        # the best sources: how a word in Portuguese reaches an entity named in English)
     weight: float
 
 
@@ -462,6 +463,22 @@ class Retriever:
             list(entity_ids) * 2 + list(APPROVED) + [POOL * 3]).fetchall()
         return [r[0] for r in rows if allowed is None or r[0] in allowed][:POOL]
 
+    def _shared(self, items, known, limit=2) -> list:
+        """Entities that at least two of the best sources mention and the question did not link: "sepse" never
+        equals "sepsis early detection", but the items found for it are about that entity. Hubs that a large
+        part of the graph mentions ("large language model") say nothing about the question and stay out."""
+        if len(items) < 2:
+            return []
+        corpus = self.corpus
+        ceiling = max(8, len(corpus.day_of) // 25)
+        rows = self.store.conn.execute(
+            f"SELECT entity_id, COUNT(DISTINCT item_id) FROM entity_mentions WHERE item_id IN ({','.join('?' * len(items))})"
+            " AND role != 'tag' GROUP BY entity_id HAVING COUNT(DISTINCT item_id) >= 2", list(items)).fetchall()
+        found = [(n, corpus.entities[e]) for e, n in rows if e in corpus.entities and e not in known
+                 and corpus.entities[e]["type"] in q.ENTITY_TYPES and corpus.entities[e]["mention_count"] <= ceiling]
+        found.sort(key=lambda pair: (-pair[0], pair[1]["mention_count"], pair[1]["name"]))
+        return [Linked(row["id"], row["name"], row["type"], "fontes", 0.4) for _, row in found[:limit]]
+
     # --- the facts of the graph ----------------------------------------------
     def _entity_fact(self, entity_id) -> str:
         d = q.entity_detail(self.store, entity_id, items_limit=6)
@@ -486,8 +503,9 @@ class Retriever:
     def _facts(self, question, linked, days, since) -> list:
         store, text = self.store, fold(question)
         facts, period = [], f"nos últimos {days} dias" if days else "em todo o grafo"
-        named = [e for e in linked if e.how == "nome"] or linked[:2]
-        for entity in [e for e in named if e.type in q.ENTITY_TYPES][:4]:
+        named = [e for e in linked if e.how == "nome" and e.type in q.ENTITY_TYPES][:4]
+        others = [e for e in linked if e.how != "nome" and e.type in q.ENTITY_TYPES]
+        for entity in named + others[:max(0, 3 - len(named))]:
             fact = self._entity_fact(entity.entity_id)
             if fact:
                 facts.append(fact)
@@ -635,6 +653,7 @@ class Retriever:
                 score=round(final[item], 4), relevance=round(relevance[item], 4) if item in relevance else None,
                 channels=positions.get(item, {})))
 
+        linked += self._shared(picked[:5], {e.entity_id for e in linked})
         pack.facts = self._facts(question, linked, days, since)
         text = fold(question)
         if _GLOBAL.search(text) or _TREND.search(text):

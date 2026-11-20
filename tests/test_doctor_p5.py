@@ -24,8 +24,9 @@ def _settings(tmp_path):
 
 def test_check_instagram(tmp_path):
     settings = _settings(tmp_path)
-    apify, accounts = check_instagram(settings, Apify())
+    apify, saved, accounts = check_instagram(settings, Apify())
     assert (apify.status, accounts.status) == ("ok", "warn") and "instagram import" in accounts.detail
+    assert saved.status == "warn" and "Itens salvos" in saved.detail                 # no export of the saved posts yet
     assert "US$ 0.40 de US$ 5.00" in apify.detail
     assert check_instagram(settings, Apify(used=4.5))[0].status == "warn"
     assert check_instagram(settings, Apify(fail=True))[0].status == "fail"
@@ -36,9 +37,11 @@ def test_check_instagram(tmp_path):
     (tmp_path / "state").mkdir()
     (tmp_path / "state" / "instagram.json").write_text(json.dumps({"since_ia": "2026-11-08T07:01:00+00:00",
                                                                    "since_saude": "2026-11-08T07:02:00+00:00"}))
-    ok = check_instagram(settings, Apify())[1]
+    ok = check_instagram(settings, Apify())[2]
     assert ok.status == "ok" and ok.detail == ("2 de 3 na varredura (IA 1, saúde 1) · teto do dia US$ 0.10 "
                                                "(IA 0.05, saúde 0.05) · última varredura 2026-11-08 07:02")
     (tmp_path / "instagram_accounts.yaml").write_text("accounts:\n- {username: 'x y', category: ia}\n", encoding="utf-8")
-    assert check_instagram(settings, Apify())[1].status == "fail"
+    assert check_instagram(settings, Apify())[2].status == "fail"
+    off = check_instagram(SimpleNamespace(**vars(settings), instagram_account_scan=False), Apify())[2]
+    assert off.status == "ok" and "INSTAGRAM_ACCOUNT_SCAN=false" in off.detail
     assert "accounts" in TASKS and "vision" in TASKS

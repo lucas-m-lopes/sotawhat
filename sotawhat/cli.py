@@ -57,12 +57,18 @@ def parse_args(argv):
     p_graph.add_argument("--limit", type=int, default=None, help="extract: at most N items")
     p_graph.add_argument("--out", default=None, help="export: folder (default data/exports)")
 
-    p_instagram = sub.add_parser("instagram", help="Instagram accounts to scan (P5)")
-    p_instagram.add_argument("instagram_action", choices=["import"])
-    p_instagram.add_argument("file", help="following.json from the Accounts Center export")
+    p_instagram = sub.add_parser("instagram", help="Instagram: accounts to scan (import, P5) and your saved posts (salvos)")
+    p_instagram.add_argument("instagram_action", choices=["import", "salvos"])
+    p_instagram.add_argument("file", nargs="?", default=None,
+                             help="import: following.json from the Accounts Center export; salvos: the export of your "
+                                  "saved items (zip or folder; default: the newest in data/instagram/salvos)")
     p_instagram.add_argument("--max", type=int, default=50, help="accounts enabled for the daily scan (default 50)")
     p_instagram.add_argument("--limit", type=int, default=None, help="classify at most N new accounts")
-    p_instagram.add_argument("--yes", action="store_true", help="fetch the profiles on Apify (paid) and classify")
+    p_instagram.add_argument("--yes", action="store_true", help="import: fetch the profiles on Apify (paid) and classify; "
+                                                                "salvos: read the posts (paid; without it, the inventory)")
+    p_instagram.add_argument("--max-usd", dest="max_usd", type=float, default=None,
+                             help="salvos: Apify cap of this reading (default INSTAGRAM_SAVED_MAX_USD)")
+    p_instagram.add_argument("--colecao", default=None, help="salvos: only the posts of this collection")
     p_instagram.add_argument("--recuperar", metavar="RUN_ID", default=None,
                              help="add the profiles an earlier, aborted Apify run already fetched (no new charge)")
 

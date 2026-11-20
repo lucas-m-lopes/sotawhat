@@ -14,6 +14,9 @@ from sotawhat.sources.hf_hub import HFHubSource
 from sotawhat.sources.hf_papers import HFPapersSource
 from sotawhat.sources.inbox import InboxSource
 from sotawhat.sources.instagram import InstagramSource
+from sotawhat.sources.instagram_saved import SavedSource
+from sotawhat.sources.instagram_saved import folder as saved_folder
+from sotawhat.sources.instagram_saved import state_path as saved_state
 from sotawhat.sources.mcp_registry import MCPRegistrySource
 from sotawhat.sources.newsletters import NewsletterFeedSource, mentions_ai_pt
 from sotawhat.sources.pages import read_article
@@ -138,6 +141,11 @@ def _instagram(settings, apify, describer, category):
                            per_account=settings.instagram_per_account, max_usd=settings.instagram_max_usd_run)
 
 
+def _scan_accounts(settings, apify) -> bool:
+    """T3, the daily scan of the curated accounts: off since 2026-11-20 in favour of your saved posts."""
+    return settings is not None and apify is not None and apify.configured and getattr(settings, "instagram_account_scan", True)
+
+
 def build_sources(profile, crossref_mailto="", settings=None, segmenter=None, store=None, apify=None, describer=None):
     github_token = getattr(settings, "github_token", "") or ""
     hf_token = getattr(settings, "hf_token", "") or ""
@@ -159,7 +167,7 @@ def build_sources(profile, crossref_mailto="", settings=None, segmenter=None, st
                     HFHubSource("hf-trending", [("trending-models", "models", {"sort": "trendingScore"})], per_query=10,
                                 max_items=10, token=hf_token),
                     MCPRegistrySource("mcp-recent", recent_days=1, per_term=30, max_items=10)]
-        if settings is not None and apify is not None and apify.configured:
+        if _scan_accounts(settings, apify):
             sources.append(_instagram(settings, apify, describer, "ia"))
         return sources
     if profile == "medico":
@@ -180,9 +188,14 @@ def build_sources(profile, crossref_mailto="", settings=None, segmenter=None, st
                                                ("medical-datasets", "datasets", {"filter": "medical", "sort": "trendingScore"})],
                                 per_query=10, max_items=15, token=hf_token),
                     MCPRegistrySource("mcp-health", terms=MCP_HEALTH_TERMS, per_term=10, max_items=15)]
-        if settings is not None and apify is not None and apify.configured:
+        if _scan_accounts(settings, apify):
             sources.append(_instagram(settings, apify, describer, "saude"))
         if store is not None:
             sources.append(InboxSource(store, apify=apify, describer=describer))
+        if settings is not None and apify is not None and apify.configured and getattr(settings, "instagram_saved_collection", ""):
+            # the posts of your collection in each new export of data/instagram/salvos/: like the links sent to the bot
+            sources.append(SavedSource(saved_folder(settings), saved_state(settings), apify, describer=describer,
+                                       collection=settings.instagram_saved_collection,
+                                       max_usd=settings.instagram_saved_max_usd))
         return sources
     raise KeyError(f"Unknown profile: {profile}")

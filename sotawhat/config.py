@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     apify_token: str = ""             # P5: Instagram through Apify (Free plan: US$ 5/month)
     instagram_max_usd_run: float = 0.15   # P5: Apify cap of the daily run, shared by the "ia" and "saude" scans
     instagram_per_account: int = 3        # P5: newest posts per account in a scan
+    # 2026-11-20: your saved posts instead of the accounts (sources/instagram_saved.py). The scan of the accounts can
+    # be turned off; the export of the saved posts goes to data/instagram/salvos/
+    instagram_account_scan: bool = True       # T3, the daily scan of the curated accounts
+    instagram_saved_collection: str = "IA/Med"    # the collection of saved posts the daily run reads from new exports
+    instagram_saved_max_usd: float = 1.0      # Apify cap of one reading of saved posts (a sweep, or the daily run)
 
     sotawhat_web_port: int = 8765     # `sotawhat serve` (P3), always on 127.0.0.1
 

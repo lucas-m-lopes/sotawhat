@@ -445,6 +445,10 @@ def check_instagram(settings, apify=None) -> list:
             checks.append(Check("Apify", status, f"US$ {use['used']:.2f} de US$ {limit:.2f} no ciclo até {use['cycle_end']}"))
         except ApifyError as exc:
             checks.append(Check("Apify", "fail", str(exc)))
+    checks.append(check_saved_posts(settings))
+    if not getattr(settings, "instagram_account_scan", True):
+        return checks + [Check("contas do Instagram", "ok", "varredura das contas desligada (INSTAGRAM_ACCOUNT_SCAN=false):"
+                                                           " o Instagram entra pelos seus salvos")]
     try:
         accounts = load_accounts(settings.sotawhat_config_dir / "instagram_accounts.yaml")
     except ConfigError as exc:
@@ -464,6 +468,29 @@ def check_instagram(settings, apify=None) -> list:
               f"{sum(a['category'] == 'saude' for a in on)}) · teto do dia US$ {settings.instagram_max_usd_run:.2f} "
               f"(IA {shares['ia']:.2f}, saúde {shares['saude']:.2f}) · última varredura {last}")
     return checks + [Check("contas do Instagram", "ok" if on else "warn", detail)]
+
+
+def check_saved_posts(settings) -> Check:
+    """2026-11-20: your saved posts, from the exports in data/instagram/salvos (sources/instagram_saved.py)."""
+    from collections import Counter
+
+    from sotawhat.sources import instagram_saved as saved
+
+    state = saved.SavedState(saved.state_path(settings))
+    exports = saved.exports_in(saved.folder(settings))
+    collection = getattr(settings, "instagram_saved_collection", "")
+    if not state.posts and not exports:
+        return Check("salvos do Instagram", "warn", f"nenhuma exportação em {saved.folder(settings)}: peça “Itens salvos”"
+                                                    " (JSON, desde o início) na Central de Contas e rode `sotawhat "
+                                                    "instagram salvos`")
+    status = Counter(v.get("status") for v in state.posts.values())
+    pending = [e.name for e in exports if saved.fingerprint(e) not in state.exports]
+    detail = (f"{len(state.posts)} posts lidos ({status.get('importado', 0)} importados, {status.get('fora', 0)} fora do "
+              f"tema, {status.get('indisponivel', 0)} indisponíveis) · coleção do run diário: "
+              f"{('“' + collection + '”') if collection else 'desligada'}")
+    if pending:
+        detail += f" · exportação ainda não lida: {', '.join(pending)}"
+    return Check("salvos do Instagram", "warn" if pending and not state.posts else "ok", detail)
 
 
 def check_neo4j(settings, store, factory=None) -> Check:

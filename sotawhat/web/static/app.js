@@ -544,12 +544,12 @@
 
   // --- views (P4) --------------------------------------------------------------------
   const VIEWS = { graph: "#view-graph", today: "#view-today", ideas: "#view-ideas", trends: "#view-trends",
-                  lessons: "#view-lessons", tools: "#view-tools", glossary: "#view-glossary" };
+                  lessons: "#view-lessons", tools: "#view-tools", glossary: "#view-glossary", ask: "#view-ask" };
   const HASHES = { "#grafo": "graph", "#hoje": "today", "#ideias": "ideas", "#tendencias": "trends", "#aulas": "lessons",
-                   "#ferramentas": "tools", "#glossario": "glossary" };
+                   "#ferramentas": "tools", "#glossario": "glossary", "#perguntar": "ask" };
   const TITLES = { graph: "sotawhat · grafo", today: "sotawhat · hoje", ideas: "sotawhat · ideias",
                    trends: "sotawhat · tendências", lessons: "sotawhat · aulas",
-                   tools: "sotawhat · ferramentas", glossary: "sotawhat · glossário" };
+                   tools: "sotawhat · ferramentas", glossary: "sotawhat · glossário", ask: "sotawhat · perguntar" };
   let graphLoaded = false;
 
   function showView(name) {
@@ -575,6 +575,7 @@
     else if (name === "lessons") loadLessons();
     else if (name === "tools") loadTools();
     else if (name === "glossary") loadGlossary();
+    else if (name === "ask") loadAsk();
     else loadTrends();
   }
 
@@ -937,6 +938,118 @@
       : [el("p", { class: "muted" }, "Nenhuma ferramenta no radar ainda.")]));
   }
 
+  // --- questions to the graph (2026-11-20): hybrid retrieval, then the local SLM ------------------
+  const ASK_DAYS = [[0, "o período que a pergunta disser"], [7, "7 dias"], [30, "30 dias"], [90, "90 dias"]];
+  const ASK_EXAMPLES = ["O que saiu esta semana sobre agentes clínicos?", "Quais modelos abordam sepse e quem os desenvolveu?",
+                        "Quais as organizações mais citadas este mês?", "O que é RAG e em que itens apareceu?",
+                        "O que está em alta no grafo?"];
+  const RANKINGS = { dense: "sentido", bm25: "palavras", graph: "grafo", mention: "menção", relation: "relação",
+                     category: "categoria" };
+  const askState = { days: 0, busy: false };
+
+  function answerNodes(text, card) {   // the answer as text nodes, with each [n] as a button that shows its source
+    const nodes = [];
+    for (const part of text.replace(/\*\*/g, "").split(/(\[\d{1,2}\])/)) {
+      const cite = /^\[(\d{1,2})\]$/.exec(part);
+      if (!cite) { nodes.push(document.createTextNode(part)); continue; }
+      nodes.push(el("button", { class: "cite", type: "button", title: "ver a fonte", onclick: () => {
+        const target = card.querySelector(`[data-source="${cite[1]}"]`);
+        if (target) { target.scrollIntoView({ block: "center", behavior: "smooth" }); target.classList.add("flash");
+                      setTimeout(() => target.classList.remove("flash"), 1400); }
+      } }, cite[1]));
+    }
+    return nodes;
+  }
+
+  function sourceCard(s, cited) {
+    const url = safeUrl(s.url);
+    const ranks = Object.entries(s.channels || {}).map(([name, rank]) => `${RANKINGS[name] || name} ${rank}º`).join(" · ");
+    return el("div", { class: `item source${cited ? " cited" : ""}`, "data-source": s.n },
+      el("div", { class: "head" },
+        el("span", {}, el("span", { class: "cite static" }, String(s.n)), " ", sectionBadge({ decision: s.section === "Radar"
+          ? "radar" : s.section === "Fronteira de IA" ? "frontier" : "main", section: s.section })),
+        el("span", { class: "meta" }, `${fmtDate(s.day)} · ${s.source}`,
+          url ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", title: "abrir a fonte" }, "↗") : null)),
+      el("button", { class: "title", type: "button", title: "abrir o item no grafo",
+                     onclick: () => { toGraph(); ensureGraph(); openItem(s.item_id); } }, s.title),
+      s.summary ? el("p", { class: "clamp" }, s.summary) : null,
+      s.excerpt ? el("details", {}, el("summary", {}, "trecho do original"), el("p", { class: "muted" }, s.excerpt)) : null,
+      ranks ? el("p", { class: "meta" }, `achado por: ${ranks}`) : null);
+  }
+
+  function askCard(d) {
+    const card = el("article", { class: "idea answer" });
+    const cited = new Set(d.cited || []);
+    const t = d.timings || {};
+    card.append(el("h2", {}, d.question));
+    if (d.answer) card.append(el("div", { class: "answer-text" }, answerNodes(d.answer, card)));
+    else if (d.error) card.append(el("p", { class: "muted" }, `O modelo local não respondeu (${d.error}). As fontes encontradas estão abaixo.`));
+    for (const w of d.warnings || []) card.append(el("p", { class: "warn" }, `⚠️ ${w}`));
+    card.append(meta(d.model ? `modelo ${d.model}` : "sem modelo: só a busca",
+      `busca ${num(t.total || 0, 1)} s`, d.answer && d.model ? `resposta ${num(d.seconds || 0, 1)} s` : null,
+      ...(d.notes || [])));
+    if ((d.entities || []).length) card.append(el("div", { class: "chips" }, el("span", { class: "muted" }, "No grafo: "),
+      d.entities.map((e) => entityLink(e.entity_id, e.name, e.type))));
+    if ((d.facts || []).length) card.append(el("details", { open: !d.answer }, el("summary", {}, `fatos do grafo (${d.facts.length})`),
+      el("div", { class: "facts" }, d.facts.join("\n"))));
+    if ((d.sources || []).length) card.append(el("h3", {}, `Fontes (${d.sources.length})`),
+      el("div", { class: "sources" }, d.sources.map((s) => sourceCard(s, cited.has(s.n)))));
+    return card;
+  }
+
+  async function sendQuestion(question) {
+    if (askState.busy || question.trim().length < 3) return;
+    askState.busy = true;
+    const button = $("#ask-send");
+    const waiting = el("article", { class: "idea answer" }, el("h2", {}, question),
+      el("p", { class: "muted" }, "buscando no grafo e perguntando ao modelo local…"));
+    $("#ask-thread").prepend(waiting);
+    button.disabled = true;
+    const body = { question, sources_only: $("#ask-sources-only").checked };
+    if (askState.days) body.days = askState.days;
+    try {
+      const d = await api("/api/ask", { method: "POST", headers: { "content-type": "application/json" },
+                                        body: JSON.stringify(body) });
+      waiting.replaceWith(askCard(d));
+    } catch (e) {
+      waiting.replaceWith(el("article", { class: "idea answer" }, el("h2", {}, question),
+        el("p", { class: "error" }, `Não consegui responder (${e.message}).`)));
+    }
+    askState.busy = false;
+    button.disabled = false;
+    loadAsk();
+  }
+
+  async function loadAsk() {
+    let s;
+    try { s = await api("/api/rag/status"); } catch (e) {
+      $("#ask-meta").textContent = `Não consegui ler o índice (${e.message}).`;
+      return;
+    }
+    const slm = s.slm ? (s.slm.ok ? `modelo local: ${s.slm.detail}` : `modelo local fora do ar (${s.slm.detail})`) : null;
+    $("#ask-meta").textContent = s.items_indexed
+      ? [`${s.items_indexed} de ${s.approved_items} itens aprovados no índice`, `atualizado em ${fmtDate(s.indexed_at)}`,
+         "a resposta cita as fontes e roda toda neste computador", slm].filter(Boolean).join(" · ")
+      : "Índice vazio: rode sotawhat rag index (minutos na primeira vez).";
+  }
+
+  function wireAsk() {
+    segmented($("#ask-days"), ASK_DAYS, askState.days, (value) => { askState.days = value; });
+    $("#ask-examples").replaceChildren(el("span", { class: "muted" }, "Experimente: "), ...ASK_EXAMPLES.map((text) =>
+      el("button", { class: "chip", type: "button", onclick: () => { $("#ask-input").value = text; sendQuestion(text); } }, text)));
+    $("#ask-form").addEventListener("submit", (ev) => {
+      ev.preventDefault();
+      const input = $("#ask-input");
+      const question = input.value.trim();
+      if (question.length < 3) return;
+      input.value = "";
+      sendQuestion(question);
+    });
+    $("#ask-input").addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); $("#ask-form").requestSubmit(); }
+    });
+  }
+
   // --- glossary of the digests (2026-11-20) ----------------------------------------------
   const GLOSSARY_FILTERS = [["", "todos"], ["ativo", "nos digests"], ["conhecido", "já sei"]];
   const glossaryState = { status: "", text: "", loading: 0 };
@@ -1188,6 +1301,7 @@
     buildFilters();
     wireSearch();
     wireGlossary();
+    wireAsk();
     $("#unfocus").addEventListener("click", () => { state.focus = null; loadGraph(); });
     let resizeTimer = null;
     window.addEventListener("resize", () => {

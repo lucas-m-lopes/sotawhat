@@ -1,0 +1,7 @@
+# só o pacote entra na imagem: nenhum segredo, nenhum dado, nenhuma configuração pessoal
+*
+!pyproject.toml
+!README.md
+!sotawhat/
+sotawhat/**/__pycache__/
+**/*.pyc

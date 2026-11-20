@@ -55,7 +55,7 @@ class FakeDriver:
 def test_server_registers_the_tools(db):
     tools = asyncio.run(m.build_server(db).list_tools())
     assert {t.name for t in tools} == {"search", "entity", "neighbors", "recent_items", "graph_stats", "cypher",
-                                       "trends", "gaps", "list_ideas", "idea", "glossary"}
+                                       "trends", "gaps", "list_ideas", "idea", "glossary", "retrieve"}
     assert all(t.description for t in tools)
 
 

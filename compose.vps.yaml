@@ -1,0 +1,43 @@
+# compose.vps.yaml — as perguntas ao grafo numa VPS (SDD §6.15): o SLM (Ollama) e a interface do sotawhat
+# sobre uma cópia do insight.db que você envia do seu computador (scripts/vps_sync.ps1).
+#
+#   docker compose -f compose.vps.yaml up -d --build
+#   docker compose -f compose.vps.yaml exec ollama ollama pull qwen3.5:4b-q4_K_M      # uma vez
+#   docker compose -f compose.vps.yaml exec sotawhat sotawhat ask "o que saiu esta semana sobre agentes?"
+#
+# Nada fica exposto à internet: a interface abre só no 127.0.0.1 da VPS (use um túnel:
+# ssh -L 8765:127.0.0.1:8765 usuario@vps e abra http://127.0.0.1:8765/#perguntar) e o Ollama só na rede
+# interna. Não há chaves de API aqui: a VPS só lê o grafo. Votos dados nesta cópia somem na próxima sincronização.
+#
+# Tamanho do modelo (SLM_MODEL), para uma VPS sem GPU:
+#   8 GB de RAM  -> qwen3.5:4b-q4_K_M (3,3 GB), o padrão
+#   4 GB de RAM  -> qwen3.5:2b-q4_K_M (1,9 GB) com RAG_RERANKER= (vazio) e RAG_CONTEXT_CHARS=4000
+# Com GPU NVIDIA: acrescente `gpus: all` ao serviço ollama e use qwen3.5:9b-q4_K_M.
+name: sotawhat-vps
+services:
+  ollama:
+    image: ollama/ollama:0.40.14
+    restart: unless-stopped
+    environment:
+      OLLAMA_KEEP_ALIVE: "${SLM_KEEP_ALIVE:-30m}"
+      OLLAMA_CONTEXT_LENGTH: "${SLM_CONTEXT:-8192}"
+    volumes:
+      - ollama:/root/.ollama
+  sotawhat:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    ports:
+      - "127.0.0.1:${SOTAWHAT_VPS_PORT:-8765}:8765"
+    environment:
+      SLM_BASE_URL: "${SLM_BASE_URL:-http://ollama:11434/v1}"
+      SLM_MODEL: "${SLM_MODEL:-qwen3.5:4b-q4_K_M}"
+      SLM_TIMEOUT: "${SLM_TIMEOUT:-600}"
+      RAG_RERANKER: "${RAG_RERANKER-BAAI/bge-reranker-v2-m3-int8}"
+      RAG_CONTEXT_CHARS: "${RAG_CONTEXT_CHARS:-6000}"
+      RAG_SOURCES: "${RAG_SOURCES:-6}"
+    volumes:
+      - "${SOTAWHAT_VPS_DATA:-./data}:/data"
+volumes:
+  ollama:

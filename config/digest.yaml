@@ -1,4 +1,4 @@
-# config/digest.yaml — como o digest é escrito (2026-11-20, SDD §17). Toda chave é opcional; faltando,
+# config/digest.yaml — como o digest é escrito (2026-11-20, SDD §6.14). Toda chave é opcional; faltando,
 # vale o padrão do código (os valores abaixo).
 
 # Resumos escritos para um médico que não é especialista em ML: a primeira frase diz em palavras simples o

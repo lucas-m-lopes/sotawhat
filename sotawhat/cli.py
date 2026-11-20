@@ -3,7 +3,7 @@ import argparse
 import sys
 
 _SUBCOMMANDS = {"search", "run", "ideate", "doctor", "feedback", "eval", "serve", "serve-mcp", "graph", "instagram",
-                "newsletters", "backup", "calibrate", "repair", "lessons", "radar", "glossary"}
+                "newsletters", "backup", "calibrate", "repair", "lessons", "radar", "glossary", "ask", "rag"}
 _LESSON_ID_ACTIONS = ("resume", "rerender", "send", "pack", "hf")
 
 def _hhmm(text):
@@ -147,6 +147,22 @@ def parse_args(argv):
                               "call per digest)")
     p_gloss.add_argument("--dias", type=int, default=14, help="backfill: digests of the last N days (default 14)")
 
+    p_ask = sub.add_parser("ask", help="a question to the knowledge graph, answered by the local SLM with sources")
+    p_ask.add_argument("question", nargs="+", help='e.g. "o que saiu sobre agentes clínicos esta semana?"')
+    p_ask.add_argument("--dias", type=int, default=None, help="only items of the last N days (default: what the "
+                                                              "question says, e.g. 'esta semana')")
+    p_ask.add_argument("--k", type=int, default=None, help="sources in the context (default RAG_SOURCES, 8)")
+    p_ask.add_argument("--so-fontes", dest="so_fontes", action="store_true", help="retrieval only: no SLM call")
+    p_ask.add_argument("--sem-rerank", dest="sem_rerank", action="store_true", help="skip the cross-encoder (faster)")
+    p_ask.add_argument("--detalhes", action="store_true", help="show the graph facts, the scores and the rankings")
+    p_ask.add_argument("--json", action="store_true", help="the whole answer as JSON")
+
+    p_rag = sub.add_parser("rag", help="the retrieval index and the local SLM behind `sotawhat ask`")
+    p_rag.add_argument("rag_action", choices=["index", "status", "up"],
+                       help="index: refresh the passages and their vectors (the daily run does it); status: what is "
+                            "indexed and whether the SLM answers; up: start Ollama in Docker and pull SLM_MODEL")
+    p_rag.add_argument("--rebuild", action="store_true", help="index: drop every passage and embed all again")
+
     p_calibrate = sub.add_parser("calibrate", help="proposals for the triage cut-offs and the idea weights (P6)")
     p_calibrate.add_argument("--apply", action="store_true", help="write the proposal to config/")
 
@@ -234,6 +250,12 @@ def main(argv=None):
     elif ns.command == "radar":
         from sotawhat.radar.commands import main_radar
         raise SystemExit(main_radar(ns))
+    elif ns.command == "ask":
+        from sotawhat.rag.commands import main_ask
+        raise SystemExit(main_ask(ns))
+    elif ns.command == "rag":
+        from sotawhat.rag.commands import main_rag
+        raise SystemExit(main_rag(ns))
     elif ns.command == "glossary":
         from sotawhat.glossary import main_glossary
         raise SystemExit(main_glossary(ns))

@@ -21,7 +21,9 @@ INSTRUCTIONS = (
     "relações MENTIONS, USES, ADDRESSES, DEVELOPED_BY, EVALUATED_ON, COMPARED_WITH, BUILDS_ON, REGULATED_BY, "
     "IN_CATEGORY). Inteligência semanal: trends (o que subiu na semana e o mapa de comunidades), gaps (pares "
     "técnica × problema ainda sem ligação, a matéria-prima das ideias) e o ledger de ideias do motor de ideação "
-    "(list_ideas e idea; status nova, curtida, testar, engavetada, construida, rejeitada ou descartada).")
+    "(list_ideas e idea; status nova, curtida, testar, engavetada, construida, rejeitada ou descartada). Para uma "
+    "pergunta aberta, comece por retrieve: ele junta as buscas por sentido, por palavras e pelo grafo e devolve "
+    "fontes numeradas. glossary traz os termos de ML/IA dos digests, uma frase cada.")
 _WRITE = re.compile(r"\b(CREATE|MERGE|DELETE|DETACH|SET|REMOVE|DROP|FOREACH|ALTER|RENAME|GRANT|DENY|REVOKE|"
                     r"LOAD\s+CSV|START\s+DATABASE|STOP\s+DATABASE)\b|\bCALL\s*\{|"
                     r"\bCALL\s+(dbms|db\.(create|drop|clear|index\.fulltext\.create)|apoc|gds|tx)\b", re.I)
@@ -100,6 +102,20 @@ def idea_tool(db_path, idea_id) -> dict:
         return detail or {"error": f"ideia não encontrada: {idea_id}; tente list_ideas"}
 
 
+def retrieve_tool(db_path, question, days=0, k=8, retriever_factory=None) -> dict:
+    if retriever_factory is None:
+        return {"error": "recuperação híbrida desligada neste servidor"}
+    with Store(db_path) as store:
+        pack = retriever_factory(store).retrieve(question, days=int(days) or None, k=max(1, min(int(k), 20)))
+        return {"entities": [{"name": e.name, "type": e.type, "entity_id": e.entity_id, "how": e.how} for e in pack.entities],
+                "facts": pack.facts,
+                "sources": [{"n": s.n, "item_id": s.item_id, "title": s.title, "url": s.url, "source": s.source,
+                             "day": s.day[:10], "section": s.section, "summary_pt": s.summary,
+                             "why_it_matters_pt": s.why, "excerpt": s.excerpt, "rankings": s.channels}
+                            for s in pack.sources],
+                "notes": pack.notes, "days": pack.days}
+
+
 def glossary_tool(db_path, query="", limit=50) -> dict:
     with Store(db_path) as store:
         found = gloss.view(store, text=query)
@@ -126,7 +142,7 @@ def cypher_tool(db_path, query, limit=200, mirror_factory=None) -> dict:
         mirror.close()
 
 
-def build_server(db_path, mirror_factory=None):
+def build_server(db_path, mirror_factory=None, retriever_factory=None):
     from mcp.server import MCPServer
 
     server = MCPServer("sotawhat-graph", instructions=INSTRUCTIONS)
@@ -184,6 +200,15 @@ def build_server(db_path, mirror_factory=None):
         return idea_tool(db_path, idea_id)
 
     @server.tool()
+    def retrieve(question: str, days: int = 0, k: int = 8) -> dict:
+        """Recuperação híbrida para uma pergunta em linguagem natural (pt-BR ou inglês): busca densa + BM25 nos
+        itens aprovados, PageRank personalizado no grafo a partir das entidades da pergunta, menções e relações.
+        Devolve os fatos calculados do grafo (cards de entidade, contagens, rankings, tendências) e as fontes
+        numeradas, com resumo e o trecho mais próximo do texto original. days: só os últimos N dias (0 = o que a
+        pergunta disser, ex.: 'esta semana')."""
+        return retrieve_tool(db_path, question, days, k, retriever_factory=retriever_factory)
+
+    @server.tool()
     def glossary(query: str = "", limit: int = 50) -> dict:
         """O glossário dos digests: termos de ML/IA com a definição em uma frase (pt-BR), a técnica do grafo que
         cada um nomeia e em quantos itens apareceu. query filtra pelo termo, pela sigla ou pela definição."""
@@ -207,5 +232,10 @@ def main_mcp(ns) -> int:
 
     settings = load_settings()
     setup_logging(settings.sotawhat_data_dir, date.today().isoformat(), settings.sotawhat_log_level)
-    build_server(settings.db_path, mirror_factory=lambda: Neo4jMirror.from_settings(settings)).run("stdio")
+    from sotawhat.rag.retrieve import Retriever
+    from sotawhat.store.vectors import get_embedder
+
+    embedder = get_embedder(settings)            # one model for the whole session, loaded at the first question
+    build_server(settings.db_path, mirror_factory=lambda: Neo4jMirror.from_settings(settings),
+                 retriever_factory=lambda store: Retriever(store, embedder)).run("stdio")
     return 0

@@ -1,5 +1,5 @@
 # sotawhat/glossary.py
-"""The glossary of the digests (SDD §17.2, 2026-11-20): the ML/AI terms of the day, one sentence each.
+"""The glossary of the digests (SDD §6.14, 2026-11-20): the ML/AI terms of the day, one sentence each.
 
 Each term is defined once, by the LLM, the first day a digest uses it; from then on it is found in the
 texts with no LLM (`match`), so the cost falls as the glossary fills. A digest prints at most `limit` terms

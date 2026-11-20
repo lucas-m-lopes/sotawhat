@@ -309,6 +309,29 @@ def check_semantic_scholar(settings, store=None, get=None) -> Check:
     return Check(name, "ok" if not failures else "warn", f"chave aceita{streak}")
 
 
+def check_rag(settings, store, ping=None) -> list:
+    """Questions to the graph: the retrieval index against the approved items, and the local SLM."""
+    from sotawhat.rag import index
+    from sotawhat.rag.answer import from_settings
+
+    s = index.status(store)
+    passages = sum(k["passages"] for k in s["kinds"].values())
+    vectors = sum(k["embedded"] or 0 for k in s["kinds"].values())
+    detail = f"{s['items_indexed']} de {s['approved_items']} itens aprovados · {passages} passagens · {vectors} vetores"
+    if not passages:
+        first = Check("índice do RAG", "warn", "vazio: rode `sotawhat rag index` (minutos na primeira vez)")
+    elif s["items_indexed"] < s["approved_items"] or vectors < passages or not s["lexical"]:
+        first = Check("índice do RAG", "warn", detail + (" · sem FTS5 neste SQLite" if not s["lexical"] else "")
+                      + " · rode `sotawhat rag index`")
+    else:
+        first = Check("índice do RAG", "ok", detail)
+    ok, why = (ping or from_settings(settings).ping)()
+    second = Check("SLM local", "ok" if ok else "warn",
+                   why if ok else f"{why}: `sotawhat rag up` sobe o Ollama e baixa o modelo (sem ele, `sotawhat ask` "
+                                  "mostra só as fontes)")
+    return [first, second]
+
+
 def check_gmail(settings, imap_factory=None) -> Check:
     """The newsletter query (P2) over 30 days: zero usually means the Gmail filter/label is missing."""
     name = "newsletters do Gmail"
@@ -655,6 +678,7 @@ def main_doctor(ns) -> int:
         checks.append(check_neo4j(settings, store))
         checks.append(check_radar(settings, store))
         checks.append(check_semantic_scholar(settings, store))
+        checks += check_rag(settings, store)
         if ns.llm:
             if settings.openrouter_api_key:
                 overrides = llm_config["tasks"] if llm_config else None

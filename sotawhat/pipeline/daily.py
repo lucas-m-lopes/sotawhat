@@ -374,6 +374,14 @@ def main_daily(ns) -> int:
                     mirror.close()
             print(f"[{render_graph_line(graph_report)}]")
             log.info("graph %s", render_graph_line(graph_report))
+        try:                                     # the passages `sotawhat ask` searches: local embeddings, no LLM
+            from sotawhat.rag import index as rag_index
+
+            line = rag_index.render_line(rag_index.refresh(store, embedder))
+            print(f"[{line}]")
+            log.info(line)
+        except Exception as exc:  # noqa: BLE001 - the retrieval index never stops the daily run
+            log.warning("rag index: %s", exc)
         try:                                     # the tools radar: discovery and today's stars, no LLM
             from sotawhat.radar.commands import scan_step
 

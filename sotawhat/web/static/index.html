@@ -13,6 +13,7 @@
   <nav class="views" aria-label="Seções">
     <a href="#grafo" data-view="graph">Grafo</a>
     <a href="#hoje" data-view="today">Hoje</a>
+    <a href="#perguntar" data-view="ask">Perguntar</a>
     <a href="#ideias" data-view="ideas">Ideias</a>
     <a href="#tendencias" data-view="trends">Tendências</a>
     <a href="#aulas" data-view="lessons">Aulas</a>
@@ -105,6 +106,24 @@
     </div>
   </div>
   <div id="tools-list" class="cards" aria-live="polite"></div>
+</main>
+<main id="view-ask" class="page" hidden>
+  <div class="page-head">
+    <div>
+      <h1>Perguntar ao grafo</h1>
+      <p id="ask-meta" class="muted">carregando…</p>
+    </div>
+  </div>
+  <form id="ask-form" class="ask-form">
+    <textarea id="ask-input" rows="2" maxlength="500" placeholder="Ex.: o que saiu sobre agentes clínicos esta semana?" aria-label="Sua pergunta"></textarea>
+    <div class="ask-bar">
+      <div id="ask-days" class="segmented" role="radiogroup" aria-label="Período"></div>
+      <label class="check"><input id="ask-sources-only" type="checkbox"> só as fontes, sem o modelo local</label>
+      <button id="ask-send" class="primary" type="submit">Perguntar</button>
+    </div>
+  </form>
+  <div id="ask-examples" class="chips" aria-label="Exemplos de pergunta"></div>
+  <div id="ask-thread" class="thread" aria-live="polite"></div>
 </main>
 <main id="view-glossary" class="page" hidden>
   <div class="page-head">

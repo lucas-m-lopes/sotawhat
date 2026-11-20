@@ -52,6 +52,19 @@ class Settings(BaseSettings):
 
     sotawhat_web_port: int = 8765     # `sotawhat serve` (P3), always on 127.0.0.1
 
+    # questions to the graph (SDD §6.15): a local small language model behind an OpenAI-compatible endpoint
+    # (Ollama in Docker by default: `sotawhat rag up`) and the hybrid retrieval that feeds it
+    slm_base_url: str = "http://127.0.0.1:11434/v1"
+    slm_model: str = "qwen3.5:9b-q4_K_M"
+    slm_api_key: str = ""             # only for an endpoint that asks for one
+    slm_reasoning: str = "none"       # reasoning_effort: "none" turns the thinking off (faster, same grounded answer)
+    slm_timeout: int = 300
+    slm_context: int = 8192           # context window the Ollama container loads the model with
+    slm_keep_alive: str = "15m"       # how long the model stays in memory after a question
+    rag_reranker: str = "BAAI/bge-reranker-v2-m3-int8"   # multilingual cross-encoder on the CPU; empty = off
+    rag_sources: int = 8              # sources in the context of an answer
+    rag_context_chars: int = 9000     # ~2,500 tokens of context; lower it for a small model on a CPU
+
     # lessons (aulas 3D, F0/F1): voice "piper:faber" (local) or "google:pt-BR-Chirp3-HD-Charon" (needs the key);
     # empty = the voice you chose in the blind test, else piper:faber
     google_tts_api_key: str = ""

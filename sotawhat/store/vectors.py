@@ -13,6 +13,18 @@ import numpy as np
 DEFAULT_MODEL = "google/embeddinggemma-300m"
 # EmbeddingGemma expects a task prefix; "clustering" fits both novelty and the relevance classifier.
 _PREFIXES = {"google/embeddinggemma-300m": "task: clustering | query: "}
+# Retrieval (sotawhat/rag) embeds the question and the passages with the prompts the model was trained with for
+# search: (question prefix, passage template). Models without an entry embed both as plain text.
+RETRIEVAL = {"google/embeddinggemma-300m": ("task: search result | query: ", "title: {title} | text: {text}")}
+
+
+def query_text(model, question) -> str:
+    return RETRIEVAL.get(model, ("", ""))[0] + question
+
+
+def passage_text(model, title, text) -> str:
+    template = RETRIEVAL.get(model, ("", ""))[1]
+    return template.format(title=title or "none", text=text) if template else f"{title}\n{text}".strip()
 
 
 def item_text(title, text, limit=2000) -> str:
@@ -41,11 +53,12 @@ class FastEmbedder:
             self._model = TextEmbedding(self.name, cache_dir=str(self.cache_dir) if self.cache_dir else None)
         return self._model
 
-    def embed(self, texts) -> np.ndarray:
+    def embed(self, texts, raw=False) -> np.ndarray:
+        """`raw`: the texts already carry their own prompt (retrieval), so the clustering prefix stays out."""
         texts = list(texts)
         if not texts:
             return np.zeros((0, 0), dtype=np.float32)
-        prefix = _PREFIXES.get(self.name, "")
+        prefix = "" if raw else _PREFIXES.get(self.name, "")
         vectors = self._load().embed([prefix + t for t in texts], batch_size=self.batch_size)
         return normalize(np.array(list(vectors), dtype=np.float32))
 
@@ -58,7 +71,7 @@ class HashEmbedder:
         self.dim = dim
         self.name = f"hash-{dim}"
 
-    def embed(self, texts) -> np.ndarray:
+    def embed(self, texts, raw=False) -> np.ndarray:
         texts = list(texts)
         out = np.zeros((len(texts), self.dim), dtype=np.float32)
         for row, text in enumerate(texts):

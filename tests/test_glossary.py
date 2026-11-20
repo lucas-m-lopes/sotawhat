@@ -1,5 +1,5 @@
 # tests/test_glossary.py
-"""The glossary of the digests (SDD §17.2): terms defined once by the LLM, found again with no LLM, a few a day."""
+"""The glossary of the digests (SDD §6.14): terms defined once by the LLM, found again with no LLM, a few a day."""
 import pytest
 
 from sotawhat import glossary

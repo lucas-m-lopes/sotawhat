@@ -89,6 +89,9 @@ def parse_args(argv):
     p_lessons.add_argument("--refazer", default="", help="resume/hf: steps to redo (plano,storyboard,voz,3d,video; voz spends "
                                                           "ElevenLabs credits); Manim lessons: scenes, e.g. 2,5")
     p_lessons.add_argument("--aula", type=int, default=None, help="hf: resume this remake instead of making a new one")
+    p_lessons.add_argument("--so-roteiro", dest="plan_only", action="store_true",
+                           help="make/resume: stop after the plan, to review it on the Aulas tab (no voice is spent)")
+    p_lessons.add_argument("--job", default=None, help=argparse.SUPPRESS)    # the Aulas tab: the job this process adopts
 
     p_backup = sub.add_parser("backup", help="copy data/insight.db to data/backups (P6)")
     p_backup.add_argument("--keep", type=int, default=8, help="copies to keep (default 8)")

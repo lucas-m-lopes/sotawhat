@@ -74,7 +74,9 @@ def _load(path, default=None):
 
 
 def engine_of(lesson) -> str:
-    return json.loads(lesson["report_json"] or "{}").get("engine") or "manim"
+    """The engine its report names. A lesson that never ran goes to this one (the interface creates the lesson and then
+    runs `lessons resume`); the Manim lessons 1–5 have a plan and no engine in their report."""
+    return json.loads(lesson["report_json"] or "{}").get("engine") or ("manim" if lesson["plan_json"] else ENGINE)
 
 
 def prepare(settings, store, source_id, lessons_root) -> int:
@@ -218,27 +220,36 @@ def forget(work, redo) -> None:
 
 
 def run_motion_lesson(settings, store, lesson_id, deliver=True, redo=(), mode="economico", log=print,
-                      fresh_budget=False) -> int:
-    """Runs (or resumes) lesson `lesson_id` in the HyperFrames engine. -> exit code."""
+                      fresh_budget=False, until=None, progress=None) -> int:
+    """Runs (or resumes) lesson `lesson_id` in the HyperFrames engine. -> exit code.
+
+    `until="roteiro"` stops after the plan: the review step of the Aulas tab, before any credit of voice. Its LLM cost
+    goes to `llm_usd`, which the lesson cap discounts when the production runs. `progress` (lessons/jobs.Tracker)
+    hears which step runs, for the Aulas tab."""
     from sotawhat.lessons import hyperframes as hfm
+    from sotawhat.lessons.jobs import NoProgress
     from sotawhat.lessons.pipeline import _gateway, lessons_root, send
     from sotawhat.lessons.tools import Tools
 
+    progress = progress or NoProgress()
+    progress.attach(lesson_id)
     hf, tools = hfm.hf_tools(settings), Tools.from_settings(settings)
-    if not hf.ready():
-        log(f"HyperFrames incompleto em {hf.root}: instale com npm (veja a seção Animated lessons do README)")
-        return 2
-    if not Path(tools.ffmpeg()).exists():
-        log("FFmpeg das aulas não encontrado: rode `sotawhat lessons setup`")
-        return 2
-    if not settings.elevenlabs_api_key:
-        log("ELEVENLABS_API_KEY vazia no .env: a voz das aulas é a ElevenLabs")
-        return 2
+    if until != "roteiro":                 # what only the production uses
+        if not hf.ready():
+            log(f"HyperFrames incompleto em {hf.root}: instale com npm (veja a seção Animated lessons do README)")
+            return 2
+        if not Path(tools.ffmpeg()).exists():
+            log("FFmpeg das aulas não encontrado: rode `sotawhat lessons setup`")
+            return 2
+        if not settings.elevenlabs_api_key:
+            log("ELEVENLABS_API_KEY vazia no .env: a voz das aulas é a ElevenLabs")
+            return 2
     work = lessons_root(settings) / f"{int(lesson_id):03d}"
     work.mkdir(parents=True, exist_ok=True)
     forget(work, redo)
     report = json.loads(store.get_lesson(lesson_id)["report_json"] or "{}")
     report["engine"] = ENGINE
+    report["mode"] = mode                  # "Produzir", on the Aulas tab, uses the mode of the plan
     report.setdefault("runs", [])
     previous = 0.0 if fresh_budget else float(report.get("llm_usd") or 0.0)
     run_id = store.start_run("lesson")
@@ -247,26 +258,44 @@ def run_motion_lesson(settings, store, lesson_id, deliver=True, redo=(), mode="e
     timings = report.setdefault("timings", {})
     started = time.monotonic()
     try:
+        progress.expect(["roteiro"] if until == "roteiro" else
+                        ["roteiro", "storyboard", "voz", "checagem", "video"] + (["envio"] if deliver else []))
         gateway = _gateway(settings, store, run_id, previous, mode)
+        progress.stage("roteiro")
         plan = plan_step(gateway, store, lesson_id, work, report, mode=mode, log=log)
         log(f"roteiro: “{plan.title}” · {len(plan.scenes)} cenas: "
             + ", ".join(getattr(s, "template", s.mode) for s in plan.scenes) + f" · {len(plan.quiz)} perguntas")
+        if until == "roteiro":
+            report["llm_usd"] = round(sum(store.llm_cost_for_run(r) for r in report["runs"]), 4)
+            store.update_lesson(lesson_id, report=report)
+            store.finish_run(run_id, True, {"lesson": lesson_id, "step": "roteiro", "cost_usd": report["llm_usd"]})
+            log(f"[aula {lesson_id}] roteiro pronto (LLM US$ {report['llm_usd']:.3f}): revise na aba Aulas, ou produza "
+                f"com sotawhat lessons resume {lesson_id}")
+            return 0
+        progress.stage("storyboard")
         t = time.monotonic()
         board = storyboard_step(gateway, work, plan, log=log)
         report["storyboard"] = {"templates": [s.template for s in board.scenes]}
         timings["storyboard"] = round(time.monotonic() - t, 1)
+        free3d = any(s.template == "mechanism3d" for s in board.scenes)
+        if free3d:
+            progress.expect(["3d"])
+        progress.stage("voz")
         t = time.monotonic()
         nar = narrate_step(settings, work, plan, tools.ffmpeg(), log=log)
         report["narration"] = {"seconds": round(nar["duration"], 1), "chars": nar["chars"], "credits": nar["credits"],
                                "billed_total": nar["billed_total"], "voice": nar["voice"], "model": nar["model"]}
         store.update_lesson(lesson_id, status="narrada")
         timings["voz"] = round(time.monotonic() - t, 1)
+        if free3d:
+            progress.stage("3d")
         t = time.monotonic()
         free = three3d.code_step(gateway, tools, hf, work, plan, board, nar, log=log)
         if free["scenes"]:
             report["free3d"] = {str(n): r for n, r in free["scenes"].items()}
             timings["3d"] = round(time.monotonic() - t, 1)
             t = time.monotonic()
+        progress.stage("checagem")
         layout = hfm.compose(hf, work / "hf", plan, board, nar, lesson_id, codes=free["codes"])
         key = project_key(work / "hf")
         checked = hfm.check(hf, work / "hf")
@@ -274,6 +303,7 @@ def run_motion_lesson(settings, store, lesson_id, deliver=True, redo=(), mode="e
         timings["check"] = round(time.monotonic() - t, 1)
         log(f"[check] {'ok' if checked['ok'] else 'com erros'}: {len(checked['errors'])} erros, "
             f"{len(checked['warnings'])} avisos")
+        progress.stage("video")
         if "video" not in redo and report.get("render_key") == key and (work / "aula.mp4").exists() and report.get("video"):
             log("[render] nada mudou desde o último vídeo: mantido")
             video = report["video"]
@@ -307,14 +337,18 @@ def run_motion_lesson(settings, store, lesson_id, deliver=True, redo=(), mode="e
     log(f"[aula {lesson_id}] pronta: {video['seconds']:.0f} s · {video['bytes'] / 1e6:.1f} MB · "
         f"US$ {report['cost_usd']:.3f}{brl} (LLM {report['llm_usd']:.3f} + voz {report['voice']['credits']} créditos)"
         f"\n[vídeo] {work / 'aula.mp4'}\n[NotebookLM] {work / 'fontes.md'}")
-    return send(settings, store, lesson_id, log) if deliver else 0
+    if not deliver:
+        return 0
+    progress.stage("envio")
+    return send(settings, store, lesson_id, log)
 
 
-def remake(settings, store, source_id, lesson_id=None, deliver=True, redo=(), log=print) -> int:
+def remake(settings, store, source_id, lesson_id=None, deliver=True, redo=(), log=print, progress=None) -> int:
     """`lessons hf <id>`: an older lesson (its plan and sources) made again in this engine."""
     from sotawhat.lessons.pipeline import lessons_root
 
     if lesson_id is None:
         lesson_id = prepare(settings, store, source_id, lessons_root(settings))
         log(f"aula #{lesson_id}: a aula {source_id} refeita no motor HyperFrames")
-    return run_motion_lesson(settings, store, lesson_id, deliver=deliver, redo=redo, log=log, fresh_budget=bool(redo))
+    return run_motion_lesson(settings, store, lesson_id, deliver=deliver, redo=redo, log=log, fresh_budget=bool(redo),
+                             progress=progress)

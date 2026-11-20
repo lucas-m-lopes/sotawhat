@@ -15,7 +15,7 @@ import numpy as np
 
 from sotawhat.textmatch import fold
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 APPROVED = ("main", "frontier", "radar")
 ROLE_RANK = {"tag": 0, "mentioned": 1, "used": 2, "main": 3}
 IDEA_STATUS = {"up": "curtida", "down": "rejeitada", "test": "testar", "archive": "engavetada", "built": "construida"}
@@ -275,7 +275,7 @@ CREATE TABLE IF NOT EXISTS lessons(
     updated_at TEXT,
     topic TEXT NOT NULL,
     entities_json TEXT NOT NULL DEFAULT '[]',
-    status TEXT NOT NULL DEFAULT 'nova',  -- nova | planejada | narrada | renderizada | pronta | entregue | falhou
+    status TEXT NOT NULL DEFAULT 'nova',  -- nova | planejada | narrada | renderizada | pronta | entregue | falhou | descartada
     title TEXT,
     plan_json TEXT,
     report_json TEXT,                     -- gates, attempts per scene, timings, cost
@@ -388,6 +388,27 @@ CREATE TABLE IF NOT EXISTS rag_passages(
 );
 CREATE INDEX IF NOT EXISTS idx_rag_item ON rag_passages(item_id);
 """
+_SCHEMA_V8 = """
+CREATE TABLE IF NOT EXISTS lesson_jobs(   -- lessons/jobs.py: one lesson at a time, the steps the Aulas tab shows
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lesson_id INTEGER,                    -- NULL for a moment: `lessons make` creates the lesson after the claim
+    action TEXT NOT NULL,                 -- roteiro | aula | envio
+    origin TEXT NOT NULL,                 -- interface | terminal
+    token TEXT NOT NULL UNIQUE,           -- the interface passes it to the process (--job), which adopts the row
+    pid INTEGER,                          -- the process to end on "Cancelar" (with its tree)
+    state TEXT NOT NULL,                  -- iniciando | rodando | concluida | falhou | cancelada | interrompida
+    stage TEXT,                           -- roteiro | storyboard | voz | 3d | checagem | video | envio
+    stages_json TEXT NOT NULL DEFAULT '[]',   -- [{"name", "state", "started_at", "seconds"}]
+    args_json TEXT,                       -- the command, and whether it left the job object of the interface
+    log_path TEXT,
+    started_at TEXT NOT NULL,
+    beat_at TEXT NOT NULL,                -- rewritten every 5 s by the process; silent for 30 s = interrupted
+    finished_at TEXT,
+    exit_code INTEGER,
+    error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_lesson_jobs_lesson ON lesson_jobs(lesson_id, id);
+"""
 _FTS = "CREATE VIRTUAL TABLE IF NOT EXISTS rag_fts USING fts5(title, body, tokenize=\"unicode61 remove_diacritics 2\")"
 LESSON_FIELDS = ("status", "title", "voice", "video_path", "duration_s", "size_bytes", "run_id", "cost_usd",
                  "delivered_at", "requiz_at", "review", "comparison", "error")
@@ -435,6 +456,7 @@ class Store:
         self.conn.executescript(_SCHEMA_V5)
         self.conn.executescript(_SCHEMA_V6)
         self.conn.executescript(_SCHEMA_V7)
+        self.conn.executescript(_SCHEMA_V8)
         try:
             self.conn.execute(_FTS)
             self.fts = True
@@ -1061,9 +1083,9 @@ class Store:
         return self.conn.execute("SELECT * FROM lessons ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
 
     def taught_entities(self) -> set:
-        """Entities that already have a lesson that did not fail (the selector skips them)."""
+        """Entities that already have a lesson that did not fail and was not discarded (the selector skips them)."""
         out = set()
-        for row in self.conn.execute("SELECT entities_json FROM lessons WHERE status != 'falhou'"):
+        for row in self.conn.execute("SELECT entities_json FROM lessons WHERE status NOT IN ('falhou', 'descartada')"):
             out.update(json.loads(row[0] or "[]"))
         return out
 

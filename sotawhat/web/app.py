@@ -10,7 +10,10 @@ The tools radar (2026-11-10) adds /api/radar and /api/radar/vote.
 The lessons (aulas 3D) add /api/lessons and the files of data/lessons under /lessons: the videos and the
 interactive pages of the 3D scenes. The glossary of the digests (2026-11-20) adds /api/glossary and
 /api/glossary/status ("já sei"); the questions to the graph add /api/ask (hybrid retrieval, then the local SLM)
-and /api/rag/status."""
+and /api/rag/status. The lessons made from the interface (F1, docs/superpowers/specs/2026-11-20-aulas-pela-interface-
+design.md) add /api/lessons/state and /api/lessons/job (read), and POST /api/lessons (plan a new one) and
+/api/lessons/{id}/plan, /produce, /send, /cancel and /discard: each starts or ends a `sotawhat lessons` process
+through the launcher (lessons/launcher.py), one at a time."""
 import json
 import logging
 import mimetypes
@@ -33,6 +36,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from sotawhat import glossary
 from sotawhat.graph import query as q
 from sotawhat.ideation import ledger
+from sotawhat.lessons import estimate, jobs
 from sotawhat.lessons.eleven import VOICE_NAMES
 from sotawhat.store.db import Store
 
@@ -69,6 +73,16 @@ class Question(BaseModel):
     engine: Literal["slm", "jev"] | None = None      # None: RAG_ENGINE
 
 
+class NewLesson(BaseModel):
+    topic: str = Field(min_length=3, max_length=200)
+    entities: list[int] = Field(default_factory=list, max_length=3)
+    mode: Literal["economico", "equilibrado"] = "economico"
+
+
+class Production(BaseModel):
+    send: bool = True            # to Telegram when it is ready (unchecked: --sem-envio)
+
+
 class TermStatus(BaseModel):
     term_id: int
     status: Literal["ativo", "conhecido"]
@@ -90,10 +104,10 @@ async def json_body(request: Request) -> dict:
     return body
 
 
-def create_app(db_path, static_dir=STATIC, rag=None) -> FastAPI:
+def create_app(db_path, static_dir=STATIC, rag=None, lessons=None) -> FastAPI:
     """`rag`: a callable store -> (retriever, slm, jev, settings-like with rag_sources, rag_context_chars and
     rag_engine), called at the first question (the embedding model takes seconds to load); None answers 503 on
-    /api/ask."""
+    /api/ask. `lessons`: the launcher of lesson jobs (lessons/launcher.py); None answers 503 on the lesson actions."""
     static_dir = Path(static_dir)
     parts = {}
     rag_lock = threading.Lock()
@@ -292,18 +306,215 @@ def create_app(db_path, static_dir=STATIC, rag=None) -> FastAPI:
     lessons_dir.mkdir(parents=True, exist_ok=True)
     app.mount("/lessons", StaticFiles(directory=lessons_dir), name="lessons")
 
+    price = lessons.price if lessons is not None else None
+
+    def one_lesson(st, lesson_id, detail=False) -> dict:
+        row = st.get_lesson(lesson_id)
+        if row is None:
+            raise HTTPException(404, "aula não encontrada")
+        return lesson_payload(st, row, lessons_dir, detail=detail, job=jobs.last_for(st, [lesson_id]).get(lesson_id),
+                              price=price)
+
     @app.get("/api/lessons")
-    def api_lessons(request: Request, limit: int = Query(50, ge=1, le=500)):
+    def api_lessons(request: Request, limit: int = Query(50, ge=1, le=500), discarded: bool = False):
         st = store(request)
-        return [lesson_payload(st, row, lessons_dir) for row in st.list_lessons(limit)]
+        last = jobs.last_for(st)
+        return [lesson_payload(st, row, lessons_dir, job=last.get(row["id"]), price=price)
+                for row in st.list_lessons(limit) if discarded or row["status"] != "descartada"]
+
+    @app.get("/api/lessons/state")
+    def api_lessons_state(request: Request):
+        """What the Aulas tab reads when it opens: the job, the voice credits, what is missing for a production,
+        the suggestions of the week and how many lessons were discarded."""
+        from sotawhat.lessons.pack import suggest_topics
+
+        st = store(request)
+        job = jobs.current(st) or jobs.latest(st)
+        discarded = st.conn.execute("SELECT COUNT(*) FROM lessons WHERE status = 'descartada'").fetchone()[0]
+        out = {"available": lessons is not None, "job": jobs.payload(job, log_lines=12) if job is not None else None,
+               "credits": None, "ready": [], "telegram": False, "price": None, "suggestions": suggest_topics(st),
+               "discarded": discarded, "plan_s": estimate.PLAN_S, "plan_usd": estimate.PLAN_USD}
+        if lessons is not None:
+            out.update(credits=lessons.credits(), ready=lessons.ready(), telegram=lessons.telegram,
+                       price=list(lessons.price))
+        return out
+
+    @app.get("/api/lessons/job")
+    def api_lessons_job(request: Request):
+        """What the tab polls while a job runs: the live job (else the latest) with the end of its log."""
+        st = store(request)
+        job = jobs.current(st) or jobs.latest(st)
+        return {"job": jobs.payload(job, log_lines=12) if job is not None else None}
 
     @app.get("/api/lessons/{lesson_id}")
     def api_lesson(lesson_id: int, request: Request):
+        return one_lesson(store(request), lesson_id, detail=True)
+
+    def launcher():
+        if lessons is None:
+            raise HTTPException(503, "aulas pela interface desligadas neste servidor")
+        return lessons
+
+    def start(st, lesson_id, action, args, send=None, before=None) -> dict:
+        try:
+            job_id = launcher().start(st, lesson_id, action, args, send=send, before=before)
+        except jobs.Busy as busy:
+            raise HTTPException(409, str(busy)) from None
+        except OSError as exc:
+            raise HTTPException(500, f"não consegui iniciar o processo: {exc}") from None
+        return {"lesson": one_lesson(st, lesson_id), "job": jobs.payload(jobs.get(st, job_id))}
+
+    def busy_check(st):
+        live = jobs.current(st)
+        if live is not None:
+            raise HTTPException(409, str(jobs.Busy(live)))
+
+    def editable(row):
+        if row["status"] in ("entregue", "descartada"):
+            raise HTTPException(409, f"esta aula está {row['status']}")
+
+    @app.post("/api/lessons")
+    async def api_lesson_new(request: Request):
+        """A new lesson: it is created here (the card exists from the first second), then its plan is made by
+        `sotawhat lessons resume N --so-roteiro`. No voice is spent before the review."""
+        from sotawhat.lessons.pack import build_pack
+
+        try:
+            asked = NewLesson.model_validate(await json_body(request))
+        except ValidationError as exc:
+            raise HTTPException(422, f"aula inválida: {exc}") from None
+        launcher()
+        st = store(request)
+        topic = " ".join(asked.topic.split())
+        entities = list(dict.fromkeys(asked.entities))
+
+        def work():
+            if entities:
+                known = {r[0] for r in st.conn.execute(
+                    f"SELECT id FROM entities WHERE id IN ({','.join('?' * len(entities))})", entities)}
+                if set(entities) - known:
+                    raise HTTPException(422, f"entidade inexistente: {sorted(set(entities) - known)}")
+            pack = build_pack(st, topic, entities, max_sources=2, chars=0)
+            if not pack.sources and not pack.entities:
+                raise HTTPException(422, f"nada no grafo sobre “{topic}”: ligue a uma entidade ou mude o tema")
+            busy_check(st)
+            lesson_id = st.create_lesson(topic, entities)
+            st.update_lesson(lesson_id, report={"engine": "hyperframes", "mode": asked.mode})
+            return start(st, lesson_id, "roteiro", ["resume", lesson_id, "--so-roteiro", "--modo", asked.mode])
+
+        return await run_in_threadpool(work)
+
+    @app.post("/api/lessons/{lesson_id}/plan")
+    async def api_lesson_plan(lesson_id: int, request: Request):
+        """Plans a lesson that has no plan, or makes its plan again. The plan kept in the database goes too, once the
+        slot is ours: a "Retomar" after a failure must never produce a lesson nobody reviewed."""
+        await json_body(request)
+        launcher()
+        st = store(request)
+
+        def work():
+            row = st.get_lesson(lesson_id)
+            if row is None:
+                raise HTTPException(404, "aula não encontrada")
+            editable(row)
+            if row["video_path"]:
+                raise HTTPException(409, "esta aula já tem vídeo: o roteiro não muda mais")
+            mode = json.loads(row["report_json"] or "{}").get("mode") or "economico"
+
+            def clear():
+                with st._lock:
+                    st.conn.execute("UPDATE lessons SET plan_json = NULL, title = NULL, status = 'nova', error = NULL"
+                                    " WHERE id = ?", (lesson_id,))
+                    st.conn.commit()
+
+            return start(st, lesson_id, "roteiro",
+                         ["resume", lesson_id, "--refazer", "plano", "--so-roteiro", "--modo", mode], before=clear)
+
+        return await run_in_threadpool(work)
+
+    @app.post("/api/lessons/{lesson_id}/produce")
+    async def api_lesson_produce(lesson_id: int, request: Request):
+        """Produces a reviewed lesson, or resumes one that stopped: the steps already made come from the cache."""
+        try:
+            asked = Production.model_validate(await json_body(request))
+        except ValidationError as exc:
+            raise HTTPException(422, f"pedido inválido: {exc}") from None
+        launch = launcher()
+        st = store(request)
+
+        def work():
+            row = st.get_lesson(lesson_id)
+            if row is None:
+                raise HTTPException(404, "aula não encontrada")
+            editable(row)
+            if not row["plan_json"]:
+                raise HTTPException(409, "esta aula ainda não tem roteiro")
+            if row["status"] == "pronta":
+                raise HTTPException(409, "a aula já está pronta")
+            if not (lessons_dir / f"{lesson_id:03d}" / "narracao.json").exists():      # the voice still to be paid
+                need = estimate.production(json.loads(row["plan_json"]), *launch.price)["credits"]
+                left = (launch.credits() or {}).get("left")
+                if left is not None and left < need:
+                    raise HTTPException(409, f"faltam créditos de voz: a aula precisa de ~{need:,} e restam {left:,}"
+                                        .replace(",", "."))
+            if asked.send and not launch.telegram:
+                raise HTTPException(409, "Telegram não configurado: desmarque o envio ou preencha TELEGRAM_BOT_TOKEN e"
+                                         " TELEGRAM_CHAT_ID no .env")
+            mode = json.loads(row["report_json"] or "{}").get("mode") or "economico"
+            out = start(st, lesson_id, "aula", ["resume", lesson_id, "--modo", mode] + ([] if asked.send else ["--sem-envio"]),
+                        send=asked.send)
+            launch.forget_credits()
+            return out
+
+        return await run_in_threadpool(work)
+
+    @app.post("/api/lessons/{lesson_id}/send")
+    async def api_lesson_send(lesson_id: int, request: Request):
+        await json_body(request)
+        launch = launcher()
+        st = store(request)
+
+        def work():
+            row = st.get_lesson(lesson_id)
+            if row is None:
+                raise HTTPException(404, "aula não encontrada")
+            if not row["video_path"] or not Path(row["video_path"]).exists():
+                raise HTTPException(409, "a aula ainda não tem vídeo")
+            if not launch.telegram:
+                raise HTTPException(409, "Telegram não configurado (TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID no .env)")
+            return start(st, lesson_id, "envio", ["send", lesson_id], send=True)
+
+        return await run_in_threadpool(work)
+
+    @app.post("/api/lessons/{lesson_id}/cancel")
+    async def api_lesson_cancel(lesson_id: int, request: Request):
+        await json_body(request)
+        launch = launcher()
+        st = store(request)
+
+        def work():
+            job = launch.cancel(st, lesson_id)
+            if job is None:
+                raise HTTPException(409, "nada rodando nesta aula")
+            return {"lesson": one_lesson(st, lesson_id), "job": job}
+
+        return await run_in_threadpool(work)
+
+    @app.post("/api/lessons/{lesson_id}/discard")
+    async def api_lesson_discard(lesson_id: int, request: Request):
+        """Out of the list; the files stay on disk, and its entities go back to the suggestions."""
+        await json_body(request)
         st = store(request)
         row = st.get_lesson(lesson_id)
         if row is None:
             raise HTTPException(404, "aula não encontrada")
-        return lesson_payload(st, row, lessons_dir, detail=True)
+        if row["status"] == "entregue":
+            raise HTTPException(409, "uma aula entregue não se descarta")
+        live = jobs.current(st)
+        if live is not None and live["lesson_id"] == lesson_id:
+            raise HTTPException(409, "cancele a tarefa desta aula antes de descartá-la")
+        st.update_lesson(lesson_id, status="descartada")
+        return {"lesson": one_lesson(st, lesson_id)}
 
     return app
 
@@ -322,7 +533,9 @@ def voice_label(voice) -> str | None:
     return f"{label} · {name}" if name else label
 
 
-def lesson_payload(st, row, lessons_dir, detail=False) -> dict:
+def lesson_payload(st, row, lessons_dir, detail=False, job=None, price=None) -> dict:
+    """`job`: the latest lesson job of this lesson (lessons/jobs.py); `price`: (US$, credits) of the voice plan, for
+    the estimate of a lesson waiting for its review."""
     plan = json.loads(row["plan_json"] or "null")
     report = json.loads(row["report_json"] or "{}")
     folder = f"{row['id']:03d}"
@@ -340,6 +553,10 @@ def lesson_payload(st, row, lessons_dir, detail=False) -> dict:
            "scenes3d": [{"n": n, "title": s["title"], "url": f"/lessons/{folder}/scenes/{n:02d}/index.html"}
                         for n, s in enumerate((plan or {}).get("scenes") or [], 1)
                         if s.get("mode") == "three" and (scenes.get(str(n)) or {}).get("ok")]}
+    out.update(has_plan=plan is not None, delivered_at=row["delivered_at"], mode=report.get("mode"),
+               llm_usd=report.get("llm_usd"), voice_paid=(lessons_dir / folder / "narracao.json").exists(),
+               job=jobs.payload(job) if job is not None else None,
+               estimate=estimate.production(plan, *(price or ())) if plan and not out["video"] else None)
     if detail:
         sources = lessons_dir / folder / "sources.json"
         out.update(plan=plan, report={k: report.get(k) for k in ("gates", "timings", "scenes", "video", "fallbacks",
@@ -350,7 +567,7 @@ def lesson_payload(st, row, lessons_dir, detail=False) -> dict:
     return out
 
 
-def serve(db_path, port=8765, open_browser=True, host="127.0.0.1", rag=None):
+def serve(db_path, port=8765, open_browser=True, host="127.0.0.1", rag=None, lessons=None):
     """`host` is 127.0.0.1 except inside a container (SOTAWHAT_IN_CONTAINER=1), whose own network is the boundary:
     there the port is published on the host's 127.0.0.1 only (compose.vps.yaml). The Host check stays local."""
     import uvicorn
@@ -365,7 +582,7 @@ def serve(db_path, port=8765, open_browser=True, host="127.0.0.1", rag=None):
         threading.Timer(1.5, webbrowser.open, args=(url,)).start()
     print(f"sotawhat · interface em {url} (Ctrl+C para parar)")
     log.info("serving %s", url)
-    uvicorn.run(create_app(db_path, rag=rag), host=host, port=port, log_config=None, access_log=False)
+    uvicorn.run(create_app(db_path, rag=rag, lessons=lessons), host=host, port=port, log_config=None, access_log=False)
 
 
 def main_serve(ns) -> int:
@@ -382,6 +599,10 @@ def main_serve(ns) -> int:
         return (*build(settings, store), settings)
 
     in_container = os.environ.get("SOTAWHAT_IN_CONTAINER") == "1"
+    from sotawhat.lessons.launcher import Launcher
+
+    # lessons are made on this computer (HyperFrames, Chrome and FFmpeg); the container serves the reading only
+    lessons = None if in_container else Launcher.from_settings(settings)
     serve(settings.db_path, port=ns.port or settings.sotawhat_web_port, open_browser=not ns.no_browser and not in_container,
-          host="0.0.0.0" if in_container else "127.0.0.1", rag=rag)
+          host="0.0.0.0" if in_container else "127.0.0.1", rag=rag, lessons=lessons)
     return 0

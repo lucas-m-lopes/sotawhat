@@ -185,3 +185,108 @@ def test_resume_follows_the_engine_of_the_lesson(tmp_path, monkeypatch):
     assert calls[-1]["redo"] == {"storyboard"} and calls[-1]["fresh_budget"] is True
     assert pipeline.main_lessons(Namespace(lessons_action="resume", refazer="2,5", **base)) == 2     # scenes: Manim only
     assert pipeline.main_lessons(Namespace(lessons_action="rerender", refazer="", **base)) == 2
+
+
+# ---- lessons from the interface (F1): the plan alone, the steps the engine announces, the jobs of the commands ----
+class Steps:
+    """What lessons/jobs.Tracker hears from the engine."""
+
+    def __init__(self):
+        self.calls = []
+
+    def attach(self, lesson_id):
+        self.calls.append(("attach", lesson_id))
+
+    def expect(self, names):
+        self.calls.append(("expect", list(names)))
+
+    def stage(self, name):
+        self.calls.append(name)
+
+    def names(self):
+        return [c for c in self.calls if isinstance(c, str)]
+
+
+def test_the_plan_alone_stops_before_the_storyboard_and_the_voice(engine):
+    settings, store, lesson_id, work, events, plan = engine
+    steps = Steps()
+    assert motion.run_motion_lesson(settings, store, lesson_id, deliver=True, mode="equilibrado", until="roteiro",
+                                    progress=steps, log=lambda *_: None) == 0
+    assert events == ["lesson_plan", "lesson_facts"]
+    assert steps.calls == [("attach", lesson_id), ("expect", ["roteiro"]), "roteiro"]
+    row = store.get_lesson(lesson_id)
+    report = json.loads(row["report_json"])
+    assert row["status"] == "planejada" and report["mode"] == "equilibrado" and report["llm_usd"] == 0.0
+    assert (work / "plan.json").exists() and not (work / "storyboard.json").exists()
+    run = store.conn.execute("SELECT ok, finished_at FROM runs WHERE id = ?", (report["runs"][-1],)).fetchone()
+    assert run["ok"] == 1 and run["finished_at"]
+    events.clear()
+    steps = Steps()                                       # producing it afterwards does not plan again
+    assert motion.run_motion_lesson(settings, store, lesson_id, deliver=False, progress=steps, log=lambda *_: None) == 0
+    assert events[0] == "lesson_storyboard" and "lesson_plan" not in events
+    assert steps.names() == ["roteiro", "storyboard", "voz", "checagem", "video"]
+    assert ("expect", ["roteiro", "storyboard", "voz", "checagem", "video"]) in steps.calls
+
+
+def test_the_steps_of_a_production_with_3d_and_sending(engine, monkeypatch):
+    settings, store, lesson_id, work, events, plan = engine
+    plan3d = motion_plan_with(("graph", "mechanism3d") + ("graph",) * 5)
+    (work / "plan.json").write_text(plan3d.model_dump_json(), encoding="utf-8")
+    monkeypatch.setattr(motion, "storyboard_step", lambda *a, **k: board_for(plan3d))
+    monkeypatch.setattr(motion.three3d, "code_step",
+                        lambda *a, **k: events.append("3d") or {"codes": {}, "scenes": {}, "fallback": []})
+    monkeypatch.setattr(pipeline, "send", lambda *a, **k: events.append("send") or 0)
+    steps = Steps()
+    assert motion.run_motion_lesson(settings, store, lesson_id, deliver=True, progress=steps, log=lambda *_: None) == 0
+    assert steps.names() == ["roteiro", "storyboard", "voz", "3d", "checagem", "video", "envio"]
+    assert ("expect", ["3d"]) in steps.calls and events[-1] == "send" and "3d" in events
+
+
+def test_a_lesson_that_never_ran_goes_to_the_hyperframes_engine(tmp_path):
+    with Store(tmp_path / "insight.db") as st:
+        fresh = st.create_lesson("Atenção", [])
+        assert motion.engine_of(st.get_lesson(fresh)) == "hyperframes"
+        manim = st.create_lesson("Atenção", [])
+        st.update_lesson(manim, plan={"title": "x", "scenes": []})
+        assert motion.engine_of(st.get_lesson(manim)) == "manim"
+
+
+def test_the_commands_register_their_job_and_wait_their_turn(tmp_path, monkeypatch):
+    from sotawhat.cli import parse_args
+    from sotawhat.lessons import jobs
+
+    calls = []
+
+    def fake_run(settings, store, lesson_id, **k):
+        k["progress"].attach(lesson_id)
+        k["progress"].stage("roteiro")
+        k["log"]("roteiro pronto")
+        calls.append(k)
+        return 0
+
+    monkeypatch.setattr(motion, "run_motion_lesson", fake_run)
+    monkeypatch.setattr("sotawhat.config.load_settings", lambda **k: load_settings(sotawhat_data_dir=tmp_path))
+    printed = []
+    monkeypatch.setattr("builtins.print", lambda *a, **k: printed.append(" ".join(map(str, a))))
+    with Store(tmp_path / "insight.db") as st:
+        new = st.create_lesson("Atenção", [])
+    base = dict(id=new, tema=None, entidade=None, auto=False, voz=None, modo="equilibrado", no_send=True, aula=None,
+                refazer="")
+    assert pipeline.main_lessons(Namespace(lessons_action="resume", plan_only=True, job=None, **base)) == 0
+    assert calls[-1]["until"] == "roteiro" and calls[-1]["mode"] == "equilibrado" and printed[-1] == "roteiro pronto"
+    with Store(tmp_path / "insight.db") as st:
+        job = jobs.latest(st)
+        assert (job["action"], job["state"], job["lesson_id"], job["origin"]) == ("roteiro", "concluida", new, "terminal")
+        job_id, token = jobs.create_pending(st, new, "aula", tmp_path / "job.log", ["resume", new])
+    # the process the interface starts adopts its job
+    assert pipeline.main_lessons(Namespace(lessons_action="resume", plan_only=False, job=token, **base)) == 0
+    with Store(tmp_path / "insight.db") as st:
+        job = jobs.get(st, job_id)
+        assert (job["state"], job["origin"], job["stage"]) == ("concluida", "interface", "roteiro")
+        jobs.Tracker(st, "aula", lesson_id=new, beat_every=None).claim()          # another one, alive
+    assert pipeline.main_lessons(Namespace(lessons_action="resume", plan_only=False, job=None, **base)) == 2
+    assert "já há uma tarefa de aula em andamento" in printed[-1] and "cancele na aba Aulas" in printed[-1]
+    assert pipeline.main_lessons(Namespace(lessons_action="resume", plan_only=False, job="gone", **base)) == 2
+    assert printed[-1] == "a tarefa desta aula foi cancelada ou não existe mais"
+    ns = parse_args(["lessons", "resume", "9", "--so-roteiro", "--job", "abc"])
+    assert (ns.plan_only, ns.job, ns.id) == (True, "abc", 9)

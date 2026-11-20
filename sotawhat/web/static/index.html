@@ -99,8 +99,34 @@
   <div class="page-head">
     <div>
       <h1>Aulas</h1>
-      <p id="lessons-meta" class="muted">carregando…</p>
+      <p class="muted">Vídeo narrado com cenas 3D, quiz no Telegram e re-quiz em 2 dias.</p>
     </div>
+    <dl id="lessons-meta" class="readouts" aria-label="Aulas e créditos de voz"></dl>
+  </div>
+  <form id="lesson-form" class="composer" autocomplete="off">
+    <textarea id="lesson-topic" rows="1" maxlength="200" placeholder="Tema da aula. Ex.: como um modelo de difusão gera imagens médicas sintéticas" aria-label="Tema da aula"></textarea>
+    <div class="composer-bar">
+      <div class="field">
+        <span id="lesson-entities-label" class="label">Ligar ao grafo</span>
+        <div class="entity-picker">
+          <div id="lesson-entities" class="chips" aria-labelledby="lesson-entities-label"></div>
+          <input id="lesson-entity-search" type="search" placeholder="buscar entidade…" aria-label="Buscar entidade do grafo">
+          <div id="lesson-entity-results" class="results" hidden></div>
+        </div>
+        <p id="lesson-entities-hint" class="field-hint"></p>
+      </div>
+      <div class="field">
+        <span id="lesson-mode-label" class="label">Modelos</span>
+        <div id="lesson-mode" class="segmented" role="radiogroup" aria-labelledby="lesson-mode-label"></div>
+        <p id="lesson-mode-hint" class="field-hint"></p>
+      </div>
+      <button id="lesson-plan" class="primary" type="submit">Planejar roteiro <span aria-hidden="true">↵</span></button>
+    </div>
+    <p id="lesson-form-note" class="composer-note"></p>
+  </form>
+  <div class="composer-examples">
+    <span class="label">Sugestões da semana</span>
+    <div id="lesson-suggestions" class="chips" aria-label="Temas sugeridos pelas tendências da semana"></div>
   </div>
   <div id="lessons-list" class="cards" aria-live="polite"></div>
 </main>
@@ -121,9 +147,9 @@
     </div>
     <dl id="ask-meta" class="readouts" aria-label="Estado do índice"></dl>
   </div>
-  <form id="ask-form" class="ask-form">
+  <form id="ask-form" class="composer">
     <textarea id="ask-input" rows="2" maxlength="500" placeholder="Ex.: o que saiu sobre agentes clínicos esta semana?" aria-label="Sua pergunta"></textarea>
-    <div class="ask-bar">
+    <div class="composer-bar">
       <div class="field">
         <span id="ask-engine-label" class="label">Resposta</span>
         <div id="ask-engine" class="segmented" role="radiogroup" aria-labelledby="ask-engine-label"></div>
@@ -137,7 +163,7 @@
       <button id="ask-send" class="primary" type="submit">Perguntar <span aria-hidden="true">↵</span></button>
     </div>
   </form>
-  <div class="ask-examples">
+  <div class="composer-examples">
     <span class="label">Experimente</span>
     <div id="ask-examples" class="chips" aria-label="Exemplos de pergunta"></div>
   </div>

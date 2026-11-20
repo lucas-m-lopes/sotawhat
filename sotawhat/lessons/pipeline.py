@@ -312,8 +312,12 @@ def print_list(store, log=print) -> None:
             + (f" · vs NotebookLM {r['comparison']}" if r["comparison"] else "") + (f" · erro: {r['error'][:80]}" if r["error"] else ""))
 
 
+TRACKED = ("make", "resume", "hf", "send")      # the commands that register a job (lessons/jobs.py)
+
+
 def main_lessons(ns) -> int:
     from sotawhat.config import load_settings
+    from sotawhat.lessons import jobs
     from sotawhat.lessons.tools import setup
     from sotawhat.store.db import Store
 
@@ -325,66 +329,97 @@ def main_lessons(ns) -> int:
     if ns.lessons_action in ("rerender", "voices") and not tools.ready():
         log("ferramentas das aulas incompletas: rode `sotawhat lessons setup`")
         return 2
+    with Store(settings.db_path) as store:
+        if ns.lessons_action not in TRACKED:
+            return _dispatch(ns, settings, store, tools, log, jobs.NoProgress())
+        # one lesson at a time, from the interface or from here; the Aulas tab shows the steps of this one
+        action = "envio" if ns.lessons_action == "send" else "roteiro" if getattr(ns, "plan_only", False) else "aula"
+        tracker = jobs.Tracker(store, action, lesson_id=ns.id if ns.lessons_action in ("resume", "send") else None,
+                               token=getattr(ns, "job", None), out=log)
+        try:
+            tracker.claim()
+        except jobs.Busy as busy:
+            log(f"{busy}. Espere terminar ou cancele na aba Aulas.")
+            return 2
+        except jobs.JobGone as gone:
+            log(str(gone))
+            return 2
+        with tracker:
+            code = _dispatch(ns, settings, store, tools, tracker.log, tracker)
+            lesson = store.get_lesson(tracker.lesson_id) if tracker.lesson_id else None
+            # a step that failed wrote why on the lesson; the other exits say it in their last line
+            why = lesson["error"] if code == 1 and lesson is not None and ns.lessons_action != "send" else None
+            tracker.finish(code, why)
+        return code
+
+
+def _dispatch(ns, settings, store, tools, log, progress) -> int:
     from sotawhat.lessons import motion
+
     redo = {x.strip() for x in (getattr(ns, "refazer", "") or "").split(",") if x.strip()}
     mode = getattr(ns, "modo", "economico") or "economico"
-    with Store(settings.db_path) as store:
-        if ns.lessons_action == "hf":       # an older lesson made again in the HyperFrames engine
-            return motion.remake(settings, store, ns.id, lesson_id=ns.aula, deliver=not ns.no_send, redo=redo, log=log)
-        if ns.lessons_action == "list":
-            print_list(store, log)
-            return 0
-        if ns.lessons_action == "voices":
-            return voice_test(settings, store, tools, deliver=not ns.no_send, log=log)
-        if ns.lessons_action == "make":
-            if ns.auto:
-                picked = pick_topic(store)
-                if picked is None:
-                    log("nenhuma tendência nova com fontes suficientes no último weekly")
-                    return 1
-                topic, entities = picked
-                log(f"tema escolhido pelo seletor: {topic}")
-            elif ns.tema:
-                topic, entities = ns.tema, ns.entidade or []
-            else:
-                log("passe --tema \"…\" (com --entidade ID opcional) ou --auto")
-                return 2
-            lesson_id = store.create_lesson(topic, entities)
-            log(f"aula #{lesson_id}: {topic}")
-            return motion.run_motion_lesson(settings, store, lesson_id, deliver=not ns.no_send, mode=mode, log=log)
-        lesson_id = ns.id
-        lesson = store.get_lesson(lesson_id)
-        if lesson is None:
-            log(f"aula {lesson_id} não existe")
-            return 1
-        if ns.lessons_action == "send":
-            return send(settings, store, lesson_id, log)
-        if motion.engine_of(lesson) == motion.ENGINE and ns.lessons_action in ("resume", "rerender"):
-            unknown = redo - set(motion.REDO)
-            if ns.lessons_action == "rerender" or unknown:
-                log("aula do motor HyperFrames: use resume --refazer " + ",".join(motion.REDO) + " (voz gasta créditos)")
-                return 2
-            return motion.run_motion_lesson(settings, store, lesson_id, deliver=not ns.no_send, redo=redo, mode=mode,
-                                            log=log, fresh_budget=bool(redo))
-        if ns.lessons_action in ("resume", "rerender") and not tools.ready():
-            log("ferramentas das aulas incompletas: rode `sotawhat lessons setup`")
+    until = "roteiro" if getattr(ns, "plan_only", False) else None
+    if ns.lessons_action == "hf":       # an older lesson made again in the HyperFrames engine
+        return motion.remake(settings, store, ns.id, lesson_id=ns.aula, deliver=not ns.no_send, redo=redo, log=log,
+                             progress=progress)
+    if ns.lessons_action == "list":
+        print_list(store, log)
+        return 0
+    if ns.lessons_action == "voices":
+        return voice_test(settings, store, tools, deliver=not ns.no_send, log=log)
+    if ns.lessons_action == "make":
+        if ns.auto:
+            picked = pick_topic(store)
+            if picked is None:
+                log("nenhuma tendência nova com fontes suficientes no último weekly")
+                return 1
+            topic, entities = picked
+            log(f"tema escolhido pelo seletor: {topic}")
+        elif ns.tema:
+            topic, entities = ns.tema, ns.entidade or []
+        else:
+            log("passe --tema \"…\" (com --entidade ID opcional) ou --auto")
             return 2
-        voice = choose_voice(settings, store, getattr(ns, "voz", None))
-        parse_voice(voice)
-        if ns.lessons_action == "pack":
-            work = lesson_dir(settings, lesson_id)
-            pack = Pack.from_json((work / "sources.json").read_text(encoding="utf-8"))
-            plan = load_plan((work / "plan.json").read_text(encoding="utf-8")) if (work / "plan.json").exists() else None
-            (work / "fontes.md").write_text(pack_markdown(pack, plan), encoding="utf-8")
-            log(f"[NotebookLM] {work / 'fontes.md'}: suba no NotebookLM e peça um Video Overview (Explainer, pt-BR)")
-            return 0
-        if ns.lessons_action == "rerender":
-            rerender(settings, store, tools, lesson_id, voice)
-        if ns.lessons_action == "resume" and getattr(ns, "refazer", ""):
-            redo = forget_scenes(settings, lesson_id, ns.refazer)
-            log(f"refazendo as cenas {', '.join(map(str, redo))}")
-        deliver = ns.lessons_action in ("make", "resume") and not ns.no_send
-        return run_lesson(settings, store, tools, lesson_id, voice, getattr(ns, "modo", "economico") or "economico",
-                          deliver, log=log, fresh_budget=bool(getattr(ns, "refazer", "")))
+        lesson_id = store.create_lesson(topic, entities)
+        log(f"aula #{lesson_id}: {topic}")
+        return motion.run_motion_lesson(settings, store, lesson_id, deliver=not ns.no_send, mode=mode, log=log,
+                                        until=until, progress=progress)
+    lesson_id = ns.id
+    lesson = store.get_lesson(lesson_id)
+    if lesson is None:
+        log(f"aula {lesson_id} não existe")
+        return 1
+    if ns.lessons_action == "send":
+        progress.attach(lesson_id)
+        progress.expect(["envio"])
+        progress.stage("envio")
+        return send(settings, store, lesson_id, log)
+    if motion.engine_of(lesson) == motion.ENGINE and ns.lessons_action in ("resume", "rerender"):
+        unknown = redo - set(motion.REDO)
+        if ns.lessons_action == "rerender" or unknown:
+            log("aula do motor HyperFrames: use resume --refazer " + ",".join(motion.REDO) + " (voz gasta créditos)")
+            return 2
+        return motion.run_motion_lesson(settings, store, lesson_id, deliver=not ns.no_send, redo=redo, mode=mode,
+                                        log=log, fresh_budget=bool(redo), until=until, progress=progress)
+    if ns.lessons_action in ("resume", "rerender") and not tools.ready():
+        log("ferramentas das aulas incompletas: rode `sotawhat lessons setup`")
+        return 2
+    voice = choose_voice(settings, store, getattr(ns, "voz", None))
+    parse_voice(voice)
+    if ns.lessons_action == "pack":
+        work = lesson_dir(settings, lesson_id)
+        pack = Pack.from_json((work / "sources.json").read_text(encoding="utf-8"))
+        plan = load_plan((work / "plan.json").read_text(encoding="utf-8")) if (work / "plan.json").exists() else None
+        (work / "fontes.md").write_text(pack_markdown(pack, plan), encoding="utf-8")
+        log(f"[NotebookLM] {work / 'fontes.md'}: suba no NotebookLM e peça um Video Overview (Explainer, pt-BR)")
+        return 0
+    if ns.lessons_action == "rerender":
+        rerender(settings, store, tools, lesson_id, voice)
+    if ns.lessons_action == "resume" and getattr(ns, "refazer", ""):
+        redo = forget_scenes(settings, lesson_id, ns.refazer)
+        log(f"refazendo as cenas {', '.join(map(str, redo))}")
+    deliver = ns.lessons_action in ("make", "resume") and not ns.no_send
+    return run_lesson(settings, store, tools, lesson_id, voice, getattr(ns, "modo", "economico") or "economico",
+                      deliver, log=log, fresh_budget=bool(getattr(ns, "refazer", "")))
 
 

@@ -18,7 +18,7 @@ def test_schema_created(tmp_path):
         assert {"items", "runs", "source_state", "llm_calls", "meta", "radar_repos", "radar_stars", "radar_hn",
                 "radar_picks"} <= names
         version = st.conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-        assert version == "7"
+        assert version == "8"
 
 
 def test_upsert_dedupes_and_merges_concepts(tmp_path):

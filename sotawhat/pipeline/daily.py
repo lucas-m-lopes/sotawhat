@@ -95,10 +95,13 @@ def run_daily(store, sources_by_profile, limit=10, today=None, triage=None, on_s
 
 
 def daily_due(store, not_before, now=None) -> tuple[bool, str]:
-    """`run daily --catch-up HH:MM`, the logon trigger of the scheduled task. A restart while logged off
-    (Windows Update at 03:15 on 2026-11-11) skips the 07:00 run, and StartWhenAvailable does not cover "user
-    not logged on". Due only after HH:MM (local) while no daily of today (local date) has finished ok: a failed
-    run, or one killed half-way, runs again. Two instances never overlap (the task ignores a new one)."""
+    """`run daily --catch-up HH:MM`, every trigger of the scheduled task: 07:00, the logon, and the second
+    chances at 10:00 and 14:00. A restart while logged off (Windows Update at 03:15 on 2026-11-11) skips the 07:00
+    run, and StartWhenAvailable does not cover "user not logged on"; on 2026-11-21 the 1 h limit killed a run
+    starved by another project's simulations, and nothing tried again until the next day. Due only after HH:MM
+    (local) while no daily of today (local date) has finished ok: a failed run, or one killed half-way, runs again;
+    after one that finished ok, the later triggers stop here. Two instances never overlap (the task ignores a new
+    one)."""
     now = now or datetime.now().astimezone()
     if now.time() < not_before:
         return False, f"antes das {not_before:%H:%M}: o gatilho das {not_before:%H:%M} roda o daily"
@@ -297,6 +300,9 @@ def main_daily(ns) -> int:
     notifier = TelegramNotifier(settings.telegram_bot_token, settings.telegram_chat_id)
     use_llm = bool(settings.openrouter_api_key) and not getattr(ns, "no_llm", False)
     with Store(settings.db_path) as store:
+        closed = store.close_stale_runs()         # left open by a dead process: a killed task, a closed window
+        if closed:
+            log.info("runs abertos de processos que morreram, fechados como falhos: %s", closed)
         if notifier.configured and not feedback.listener_active(store):
             try:
                 log.info("feedback %s", feedback.pull(store, notifier, settings.allowed_user_id))

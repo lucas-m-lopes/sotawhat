@@ -8,7 +8,7 @@ the full-text index `rag_fts` when this SQLite has FTS5)."""
 import json
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +19,9 @@ SCHEMA_VERSION = 8
 APPROVED = ("main", "frontier", "radar")
 ROLE_RANK = {"tag": 0, "mentioned": 1, "used": 2, "main": 3}
 IDEA_STATUS = {"up": "curtida", "down": "rejeitada", "test": "testar", "archive": "engavetada", "built": "construida"}
+# A run still open after this long lost its process: longer than any limit of the scheduled tasks (daily 3 h,
+# weekly 4 h) and than any lesson, eval or import measured.
+STALE_RUN_H = 6.0
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
@@ -514,6 +517,26 @@ class Store:
             sql += " AND kind = ?"
             args = (kind,)
         return self.conn.execute(sql + " ORDER BY id DESC LIMIT 1", args).fetchone()
+
+    def close_stale_runs(self, older_than_h=STALE_RUN_H, now=None) -> list[int]:
+        """Runs a dead process left open: the Task Scheduler killing a task at its time limit (the daily of
+        2026-11-21), a closed console window (the first weekly), a restart. The Hoje tab showed them "rodando"
+        forever. Each one closes as failed, at its last sign of life (its last LLM call, else its start), with the
+        cost of its calls. -> the ids closed"""
+        now = now or datetime.now(timezone.utc)
+        cutoff = (now - timedelta(hours=older_than_h)).isoformat(timespec="seconds")
+        error = f"interrompido: o processo parou antes de fechar o run (fechado em {now.astimezone():%Y-%m-%d})"
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT r.id, r.started_at, MAX(c.created_at) AS last_call, COALESCE(SUM(c.cost_usd), 0) AS cost"
+                " FROM runs r LEFT JOIN llm_calls c ON c.run_id = r.id"
+                " WHERE r.finished_at IS NULL AND r.started_at < ? GROUP BY r.id ORDER BY r.id", (cutoff,)).fetchall()
+            for row in rows:
+                self.conn.execute("UPDATE runs SET finished_at = ?, ok = 0, cost_usd = ?, error = ? WHERE id = ?"
+                                  " AND finished_at IS NULL",
+                                  (max(row["started_at"], row["last_call"] or ""), row["cost"], error, row["id"]))
+            self.conn.commit()
+        return [row["id"] for row in rows]
 
     # --- items --------------------------------------------------------------
     def upsert_items(self, items, run_id: int) -> list[str]:

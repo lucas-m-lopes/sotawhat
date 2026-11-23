@@ -407,7 +407,11 @@ To set it up, copy `.env.example` to `.env` and fill in at least `OPENROUTER_API
 `powershell -ExecutionPolicy Bypass -File scripts\schedule_daily.ps1 [-Listener] [-Web] [-Weekly]`.
 The daily task also fires at logon with `run daily --catch-up 07:00`. When a restart has logged you off at 07:00
 (Windows Update, for example), the missed run happens at your next logon. On any other logon it only logs that
-today's run already happened.
+today's run already happened. The same check runs again at 10:00 and 14:00 (`-RetryAt`), so a daily that failed or
+was killed runs again the same day. The daily and weekly tasks run at normal priority, with limits of 3 h and 4 h.
+On 2026-11-21, at the Task Scheduler's default low priority, the daily met the PC busy with another project's
+simulations: it took 29 min just to start, and the 1 h limit it had then killed it before it collected anything.
+A run left open by a dead process is closed as failed when the next daily starts.
 
 Obsidian is no longer used (SDD §9): nothing reads or writes a vault, and the 2.0 `digest` and
 `backfill-links` commands are gone.
